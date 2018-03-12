@@ -1,4 +1,5 @@
 //#define NO_BOOT_DANCE
+// this is the TinyDuinoInteration
 
 
 #include <stddef.h>
