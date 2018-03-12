@@ -1,3 +1,6 @@
+//#define NO_BOOT_DANCE
+
+
 #include <stddef.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -18,22 +21,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
-
-//////////////////////////////////////////////////////////////////////////
-/* Start James Wigglesworth Code*/
-//////////////////////////////////////////////////////////////////////////
-#include <cstdlib>
-#include <math.h> // for trig and floor functions
-#include <iostream>
-#include <limits> // for intentionaly returning nan 
-#include <time.h> /* clock_t, clock, CLOCKS_PER_SEC */
-#include <stdlib.h>
-
-
-//////////////////////////////////////////////////////////////////////////
-/* End James Wigglesworth Code*/
-//////////////////////////////////////////////////////////////////////////
 
 
 #define L1_TABLE 0x600000
@@ -318,7 +305,16 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define SET_FORCE_MOVE_POINT 22
 #define HEART_BEAT 23
 #define PID_FINEMOVE 24
+#define SET_ALL_BOUNDRY 25
 
+//////////////////////////////////////////////////////////////////////////
+/* Start Wigglesworth Code*/
+//////////////////////////////////////////////////////////////////////////
+#define MOVETO_CMD 26
+#define MOVETOSTRAIGHT_CMD 27
+//////////////////////////////////////////////////////////////////////////
+/* End Wigglesworth Code*/
+//////////////////////////////////////////////////////////////////////////
 
 // modes
 #define BLOCKING_MOVE 1
@@ -379,6 +375,763 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define bool int
 #define TRUE 1
 #define FALSE 0
+
+
+
+
+
+
+
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////
+/* Start Wigglesworth Code*/
+
+//#include <cstdlib> //C++ header
+#include <math.h> // for trig and floor functions
+//#include <iostream> //doesn't exist on Dexter
+//#include <limits> // for intentionaly returning nan 
+//#include <time.h> /* c//lock_t, clock, CLOCKS_PER_SEC */
+//#include <stdlib.h> //defined above
+//#include <stdbool.h>
+
+
+// Vector Library:
+#define PI (3.141592653589793)
+//double L[5] = { 0.1651, 0.320675, 0.3302, 0.0508, 0.08255 }; // (meters)
+double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
+struct Vector {
+	double x, y, z;
+};
+
+
+struct Vector new_vector(double x, double y, double z) {
+	struct Vector a;
+	a.x = x;
+	a.y = y;
+	a.z = z;
+	return a;
+}
+
+void print_vector(struct Vector a) {
+	printf("[%f, %f, %f]", a.x, a.y, a.z);
+}
+
+struct Vector add(struct Vector v1, struct Vector v2) {
+	struct Vector result;
+	result.x = v1.x + v2.x;
+	result.y = v1.y + v2.y;
+	result.z = v1.z + v2.z;
+	return result;
+};
+
+
+struct Vector subtract(struct Vector v1, struct Vector v2) {
+	struct Vector result;
+	result.x = v1.x - v2.x;
+	result.y = v1.y - v2.y;
+	result.z = v1.z - v2.z;
+	return result;
+}
+
+
+struct Vector mult(struct Vector v1, struct Vector v2) {
+	struct Vector result;
+	result.x = v1.x * v2.x;
+	result.y = v1.y * v2.y;
+	result.z = v1.z * v2.z;
+	return result;
+}
+
+struct Vector vector_div(struct Vector v1, struct Vector v2) {
+	struct Vector result;
+	result.x = v1.x / v2.x;
+	result.y = v1.y / v2.y;
+	result.z = v1.z / v2.z;
+	return result;
+}
+
+struct Vector scalar_mult(double a, struct Vector v) {
+	struct Vector result;
+	result.x = a * v.x;
+	result.y = a * v.y;
+	result.z = a * v.z;
+	return result;
+}
+
+struct Vector scalar_div(struct Vector v, double a) {
+	struct Vector result;
+	result.x = v.x / a;
+	result.y = v.y / a;
+	result.z = v.z / a;
+	return result;
+}
+
+struct Vector negate(struct Vector v) {
+	struct Vector result;
+	result.x = -v.x;
+	result.y = -v.y;
+	result.z = -v.z;
+	return result;
+}
+
+double magnitude(struct Vector v) {
+	return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+}
+
+
+struct Vector normalize(struct Vector v) {
+	double mag = magnitude(v);
+	return scalar_div(v, mag);
+}
+
+
+struct Vector cross(struct Vector v1, struct Vector v2) {
+	struct Vector result = new_vector(v1.y*v2.z - v1.z*v2.y, v1.z*v2.x - v1.x*v2.z, v1.x*v2.y - v1.y*v2.x);
+	return result;
+}
+
+double dot(struct Vector v1, struct Vector v2) {
+	return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
+}
+
+struct Vector v_abs(struct Vector v1){
+	struct Vector v_result = new_vector(fabs(v1.x), fabs(v1.y), fabs(v1.z));
+	return v_result;
+}
+
+
+double v_max(struct Vector v1){
+	double cur_max = 0;
+	if(v1.x > cur_max)
+		cur_max = v1.x;
+	if(v1.y > cur_max)
+		cur_max = v1.y;
+	if(v1.z > cur_max)
+		cur_max = v1.z;
+	return cur_max;
+}
+
+struct Vector v_round(struct Vector v1, int decimals) {
+	return new_vector(floor(v1.x * pow(10, decimals)) / pow(10, decimals), floor(v1.y * pow(10, decimals)) / pow(10, decimals), floor(v1.z * pow(10, decimals)) / pow(10, decimals));
+}
+
+bool is_equal(struct Vector v1, struct Vector v2, int decimals) {
+	bool result =  pow(10, -decimals-1) > v_max(v_abs(subtract(v2, v1)));
+	
+	
+	/*
+	struct Vector r_v1 = v_round(v1, decimals);
+	struct Vector r_v2 = v_round(v2, decimals);
+	*/
+	/*
+	printf("\n\n is_equal:");
+	printf("\nv1: ");
+	print_vector(v1);
+	printf("\nv2: ");
+	print_vector(v2);
+	printf("\ndecimals: %d", decimals);
+	*/
+	
+	/*
+	printf("\nr_v1: ");
+	print_vector(r_v1);
+	printf("\nr_v1: ");
+	print_vector(r_v1);
+	*/
+	
+	//bool result = (r_v1.x == r_v2.x && r_v1.y == r_v2.y && r_v1.z == r_v2.z);
+	printf("\nresult: %d", result);
+	return result;
+	
+}
+
+struct Vector project_onto_plane(struct Vector vector, struct Vector plane) {
+	//double term1 = dot(vector, plane);
+	double plane_mag = magnitude(plane);
+	return subtract(vector, scalar_mult(dot(vector, plane) / (plane_mag*plane_mag), plane));
+}
+
+
+
+#define arcsec_to_rad PI/(180*3600); // Floating point error may be a problem
+#define rad_to_arcsec (180*3600)/PI;
+double sin_arcsec(double theta) {
+	//return sin(theta * arcsec_to_rad); //this was erroring for some reason
+	return sin(theta * PI / (180 * 3600));
+}
+
+double cos_arcsec(double theta) {
+	return cos(theta * PI / (180 * 3600));
+}
+
+double tan_arcsec(double theta) {
+	return tan(theta * PI / (180 * 3600));
+}
+
+double asin_arcsec(double ratio) {
+	return asin(ratio) * rad_to_arcsec;
+}
+
+double acos_arcsec(double ratio) {
+	return acos(ratio) * rad_to_arcsec;
+}
+
+double atan_arcsec(double ratio) {
+	return atan(ratio) * rad_to_arcsec;
+}
+
+double atan2_arcsec(double num1, double num2) {
+	return atan2(num1, num2) * rad_to_arcsec;
+}
+
+
+
+
+
+
+struct Vector rotate(struct Vector vector, struct Vector plane, double theta) {
+	if (is_equal(vector, plane, 14)) {
+		return vector;
+	}
+	return scalar_mult(magnitude(vector), normalize(add(scalar_mult(cos_arcsec(theta), vector), scalar_mult(sin_arcsec(theta), cross(normalize(plane), vector)))));
+}
+
+struct Vector three_points_to_plane(struct Vector u1, struct Vector u2, struct Vector u3) {
+	return normalize(cross(subtract(u2, u1), subtract(u3, u1)));
+}
+
+double angle(struct Vector v1, struct Vector v2) {
+	if (is_equal(v1, v2, 14)) {
+		return 0.0;
+	}
+	if (magnitude(add(v1, v2)) == 0) {
+		return 180;
+	}
+	else {
+		return atan2_arcsec(magnitude(cross(v1, v2)), dot(v1, v2));
+	}
+}
+
+double signed_angle(struct Vector v1, struct Vector v2, struct Vector plane) {
+	double guess_angle = angle(v1, v2);
+	long double epsilon = 0.0000000001; // 1e-10
+	if (abs(guess_angle) <  epsilon || abs(abs(guess_angle) - 180) < epsilon) {
+		return round(guess_angle); // Will rounding increase or decrease error? 
+	}
+
+	struct Vector c_prod = normalize(cross(v1, v2));
+	if (is_equal(c_prod, plane, 10)) {
+		return guess_angle;
+	}
+	else if (is_equal(negate(c_prod), plane, 10)){
+		return -guess_angle;
+	}
+	else {
+		printf("\nError: singled_angle wants to return NaN:");
+		printf("\nguessangle: %f", guess_angle);
+		printf("\nc_prod: ");
+		print_vector(c_prod);
+		printf("\nnegate(c_prod): ");
+		print_vector(negate(c_prod));
+		printf("\nv1: ");
+		print_vector(v1);
+		printf("\nv2: ");
+		print_vector(v2);
+		printf("\nplane: ");
+		print_vector(plane);
+		printf("\n\n");
+	}
+}
+
+double dist_point_to_point(struct Vector point_a, struct Vector point_b) {
+	printf("point_a: ");
+	print_vector(point_a);
+	printf(", point_b: ");
+	print_vector(point_b);
+	printf("\n");
+	return magnitude(subtract(point_a, point_b));
+}
+
+double dist_point_to_line(struct Vector point, struct Vector line_point_a, struct Vector line_point_b) {
+	struct Vector term1 = subtract(point, line_point_a);
+	struct Vector term2 = subtract(point, line_point_b);
+	struct Vector term3 = subtract(line_point_b, line_point_a);
+	return magnitude(cross(term1, term2)) / magnitude(term3);
+}
+
+bool is_NaN(struct Vector v) {
+	return isnan(v.x) || isnan(v.y) || isnan(v.z);
+}
+
+
+//////////////////////////////////////////////////////////////////
+// Kinematics:
+
+
+
+//Config structure
+struct Config{
+	bool right_arm, elbow_up, wrist_out;
+};
+
+struct Config new_config(bool right_arm, bool elbow_up, bool wrist_out) {
+	struct Config a;
+	a.right_arm = right_arm;
+	a.elbow_up = elbow_up;
+	a.wrist_out = wrist_out;
+	return a;
+}
+
+void print_config(struct Config a) {
+	/*
+	std::cout << "[";
+	if (a.right_arm) {std::cout << "Right, ";}
+	else {std::cout << "Left, ";}
+
+	if (a.elbow_up) {std::cout << "Up, ";}
+	else {std::cout << "Down, ";}
+
+	if (a.wrist_out) {std::cout << "Out]";}
+	else {std::cout << "In]";}
+	*/
+}
+
+
+//J_angles structure
+struct J_angles{
+	double J1, J2, J3, J4, J5;
+};
+
+struct J_angles new_J_angles(double J1, double J2, double J3, double J4, double J5) {
+	struct J_angles a;
+	a.J1 = J1;
+	a.J2 = J2;
+	a.J3 = J3;
+	a.J4 = J4;
+	a.J5 = J5;
+	return a;
+}
+
+void print_J_angles(struct J_angles a) {
+	printf("[%f, %f, %f, %f, %f]", a.J1, a.J2, a.J3, a.J4, a.J5);
+}
+
+double J_angles_max_diff(struct J_angles J_angles_1, struct J_angles J_angles_2){
+	double cur_max = 0.0;
+	double delta;
+	delta = abs(J_angles_1.J1 - J_angles_2.J1);
+	if(delta > cur_max)
+		cur_max = delta;
+	delta = abs(J_angles_1.J2 - J_angles_2.J2);
+	if(delta > cur_max)
+		cur_max = delta;
+	delta = abs(J_angles_1.J3 - J_angles_2.J3);
+	if(delta > cur_max)
+		cur_max = delta;
+	delta = abs(J_angles_1.J4 - J_angles_2.J4);
+	if(delta > cur_max)
+		cur_max = delta;
+	delta = abs(J_angles_1.J5 - J_angles_2.J5);
+	if(delta > cur_max)
+		cur_max = delta;
+
+	return cur_max;
+}
+
+//XYZ structure
+struct XYZ{
+	struct Vector position;
+	struct Vector direction;
+	struct Config config;
+};
+
+
+struct XYZ new_XYZ(struct Vector position, struct Vector direction, struct Config config) {
+	struct XYZ a;
+	a.position = position;
+	a.direction = direction;
+	a.config = config;
+	return a;
+}
+
+void print_XYZ(struct XYZ a) {
+	printf("{ ");
+	print_vector(a.position);
+	printf(", ");
+	print_vector(a.direction);
+	printf(", ");
+	print_config(a.config);
+	printf(" }");
+}
+
+
+// Forward Kinematics:
+struct XYZ J_angles_to_xyz(struct J_angles angles) {
+
+	/*
+	// Pre allocation:
+	struct Vector U[6] = { {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0} };
+	struct Vector V[5] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 },{ 0, 0, 0 }};
+	struct Vector P[3] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }};
+
+	P[0][0] = 1; // Datam Plane = [1 0 0]
+	V[0][2] = 1; // Vector for Link 1 (base)
+
+	P[1] = rotate(P[0], V[0], -(angles.J1 - 180*3600)); // Links 2, 3 and 4 lie in P1
+	V[1] = rotate(V[0], P[1], angles.J2);		   // Vector for Link 2
+	V[2] = rotate(V[1], P[1], angles.J3);		   // Vector for Link 3
+	V[3] = rotate(V[2], P[1], angles.J4);		   // Vector for Link 4
+	P[2] = rotate(P[1], V[3], -(angles.J5 - 180*3600));	   // Link 4 and 5 lie in P2
+	V[4] = rotate(V[3], P[2], -90*3600);				   // Vector for Link 5 (90 degree bend)
+
+
+												   // Next point = current point + Link length * vector direction
+	int i;
+	for (i = 0; i < 5; i++) {
+		U[i + 1] = add(U[i], scalar_mult(L[i], V[i]));
+	}
+	*/
+	
+	struct Vector U0 = {0, 0, 0};
+	struct Vector U1 = {0, 0, 0};
+	struct Vector U2 = {0, 0, 0};
+	struct Vector U3 = {0, 0, 0};
+	struct Vector U4 = {0, 0, 0};
+	struct Vector U5 = {0, 0, 0};
+	
+	struct Vector V0 = {0, 0, 1};
+	struct Vector V1 = {0, 0, 0};
+	struct Vector V2 = {0, 0, 0};
+	struct Vector V3 = {0, 0, 0};
+	struct Vector V4 = {0, 0, 0};
+	
+	struct Vector P0 = {1, 0, 0};
+	struct Vector P1 = {0, 0, 0};
+	struct Vector P2 = {0, 0, 0};
+	
+
+	// Forward Kinematic solved, now to determine configuration:
+
+	// Inverse Kinematics for just U3 to determine if wrist is in or out
+	struct Vector U54_proj = project_onto_plane(V4, P1);
+	struct Vector U3_a = add(U4, scalar_mult(L[3], rotate(normalize(U54_proj), P1, 90)));
+	struct Vector U3_b = add(U4, scalar_mult(L[3], rotate(normalize(U54_proj), P1, -90)));
+	double dist_a = dist_point_to_line(U3_a, U1, U0);
+	double dist_b = dist_point_to_line(U3_b, U1, U0);
+
+	struct Config my_config = new_config(1, 1, 1); // Initialize my_config
+
+							   // Determine wrist state, in or out
+	if (is_equal(U3, U3_a, 10)) {  // Negative or positive rotation of Link 4?
+		if (dist_a < dist_b) {
+			my_config.wrist_out = 1; // Wrist out
+		}
+		else {
+			my_config.wrist_out = 0; // Wrist in
+		}
+	}
+	else {
+		if (dist_a < dist_b) {
+			my_config.wrist_out = 0; // Wrist in
+		}
+		else {
+			my_config.wrist_out = 1; // Wrist out
+		}
+	}
+
+	// Determine arm state, right or left 
+	struct Vector U50 = subtract(U5, U0);
+	if (dot(cross(U50, P1), V0) < 0) {			// Is end effector point on right or left half of plane 1?
+		my_config.right_arm = 0;					// Left arm
+		my_config.wrist_out = !my_config.wrist_out; // switches wrist state if left arm
+	}
+	else {
+		my_config.right_arm = 1;					// Right arm
+	}
+
+	// Determine elbow state, up or down
+	if (my_config.right_arm) {						// If right arm
+		if (dot(cross(V1, V2), P1) > 0) {		// Is Joint 3 angle positive or negative?
+			my_config.elbow_up = 1;					// Elbow down
+		}
+		else {
+			my_config.elbow_up = 0;					// Elbow up
+		}
+	}
+	else {											// If left arm
+		if (dot(cross(V1, V2), P1) > 0) {		// Is Joint 3 angle positive or negative?
+			my_config.elbow_up = 0;					// Elbow down
+		}
+		else {
+			my_config.elbow_up = 1;					// Elbow down
+		}
+	}
+
+
+	// Calculating the end effector direction
+	struct Vector my_dir = normalize(subtract(U5, U4));
+
+
+	
+	//debugging:
+	/*
+	printf("\nU:\n");
+	struct Vector temp_vector;
+	for (int i = 0; i < sizeof(U) / 24; i++) {
+		printf("i:%d = ", i);
+		temp_vector = U[i];
+		print_vector(temp_vector);
+		printf("\n");
+	}
+	printf("\nV:\n");
+	for (int i = 0; i < sizeof(V) / 24; i++) {
+		printf("i:%d = ", i);
+		temp_vector = V[i];
+		print_vector(temp_vector);
+		printf("\n");
+	}
+	printf("\nP:\n");
+	for (int i = 0; i < sizeof(P) / 24; i++) {
+		printf("i:%d = ", i);
+		temp_vector = P[i];
+		print_vector(temp_vector);
+		printf("\n");
+	}
+	*/
+	
+
+
+	struct XYZ result = new_XYZ(U5, my_dir, my_config);
+	return result;
+}
+
+
+// Inverse Kinematics:
+struct J_angles xyz_to_J_angles(struct XYZ xyz) {
+
+	// Pre-allocation
+	struct J_angles J = new_J_angles(0, 0, 0, 0, 0);
+	/*
+	struct Vector U[6] = { { 0, 0, 0 },{ 0, 0, 0 },{ 0, 0, 0 },{ 0, 0, 0 },{ 0, 0, 0 },{ 0, 0, 0 } };
+	struct Vector V[5] = { { 0, 0, 0 },{ 0, 0, 0 },{ 0, 0, 0 },{ 0, 0, 0 },{ 0, 0, 0 } };
+	struct Vector P[3] = { { 0, 0, 0 },{ 0, 0, 0 },{ 0, 0, 0 } };
+	
+	
+	// Knowns:
+	//U[0] = { 0, 0, 0 };
+	P[0][0] = 1;
+	V[0][2] = 1;
+	V[4] = normalize(xyz.direction);
+	U[1] = scalar_mult(L[0], V[0]);
+	U[4] = add(xyz.EE_point, scalar_mult(L[4], negate(V[4])));
+	U[5] = xyz.EE_point;
+	*/
+	
+	struct Vector V0 = {0, 0, 1};
+	struct Vector V1 = {0, 0, 0};
+	struct Vector V2 = {0, 0, 0};
+	struct Vector V3 = {0, 0, 0};
+	struct Vector V4 = normalize(xyz.direction);
+	
+	struct Vector U0 = {0, 0, 0};
+	struct Vector U1 = scalar_mult(L[0], V0);
+	struct Vector U2 = {0, 0, 0};
+	struct Vector U3 = {0, 0, 0};
+	struct Vector U4 = add(xyz.position, scalar_mult(L[4], negate(V4)));
+	struct Vector U5 = xyz.position;
+	
+	
+	
+	struct Vector P0 = {1, 0, 0};
+	struct Vector P1 = {0, 0, 0};
+	struct Vector P2 = {0, 0, 0};
+
+
+
+	// Solving for Plane 1:
+	P1 = three_points_to_plane(U1, U0, U4);
+	/*
+	!!!!!!!!!!!!!! Come back to this and do it without NaNs !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	if (is_NaN(P[1])) {
+		P[1] = three_points_to_plane(U[1], U[0], U[3]);
+		if (is_NaN(P[1])) {
+			// Error message: "Singularity: Toolpoint XYZ is on Base axis."
+			//std::cout << "Error: Singularity: Toolpoint XYZ is on Base axis.";
+		}
+	}
+	*/
+	
+
+	// Solving for U3:
+	struct Vector U54_proj = project_onto_plane(negate(V4), P1);
+	struct Vector U3_a = add(U4, scalar_mult(L[3], rotate(normalize(U54_proj), P1, 90*3600)));
+	struct Vector U3_b = add(U4, scalar_mult(L[3], rotate(normalize(U54_proj), P1, -90*3600)));
+
+	
+	//New wrist code
+	//double dist_a = dist_point_to_point(U3_a, { 0, 0, 0 });
+	//double dist_b = dist_point_to_point(U3_b, { 0, 0, 0 });
+	double dist_a = magnitude(U3_a);
+	double dist_b = magnitude(U3_b);
+	if (xyz.config.wrist_out) {
+		if (dist_a < dist_b) {
+			U3 = U3_a;
+		}
+		else {
+			U3 = U3_b;
+		}
+	}
+	else {
+		if (dist_a > dist_b) {
+			U3 = U3_a;
+		}
+		else {
+			U3 = U3_b;
+		}
+	}
+
+
+	// Solving for Plane 2:
+	P2 = three_points_to_plane(U5, U4, U3);
+	if (is_NaN(P1)) {
+		// Shouldnt message: "Unkown Singularity found at " + xyz.print() + ", Please report this message as a bug."
+		//std::cout << "Shouldnt: Unkown Singularity";
+		printf("\n\nUnkown Singularity found at: ");
+		print_XYZ(xyz);
+		printf("\nPlease report this message as a bug.\n\n");
+		
+	}
+
+	// Checking if in range
+	double D3 = magnitude(subtract(U3, U1));
+	if (D3 > L[1] + L[2]) {
+		// Error message: "Point out of reach"
+		//std::cout << "Point out of reach";
+		printf("\n\nOut of Reach Error at position: ");
+		print_XYZ(xyz);
+	}
+
+
+	//Solving for U2:
+	double Beta = acos_arcsec((-(L[2] * L[2]) + L[1] * L[1] + D3*D3) / (2 * D3 * L[1])); // Law of Cosines
+	struct Vector V31 = normalize(subtract(U3, U1));
+	struct Vector U2_a = add(U1, scalar_mult(L[1], rotate(V31, P1, Beta)));
+	struct Vector U2_b = add(U1, scalar_mult(L[1], rotate(V31, P1, -Beta)));
+	struct Vector V2a1 = subtract(U2_a, U1);
+	struct Vector V32a = subtract(U3, U2_a);
+	if (xyz.config.elbow_up) {
+		if (dot(cross(V2a1, V32a), P1) < 0) {
+			U2 = U2_a;
+		}
+		else {
+			U2 = U2_b;
+		}
+	}
+	else {
+		if (dot(cross(V2a1, V32a), P1) > 0) {
+			U2 = U2_a;
+		}
+		else {
+			U2 = U2_b;
+		}
+	}
+
+	
+	
+
+	// Now that all joint points are solved, joint angles can be calculated:
+	V1 = normalize(subtract(U2, U1));
+	V2 = normalize(subtract(U3, U2));
+	V3 = normalize(subtract(U4, U3));
+
+	if (xyz.config.right_arm) {
+		J.J1 = signed_angle(P1, P0, V0);
+		J.J2 = signed_angle(V1, V0, P1);
+		J.J3 = signed_angle(V2, V1, P1);
+		J.J4 = signed_angle(V3, V2, P1);
+		J.J5 = signed_angle(P2, P1, V3);
+	}
+	else {
+		J.J1 = signed_angle(P1, P0, V0) + 180;
+		J.J2 = -signed_angle(V1, V0, P1);
+		J.J3 = -signed_angle(V2, V1, P1);
+		J.J4 = -signed_angle(V3, V2, P1);
+		J.J5 = -signed_angle(P2, P1, V3);
+	}
+
+	
+	//Debugging code
+	printf("\n\nxyz_to_J_angles started:");
+	printf("\nInput: ");
+	print_XYZ(xyz);
+	
+	/*
+	printf("\nU2_a: ");
+	print_vector(U2_a);
+	printf("\n");
+	printf("\nU2_b: ");
+	print_vector(U2_b);
+	printf("\n");
+
+	printf("\nU2: ");
+	print_vector(U2);
+	printf("\n");
+	*/
+	
+	
+	printf("\nU1: ");
+	print_vector(U1);
+	printf("\nU2: ");
+	print_vector(U2);
+	printf("\nU3: ");
+	print_vector(U3);
+	printf("\nU4: ");
+	print_vector(U4);
+	printf("\nU5: ");
+	print_vector(U5);
+	printf("J_angles results: ");
+	print_J_angles(J);
+	printf("\n");
+
+	
+
+	return J;
+}
+
+int k_tip_speed_to_angle_speed(struct J_angles J_angles_old, struct J_angles J_angles_new, double cart_speed){
+	struct Vector EE_point_1 = J_angles_to_xyz(J_angles_old).position;
+	struct Vector EE_point_2 = J_angles_to_xyz(J_angles_old).position;
+	double dist_EE = dist_point_to_point(EE_point_1, EE_point_2);
+	if(dist_EE == 0){
+		return 232642; //30 (deg/s)
+	}
+	double max_theta = J_angles_max_diff(J_angles_old, J_angles_new);
+	
+	return (int)(max_theta*cart_speed/dist_EE);
+}
+		
+
+
+
+
+
+
+
+
+
+/* End Wigglesworth Code*/
+//////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
 
 int XLowBound[5]={BASE_COS_LOW,END_COS_LOW,PIVOT_COS_LOW,ANGLE_COS_LOW,ROT_COS_LOW};
 int XHighBound[5]={BASE_COS_HIGH,END_COS_HIGH,PIVOT_COS_HIGH,ANGLE_COS_HIGH,ROT_COS_HIGH};
@@ -583,7 +1336,7 @@ void SetGripperRoll(int Possition)
 void SetGripperMotor(int state)
 {
 	mapped[GRIPPER_MOTOR_ON_WIDTH]=12000;
-	mapped[GRIPPER_MOTOR_OFF_WIDTH]=200000;
+	mapped[GRIPPER_MOTOR_OFF_WIDTH]=0;
 	mapped[GRIPPER_MOTOR_CONTROL]=state;
 }
 void StartServerSocketDDE(void *arg)
@@ -928,7 +1681,7 @@ bool ProcessServerReceiveDataDDE(char *recBuff)
 		
 	}
 	////printf("\n%s \n",recBuff);
-	//printf("\n%s \n",CmdString);
+	printf("\n%s \n",CmdString);
 	DexError=ParseInput(CmdString); 
 ////printf("\nsent parse\n"); 
 	return TRUE;
@@ -1569,6 +2322,17 @@ int fixedPointCV(float Val,int whole,int fract)
 {
 	return 0;
 }
+
+void CvrtBoundary_CenterMag_to_HILOW(int Center, int Magnitude, int *ResultHi, int *ResultLow)
+{
+  ResultHi = Center + Magnitude;
+  ResultLow = Center - Magnitude;  
+}
+unsigned int CvrtBoundary_HILOW_to_CenterMag(int High, int Low)
+{
+}
+
+
 void setDefaults(int State)
 {
 
@@ -1576,6 +2340,9 @@ void setDefaults(int State)
 	char c;
     FILE *CentersFile,*RemoteRobotAddress,*DiffFile;
 	int HexValue;
+	int BaseBoundryHighL,BaseBoundryLowL,EndBoundryHighL,EndBoundryLowL,PivotBoundryHighL,PivotBoundryLowL;
+	int AngleBoundryHighL,AngleBoundryLowL,RotateBoundryHighL,RotateBoundryLowL;
+
 	int IntFloat;
 	float *fConvert=(float *)(&IntFloat);
 	
@@ -1590,10 +2357,17 @@ void setDefaults(int State)
 		//printf("%f \n",DiffCorrectionFactor);
 		fclose(DiffFile);
 	}
-	DiffFile = fopen("AngleBoundry.txt", "rs");
+	DiffFile = fopen("Boundaries.txt", "rs");
 	if(DiffFile!=NULL)
 	{
-		fscanf (DiffFile, "%i %i", &AngleHIBoundry,&AngleLOWBoundry);
+// BaseBoundryHigh,BaseBoundryLow,EndBoundryHigh,EndBoundryLow,PivotBoundryHigh,PivotBoundryLow,AngleBoundryHigh=DEFAULT_ANGLE_BOUNDRY_HI,AngleBoundryLow=DEFAULT_ANGLE_BOUNDRY_LOW,RotateBoundryHigh,RotateBoundryLow;
+		
+		
+		fscanf (DiffFile, "%i %i", &BaseBoundryHighL,&BaseBoundryLowL);
+		fscanf (DiffFile, "%i %i", &PivotBoundryHighL,&PivotBoundryLowL);
+		fscanf (DiffFile, "%i %i", &EndBoundryHighL,&EndBoundryLowL);
+		fscanf (DiffFile, "%i %i", &AngleBoundryHighL,&AngleBoundryLowL);
+		fscanf (DiffFile, "%i %i", &RotateBoundryHighL,&RotateBoundryLowL);
 		//fgets(DiffFile, sizeof(RemoteRobotAdd)+1, RemoteRobotAddress);
 		//fscanf(RemoteRobotAddress,"%[^\n]",RemoteRobotAdd);
 		//printf("Angle High boundry%i    Angle Low Boundry %i \n",AngleHIBoundry,AngleLOWBoundry);
@@ -1723,7 +2497,7 @@ void setDefaults(int State)
 		mapped[PID_ADDRESS]=4;
 		
 		// set boundries  
-		BaseBoundryHigh=90000;
+/*		BaseBoundryHigh=90000;
 		BaseBoundryLow=-90000;
 		EndBoundryHigh=130000;
 		EndBoundryLow=-130000;
@@ -1733,18 +2507,25 @@ void setDefaults(int State)
 		AngleBoundryLow=DEFAULT_ANGLE_BOUNDRY_LOW;
 		RotateBoundryHigh=3000;
 		RotateBoundryLow=-3000;
+		*/
 		
 		
-		mapped[BOUNDRY_BASE]=0x2bf2d40e; //
-		mapped[BOUNDRY_END]=0x3f7ac086;  //
-		mapped[BOUNDRY_PIVOT]=0x222eddd2; //1
-		HiBoundry=AngleHIBoundry/8;
-		LowBoundry=AngleLOWBoundry/8;
-		BoundryACC=(HiBoundry << 16) | (0x0000ffff & LowBoundry);
-		mapped[BOUNDRY_ANGLE]=BoundryACC;// 0x01f4fe0c; //
+		mapped[BOUNDRY_BASE]=BaseBoundryHigh + BaseBoundryLow;
+		//0x2bf2d40e; //
+		mapped[BOUNDRY_END]= EndBoundryHigh + EndBoundryLow;
+		//0x3f7ac086;  //
+		mapped[BOUNDRY_PIVOT]=PivotBoundryHigh + PivotBoundryLow;
+		//0x222eddd2; //1
+		//HiBoundry=AngelBoundryHigh + AngleBoundryLow;
+		//AngleHIBoundry/8;
+		//LowBoundry=AngleLOWBoundry/8;
+		//BoundryACC=(HiBoundry << 16) | (0x0000ffff & LowBoundry);
+		mapped[BOUNDRY_ANGLE]=AngleBoundryHigh + AngleBoundryLow;
+		//BoundryACC;// 0x01f4fe0c; //
 		//printf("Angle boundry pack %x ",BoundryACC);
 		
-		mapped[BOUNDRY_ROT]=((RotateBoundryHigh/8) << 16) | (0X0000FFFF & (RotateBoundryLow/8));
+		mapped[BOUNDRY_ROT]=RotateBoundryHigh + RotateBoundryLow;
+		//((RotateBoundryHigh/8) << 16) | (0X0000FFFF & (RotateBoundryLow/8));
 
 		
 		
@@ -1752,7 +2533,7 @@ void setDefaults(int State)
 		
 
 		mapped[SPEED_FACTORA]=0;
-		mapped[SPEED_FACTORB]=0;
+		mapped[SPEED_FACTORB]=0x130;
 		mapped[MAX_ERROR]=(2000 ^ 6000);
 		
 
@@ -1783,8 +2564,8 @@ void setDefaults(int State)
 	
 		if(RestoreCalTables("/srv/samba/share/HiMem.dta")==0)
 		{
-			//MoveRobot(100000,100000,100000,100000,100000,BLOCKING_MOVE);
-			//MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+			MoveRobot(20000,20000,20000,20000,20000,BLOCKING_MOVE);
+			MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
 		}
 
 		
@@ -1915,6 +2696,8 @@ int HashInputCMD(char *s)
 
 	if(s[0]=='r')
 		return READ_CMD;
+	if(s[0]=='B')
+		return SET_ALL_BOUNDRY;
 	if(s[0]=='w')
 	{
 		wait_fifo_flush();
@@ -1926,6 +2709,21 @@ int HashInputCMD(char *s)
 		return SLOWMOVE_CMD;
 	if(s[0]=='a')
 		return MOVEALL_CMD;
+	
+	//////////////////////////////////////////////////////////////////////////
+	/* Start Wigglesworth Code*/
+	//////////////////////////////////////////////////////////////////////////
+	//printf("HashInputCMD: %c", s[0]);
+	if (s[0] == 'M')
+		return MOVETO_CMD;
+	if (s[0] == 'T')
+		return MOVETOSTRAIGHT_CMD;
+	
+	//////////////////////////////////////////////////////////////////////////
+	/* End Wigglesworth Code*/
+	//////////////////////////////////////////////////////////////////////////
+	
+	
 	if(s[0]=='d')
 		return DMAREAD_CMD;
 	if(s[0]=='t')
@@ -2068,7 +2866,7 @@ int moverobotPID(int a1,int a2,int a3,int a4,int a5)
 int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 {
 
-	CheckBoundry(&a1,&a2,&a3,&a4,&a5);
+	//CheckBoundry(&a1,&a2,&a3,&a4,&a5);
 /*	int b1,b2,b3,b4,b5;
 	b1=getNormalizedInput(PLAYBACK_BASE_POSITION);
 	b2=getNormalizedInput(PLAYBACK_END_POSITION);
@@ -2120,6 +2918,61 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	return 0;
 }
 
+int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
+{
+	double max_step_size = 1000; //microns
+	struct Vector U1 = xyz_1.position;
+	struct Vector U2 = xyz_2.position;
+	struct Vector U21 = subtract(U2, U1);
+	struct Vector v21 = normalize(U21);
+	double U21_mag = magnitude(U21);
+	int num_div = (int)ceil(U21_mag/max_step_size);
+	double step = U21_mag / num_div;
+	
+	double angular_velocity;
+	struct Vector Ui;
+	
+	
+	struct Vector cur_pos = xyz_1.position;
+	struct Vector cur_dir = xyz_1.direction;
+	struct Config cur_config = xyz_1.config;
+	struct XYZ cur_xyz = new_XYZ(cur_pos, cur_dir, cur_config);
+	
+	struct J_angles J_angles_list[num_div];
+	double speeds_list[num_div];
+	struct J_angles J_angles_new;
+	struct J_angles J_angles_old = xyz_to_J_angles(cur_xyz);
+	
+	int i;
+	for(i=0;i<=num_div;i++){
+		Ui = add(U1, scalar_mult(((float)i)*step, v21));
+		cur_xyz.position = Ui;
+		J_angles_new = xyz_to_J_angles(cur_xyz);
+		angular_velocity = k_tip_speed_to_angle_speed(J_angles_old, J_angles_new, cart_speed);
+		
+		J_angles_list[i] = J_angles_new;
+		speeds_list[i] = angular_velocity;
+	}
+	
+	int cur_angular_velocity;
+	for(i=0;i<=num_div;i++){
+		cur_angular_velocity = speeds_list[i];
+		
+		//Maxspeed
+		maxSpeed=cur_angular_velocity & 0b00000000000011111111111111111111;
+		mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
+
+		//Startspeed
+		mapped[START_SPEED]=1 ^ cur_angular_velocity;
+		
+		MoveRobot(J_angles_list[i].J1, J_angles_list[i].J2, J_angles_list[i].J3, J_angles_list[i].J4, J_angles_list[i].J5, BLOCKING_MOVE);
+	}
+	
+	
+	
+	return 0;
+}
+
 int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5)
 {
 	int h1,h2,h3,h4,h5,l1,l2,l3,l4,l5;
@@ -2133,10 +2986,12 @@ int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5)
 	l3=(int)((float)EndBoundryLow / fabs(JointsCal[2]));
 	l4=(int)((float)AngleBoundryLow / fabs(JointsCal[3]));
 	l5=(int)((float)RotateBoundryLow / fabs(JointsCal[4]));
+	
 	if(*(j1) >= h1)
 	{
 		*(j1) = h1;
 	}
+	
 	if(*(j1) <= l1)
 	{
 		*(j1) = l1;
@@ -2431,6 +3286,19 @@ int SaveTables(int Address,char *FileName)
 		writeSize=fwrite((const void *)CalTables,sizeof(int),4*1024*1024,fp);
 		fclose(fp);
 	}
+	fp=fopen("memText.txt", "w");
+	
+	if(fp!=0)
+	{
+		fseek(fp, 0, SEEK_SET);    /* file pointer at the beginning of file */
+		fprintf(fp,"var fileArray = [");
+		for(i = 0;i < 4*1024*1024;i ++)
+		{
+			fprintf(fp,"%d, ",(int *)CalTables[i]);
+		}
+		fprintf(fp,"0 ]");
+		fclose(fp);
+	}
 }
 void InterpTables(int start,int length)
 {
@@ -2474,8 +3342,10 @@ int RestoreCalTables(char *FileName)
 		{
 
 			//printf(" size good %d %d",readSize ,Length);
+			#ifndef NO_BOOT_DANCE
 			MoveRobot(50000,50000,50000,5000,5000,BLOCKING_MOVE);
 			MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+			#endif
 		}
 		else
 		{
@@ -2758,11 +3628,15 @@ int getInput(void)
 	}
 	
 }
+
 int ParseInput(char *iString)
 {
 	//char iString[255];
 	const char delimiters[] = " ,";
-	char *token,*p1,*p2,*p3,*p4,*p5;
+	char *token,*p1,*p2,*p3,*p4,*p5,*p6,*p7,*p8,*p9,*p10,*p11,*p12,*p13,*p14,*p15,*p16,*p17,*p18,*p19,*p20;
+	int BDH,BDL;
+
+
 	int i,j,Add,Start,Length,Delay,Axis,tokenVal;
 	////printf("\nStart wait Goal");
 	if(iString !=NULL)
@@ -2836,4 +3710,477 @@ int ParseInput(char *iString)
 				case LOAD_TABLES  :
 					SaveTables(0x3f800000,"/srv/samba/share/HiMem.dta");
 					//WriteDMA(0x3f900000,"/srv/samba/share/a1tbl.dta");
-					//WriteDMA(0x3fa00000,"/srv/samba/share/a2tbl.d
+					//WriteDMA(0x3fa00000,"/srv/samba/share/a2tbl.dta");
+				break; 
+				case CAPTURE_POINTS_CMD :
+					p1=strtok (NULL, delimiters);
+					InitCapturePoints(p1);
+				break;
+				case RECORD_MOVEMENT :
+					p1=strtok (NULL, delimiters);
+					InitCaptureMovement(p1);
+				break;
+				case DMAREAD_CMD :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					p3=strtok (NULL, delimiters);
+					Add=(int)strtol(p1,0,16);
+					Length=(int)strtol(p2,0,16);
+					ReadDMA(Add,Length,p3);
+				break;
+				case DMAWRITE_CMD :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					Add=(int)strtol(p1,0,16);
+					WriteDMA(Add,p2);
+				break;
+				case CAPTURE_AD_CMD :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					p3=strtok (NULL, delimiters);
+					p4=strtok (NULL, delimiters);
+					p5=strtok (NULL, delimiters);
+					Axis=atoi(p1);
+					Start=atoi(p2);
+					Length=atoi(p3);
+					Delay=atoi(p4);
+					CaptureADtoFile(Axis,Start,Length,Delay,p5);
+				break;
+				case FIND_HOME_REP_CMD :
+					p1=strtok (NULL, delimiters);
+					Axis=atoi(p1);
+					Start=0;
+					Length=5000;
+					Delay=10000;
+					switch(Axis)
+					{
+						case 0  :
+							while(abs(FindHome(Axis,Start,Length,Delay,"/srv/samba/share/d0.dta"))>300);
+						break; 
+						case 1  :
+							while(abs(FindHome(Axis,Start,Length,Delay,"/srv/samba/share/d1.dta"))>300);
+						break; 
+						case 2  :
+							while(abs(FindHome(Axis,Start,Length,Delay,"/srv/samba/share/d2.dta"))>300);
+						break; 
+						case 3  :
+							while(abs(FindHome(Axis,Start,Length,Delay,"/srv/samba/share/d3.dta"))>300);
+						break; 
+						case 4  :
+							while(abs(FindHome(Axis,Start,Length,Delay,"/srv/samba/share/d4.dta"))>300);
+						break; 
+					}
+				break; 
+					case FIND_HOME_CMD :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					p3=strtok (NULL, delimiters);
+					p4=strtok (NULL, delimiters);
+					p5=strtok (NULL, delimiters);
+					Axis=atoi(p1);
+					Start=atoi(p2);
+					Length=atoi(p3);
+					Delay=atoi(p4);
+					FindHome(Axis,Start,Length,Delay,p5);
+				break; 
+				case FIND_INDEX_CMD :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					p3=strtok (NULL, delimiters);
+					p4=strtok (NULL, delimiters);
+					Axis=atoi(p1);
+					Start=atoi(p2);
+					Length=atoi(p3);
+					Delay=atoi(p4);
+					if(FindIndex(Axis,Start,Length,Delay)==0)
+					{
+						//printf("/nIndex reached");
+						break;
+					}
+					else
+					{
+						//printf("/nIndex not found");
+					}
+				break; 
+				case MOVEALL_CMD :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					p3=strtok (NULL, delimiters);
+					p4=strtok (NULL, delimiters);
+					p5=strtok (NULL, delimiters);
+					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)						
+						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
+				break; 
+				
+				
+				//////////////////////////////////////////////////////////////////////////
+				/* Start Wigglesworth Code*/
+				
+				case MOVETO_CMD:
+					//printf("\nMOVETO_CMD\n");
+					//MoveRobot(36000, 36000, 36000, 36000, 36000, BLOCKING_MOVE);
+					
+					p1 = strtok(NULL, delimiters);
+					p2 = strtok(NULL, delimiters);
+					p3 = strtok(NULL, delimiters);
+					p4 = strtok(NULL, delimiters);
+					p5 = strtok(NULL, delimiters);
+					p6 = strtok(NULL, delimiters);
+					p7 = strtok(NULL, delimiters);
+					p8 = strtok(NULL, delimiters);
+					p9 = strtok(NULL, delimiters);
+					
+					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
+					
+					struct Vector my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
+					struct Vector my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					struct Config my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
+					struct XYZ xyz_1 = new_XYZ(my_point, my_dir, my_config);
+					struct J_angles result_J_angles = xyz_to_J_angles(xyz_1);
+					
+					int J1 = (int)round(result_J_angles.J1);
+					int J2 = (int)round(result_J_angles.J2);
+					int J3 = (int)round(result_J_angles.J3);
+					int J4 = (int)round(result_J_angles.J4);
+					int J5 = (int)round(result_J_angles.J5);
+					
+					//printf("\nJangles: \n");
+					//printf("[%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
+					//printf("\n");
+					
+
+					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL)
+						MoveRobot(J1, J2, J3, J4, J5, BLOCKING_MOVE);
+						//MoveRobot(36000, 36000, 36000, 36000, 36000, BLOCKING_MOVE);
+				break;
+				
+				case MOVETOSTRAIGHT_CMD:
+					p1 = strtok(NULL, delimiters);
+					p2 = strtok(NULL, delimiters);
+					p3 = strtok(NULL, delimiters);
+					p4 = strtok(NULL, delimiters);
+					p5 = strtok(NULL, delimiters);
+					p6 = strtok(NULL, delimiters);
+					p7 = strtok(NULL, delimiters);
+					p8 = strtok(NULL, delimiters);
+					p9 = strtok(NULL, delimiters);
+					p10 = strtok(NULL, delimiters);
+					p12 = strtok(NULL, delimiters);
+					p13 = strtok(NULL, delimiters);
+					p14 = strtok(NULL, delimiters);
+					p15 = strtok(NULL, delimiters);
+					p16 = strtok(NULL, delimiters);
+					p17 = strtok(NULL, delimiters);
+					p18 = strtok(NULL, delimiters);
+					p19 = strtok(NULL, delimiters);
+					
+					
+					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
+					double cart_speed = (float)atoi(p1);
+					
+					struct Vector my_point_start = new_vector((float)atoi(p2), (float)atoi(p3), (float)atoi(p4));
+					struct Vector my_dir_start = new_vector((float)atoi(p5), (float)atoi(p6), (float)atoi(p7));
+					struct Config my_config_start = new_config((bool)atoi(p8), (bool)atoi(p9), (bool)atoi(p10));
+					struct XYZ xyz_start = new_XYZ(my_point_start, my_dir_start, my_config_start);
+					
+					struct Vector my_point_end = new_vector((float)atoi(p11), (float)atoi(p12), (float)atoi(p13));
+					struct Vector my_dir_end = new_vector((float)atoi(p14), (float)atoi(p15), (float)atoi(p16));
+					struct Config my_config_end = new_config((bool)atoi(p17), (bool)atoi(p18), (bool)atoi(p19));
+					struct XYZ xyz_end = new_XYZ(my_point_end, my_dir_end, my_config_end);
+					
+					
+					//printf("\nJangles: \n");
+					//printf("[%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
+					//printf("\n");
+					
+					
+
+					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL)
+						MoveRobotStraight(xyz_start, xyz_end, cart_speed);
+						//MoveRobot(J1, J2, J3, J4, J5, BLOCKING_MOVE);
+					
+				break;
+				
+					
+				/* End Wigglesworth Code*/
+				//////////////////////////////////////////////////////////////////////////
+				
+				case SLOWMOVE_CMD  :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					p3=strtok (NULL, delimiters);
+					p4=strtok (NULL, delimiters);
+					p5=strtok (NULL, delimiters);
+					Add=atoi(p1);
+					Length=atoi(p3);
+					Start=atoi(p2);
+					Delay=atoi(p4);
+					mapped[Add]=Start;
+					//printf("\n %d %d \n",Add,Length);
+					for(i=0;i<Length;i++)
+					{
+						for(j=0;j<Delay;j++)			
+							mapped[Add]=Start+i;
+					}
+				break;
+				case READ_CMD  :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					if((p1==NULL) | (p2==NULL))
+					{
+						//printf("\n %d %d need addres and length",atoi(p1),atoi(p2));
+						break;
+					}
+					Add=atoi(p1);
+					Length=atoi(p2); 
+					//printf("\n %d %d \n",Add,Length);
+					for(i=0;i<Length;i++)
+					{
+						
+
+						//printf("\n  %x %d",CalTables[Add+i],CalTables[Add+i]);
+						//printf("\n %x ",mapped[Add+i]);
+					}
+				break; 
+				case WRITE_CMD  :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					if((p1==NULL) | (p2==NULL))
+					{
+						//printf("\n %d %d need addres and data",atoi(p1),atoi(p2));
+					}
+					//printf("\n %d %d \n",atoi(p1),atoi(p2));
+					i=atoi(p1);
+					j=atoi(p2);
+					if(i==COMMAND_REG)
+						CmdVal=j;
+					mapped[i]=j;
+					if(i==ACCELERATION_MAXSPEED)
+					{
+						maxSpeed=j & 0b00000000000011111111111111111111;
+						coupledAcceleration=(j & 0b00000011111100000000000000000000) >> 20;
+						//startSpeed=0,
+						
+					}
+				break; 
+				case SET_ALL_BOUNDRY  :
+					p1=strtok (NULL, delimiters);
+					p2=strtok (NULL, delimiters);
+					p3=strtok (NULL, delimiters);
+					p4=strtok (NULL, delimiters);
+					p5=strtok (NULL, delimiters);
+					p6=strtok (NULL, delimiters);
+					p7=strtok (NULL, delimiters);
+					p8=strtok (NULL, delimiters);
+					p9=strtok (NULL, delimiters);
+					p10=strtok (NULL, delimiters);
+					BaseBoundryHigh=(int)((float)atoi(p1) * fabs(JointsCal[0]));
+					BaseBoundryLow=(int)((float)atoi(p2) * fabs(JointsCal[0]));
+					BDH=BaseBoundryHigh;
+					BDL=BaseBoundryLow;
+					Axis=BOUNDRY_BASE;
+					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+					PivotBoundryHigh=(int)((float)atoi(p3) * fabs(JointsCal[1]));
+					PivotBoundryLow=(int)((float)atoi(p4) * fabs(JointsCal[1]));
+					BDH=PivotBoundryHigh;
+					BDL=PivotBoundryLow;
+					Axis=BOUNDRY_PIVOT;
+					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+					EndBoundryHigh=(int)((float)atoi(p5) * fabs(JointsCal[2]));
+					EndBoundryLow=(int)((float)atoi(p6) * fabs(JointsCal[2]));
+					BDH=EndBoundryHigh;
+					BDL=EndBoundryLow;
+					Axis=BOUNDRY_END;
+					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+					AngleBoundryHigh=(int)((float)atoi(p7) * fabs(JointsCal[3]));
+					AngleBoundryLow=(int)((float)atoi(p8) * fabs(JointsCal[3]));
+					BDH=AngleBoundryHigh;
+					BDL=AngleBoundryLow;
+					Axis=BOUNDRY_ANGLE;
+					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+					RotateBoundryHigh=(int)((float)atoi(p9) * fabs(JointsCal[4]));
+					RotateBoundryLow=(int)((float)atoi(p10) * fabs(JointsCal[4]));
+					BDH=RotateBoundryHigh;
+					BDL=RotateBoundryLow;
+					Axis=BOUNDRY_ROT;
+					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+					
+				break;
+				
+				
+				case EXIT_CMD  :
+					mapped[FINE_ADJUST_BASE]=0;
+					mapped[FINE_ADJUST_END]=0;
+					mapped[FINE_ADJUST_PIVOT]=0;
+					mapped[FINE_ADJUST_ANGLE]=0;
+					mapped[FINE_ADJUST_ROT]=0;
+					return 1;
+				break; 
+				
+		
+				
+				default : 
+				  //printf("\nunrecognized command");
+				  break;
+			}
+			return 0;
+		}
+		else
+			return 1;
+	}
+	return 1;
+}
+
+int main(int argc, char *argv[]) {
+
+  int fd,mfd,err;
+  
+  int size;
+  int DefaultMode;
+  int CalTblSize = 32*1024*1024; 
+
+
+  if (argc != 4) {
+    fprintf(stderr, "Usage: %s Needs init mode, Master/Slave and RunMode\n", argv[0]);
+    exit(1);
+  }
+
+  DefaultMode = atoi(argv[1]);
+  size = 4095;
+  RunMode=atoi(argv[3]);
+  ServerMode = atoi(argv[2]);
+  if (size <= 0) {
+    fprintf(stderr, "Bad size: %d\n", size);
+    exit(1);
+  }
+
+  fd = open("/dev/uio1", O_RDWR);
+  if (fd < 0) {
+    perror("Failed to open devfile");
+    return 1;
+  }
+
+  map_addr = mmap( NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+
+  if (map_addr == MAP_FAILED) {
+    perror("Failed to mmap");
+    return 1;
+  }
+
+  mapped = map_addr;
+  
+  
+  mfd = open("/dev/mem", O_RDWR);
+  map_addrCt = mmap(NULL, CalTblSize, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, 0x3f000000);
+
+
+   if (map_addrCt == MAP_FAILED) {
+		//printf("\nCant Map Callibration Tables \n");
+    perror("Failed to mmap High memory");
+    return 1;
+  }
+  CalTables = map_addrCt;
+
+
+//  Addr= = atoi(argv[3]);
+//  Dta= = atoi(argv[4]);
+//  mapped[Addr] = Dta;
+	setDefaults(DefaultMode);
+//	if(DefaultMode ==2 )
+	if(ServerMode==1)
+	{
+	
+		err = pthread_create(&(tid[0]), NULL, &StartServerSocket,  (void*)&ThreadsExit);
+		if (err != 0)
+		{
+			//printf("\ncan't create thread :[%s]", strerror(err));
+			return 1;
+		}
+		else
+		{
+			//printf("\n Begin Socket Server Thread\n");
+		}
+	}
+	else if(ServerMode==2)
+	{
+	
+		err = pthread_create(&(tid[1]), NULL, &StartClientSocket, NULL);
+		if (err != 0)
+		{
+			//printf("\ncan't create thread :[%s]", strerror(err));
+			return 1;
+		}
+		else
+		{
+			//printf("\n Begin Socket Client Thread\n");
+		}
+	}
+	else if(ServerMode==3)
+	{
+		if(mapped[SENT_BASE_POSITION]!=0)
+		{
+	   		munmap(map_addr, size);
+			munmap(map_addrCt, CalTblSize);
+ 			close(fd);
+			close(mfd);
+			return 0;   
+		}
+		mapped[BASE_POSITION]=1;
+    	#ifndef NO_BOOT_DANCE
+
+
+		MoveRobot(0,0,0,50000,50000,BLOCKING_MOVE);
+	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+	    MoveRobot(0,0,0,50000,-50000,BLOCKING_MOVE);
+	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+	    MoveRobot(0,0,0,50000,50000,BLOCKING_MOVE);
+	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+	    MoveRobot(0,0,0,50000,-50000,BLOCKING_MOVE);
+	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+	    #endif	
+		err = pthread_create(&(tid[0]), NULL, &StartServerSocketDDE,  (void*)&ThreadsExit);
+		if (err != 0)
+		{
+			//printf("\ncan't create thread :[%s]", strerror(err));
+			return 1;
+		}
+		else
+		{
+			//printf("\n Begin Socket Server Thread For DDE\n");
+		}
+	}
+	if(RunMode==1 || RunMode==2)
+	{
+		err = pthread_create(&(tid[2]), NULL, &RealtimeMonitor, (void*)&ThreadsExit );
+		if (err != 0)
+		{
+			//printf("\ncan't create thread :[%s]", strerror(err));
+			return 1;
+		}
+		else
+		{
+			//printf("\n Begin Realtime Monitor Thread\n");
+		}		
+	}
+
+	
+	
+    if(ServerMode==3)
+	{
+		while(1){} //loop forever
+	}
+	while(getInput()==0);
+	ThreadsExit=0;
+	sleep(1);
+
+
+	//printf("\nExiting \n");
+
+  munmap(map_addr, size);
+  munmap(map_addrCt, CalTblSize);
+  
+
+  close(fd);
+   close(mfd);
+  return 0;
+}
