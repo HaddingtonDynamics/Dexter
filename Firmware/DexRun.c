@@ -687,17 +687,24 @@ struct Config new_config(bool right_arm, bool elbow_up, bool wrist_out) {
 }
 
 void print_config(struct Config a) {
-	/*
-	std::cout << "[";
-	if (a.right_arm) {std::cout << "Right, ";}
-	else {std::cout << "Left, ";}
-
-	if (a.elbow_up) {std::cout << "Up, ";}
-	else {std::cout << "Down, ";}
-
-	if (a.wrist_out) {std::cout << "Out]";}
-	else {std::cout << "In]";}
-	*/
+	printf("[");
+	if (a.right_arm){
+		printf("Right, ");
+	}else{
+		printf("Left, ");
+	}
+	if (a.elbow_up){
+		printf("Up, ");
+	}else {
+		printf("Down, ");
+	}
+	if (a.wrist_out) {
+		printf("Out]");
+	}
+	else {
+		printf("Int]");
+	}
+	//return
 }
 
 
@@ -1386,7 +1393,7 @@ void StartServerSocketDDE(void *arg)
 		SocketLive=TRUE;
 //		while(SocketLive==TRUE)
 		{
-			while((errno = 0, (RLength = recv(connfd, recBuff, /*sizeof(recBuff)*/128, 0))>0) || 
+			while((errno = 0, (RLength = recv(connfd, recBuff, sizeof(recBuff), 0))>0) || 
 			errno == EINTR)
 			{
 				if(RLength>0)
@@ -1649,7 +1656,7 @@ bool ProcessServerReceiveDataDDE(char *recBuff)
 	
 	//MoveRobot(MyBot.base,MyBot.end,MyBot.pivot,MyBot.angle,MyBot.rotate,BLOCKING_MOVE);
 	FoundStart=0;
-	for(i=0;i<255;i++)
+	for(i=0;i<sizeof(CmdString);i++)
 	{
 		if(FoundStart >= 4)
 		{
@@ -2943,6 +2950,23 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 	struct J_angles J_angles_new;
 	struct J_angles J_angles_old = xyz_to_J_angles(cur_xyz);
 	
+	
+	printf("\n\nStarting MoveRobotStraight:");
+	printf("\nxyz_1: ");
+	print_XYZ(xyz_1);
+	printf("\nxyz_2: ");
+	print_XYZ(xyz_2);
+	printf("\ncart_speed: %f", cart_speed);
+	
+	printf("\nU21:");
+	print_vector(U21);
+	printf("\nv21:");
+	print_vector(v21);
+	printf("\nU21_mag: %f", U21_mag);
+	printf("\nnum_div: %f", num_div);
+	printf("\step: %f", step);
+	
+	
 	int i;
 	for(i=0;i<=num_div;i++){
 		Ui = add(U1, scalar_mult(((float)i)*step, v21));
@@ -2952,7 +2976,15 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 		
 		J_angles_list[i] = J_angles_new;
 		speeds_list[i] = angular_velocity;
+		
+		printf("\nang_vel: %d  J: ");
+		print_J_angles(J_angles_new);
+		
 	}
+	printf("\nDone with MoveRobotStraight");
+	printf("\n\n");
+	
+	
 	
 	int cur_angular_velocity;
 	for(i=0;i<=num_div;i++){
@@ -3621,12 +3653,11 @@ void ReplayMovement(char *FileName)
 }
 int getInput(void)
 {
-	char iString[255];
+	char iString[510];
 	if(gets(iString)!=NULL)
 	{
 		return ParseInput(iString);
 	}
-	
 }
 
 int ParseInput(char *iString)
@@ -3817,7 +3848,7 @@ int ParseInput(char *iString)
 				/* Start Wigglesworth Code*/
 				
 				case MOVETO_CMD:
-					//printf("\nMOVETO_CMD\n");
+					printf("\nMOVETO_CMD\n");
 					//MoveRobot(36000, 36000, 36000, 36000, 36000, BLOCKING_MOVE);
 					
 					p1 = strtok(NULL, delimiters);
@@ -3855,6 +3886,11 @@ int ParseInput(char *iString)
 				break;
 				
 				case MOVETOSTRAIGHT_CMD:
+					printf("\n\nStarting MoveToStraight\n");
+					
+					printf("\niString: \n%s", iString);
+					
+				
 					p1 = strtok(NULL, delimiters);
 					p2 = strtok(NULL, delimiters);
 					p3 = strtok(NULL, delimiters);
@@ -3864,7 +3900,25 @@ int ParseInput(char *iString)
 					p7 = strtok(NULL, delimiters);
 					p8 = strtok(NULL, delimiters);
 					p9 = strtok(NULL, delimiters);
+					
+					
+					
 					p10 = strtok(NULL, delimiters);
+					
+					/*
+					if(!p10){
+						printf("\nNot p10");
+					}else{
+						printf("\n%u", p9);
+						printf("\n%u", p10);
+						printf("\n%s", p10);
+						
+						printf("\n%u", p11);
+						printf("\n%s", p11);
+					}
+					*/
+					
+					p11 = strtok(NULL, delimiters);
 					p12 = strtok(NULL, delimiters);
 					p13 = strtok(NULL, delimiters);
 					p14 = strtok(NULL, delimiters);
@@ -3874,26 +3928,92 @@ int ParseInput(char *iString)
 					p18 = strtok(NULL, delimiters);
 					p19 = strtok(NULL, delimiters);
 					
+					//printf("\nParsing Complete\n");
+					//printf("\n1: %d, \n2: %d, \n3: %d, \n4: %d, \n5: %d, \n6: %d, \n7: %d, \n8: %d, \n9: %d, \n10: %d, \n11: %d, \n12: %d, \n13: %d, \n14: %d, \n15: %d, \n16: %d, \n17: %d, \n18: %d, \n19: %d", (float)atoi(p1), (float)atoi(p2), (float)atoi(p3), (float)atoi(p4), (float)atoi(p5), (float)atoi(p6), (float)atoi(p7), (float)atoi(p8), (float)atoi(p9), (float)atoi(p10), (float)atoi(p11), (float)atoi(p12), (float)atoi(p13), (float)atoi(p14), (float)atoi(p15), (float)atoi(p16), (float)atoi(p17), (float)atoi(p18), (float)atoi(p19));
+					//printf("\nSpeed: %d", )
+					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f, p10f);
+					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p11f, p12f, p13f, p14f, p15f, p16f, p17f, p18f, p19f);
 					
-					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
+					/*
+					printf("\np1: %f", (float)atoi(p1));
+					printf("\np2: %f", (float)atoi(p2));
+					printf("\np3: %f", (float)atoi(p3));
+					printf("\np4: %f", (float)atoi(p4));
+					printf("\np5: %f", (float)atoi(p5));
+					printf("\np6: %f", (float)atoi(p6));
+					printf("\np7: %f", (float)atoi(p7));
+					printf("\np8: %f", (float)atoi(p8));
+					printf("\np9: %f", (float)atoi(p9));
+					
+					
+					//printf("\np10: %f", (float)atoi(p10));
+					printf("\np11: %f", (float)atoi(p11));
+					printf("\np12: %f", (float)atoi(p12));
+					printf("\np13: %f", (float)atoi(p13));
+					printf("\np14: %f", (float)atoi(p14));
+					printf("\np15: %f", (float)atoi(p15));
+					printf("\np16: %f", (float)atoi(p16));
+					printf("\np17: %f", (float)atoi(p7));
+					printf("\np18: %f", (float)atoi(p18));
+					printf("\np19: %f", (float)atoi(p19));
+					
+					*/
+					
+					
 					double cart_speed = (float)atoi(p1);
+					//printf("\n1");
 					
 					struct Vector my_point_start = new_vector((float)atoi(p2), (float)atoi(p3), (float)atoi(p4));
+					//printf("\n2");
 					struct Vector my_dir_start = new_vector((float)atoi(p5), (float)atoi(p6), (float)atoi(p7));
+					//printf("\n3");
 					struct Config my_config_start = new_config((bool)atoi(p8), (bool)atoi(p9), (bool)atoi(p10));
+					//printf("\n4");
+					
+					/*
+					printf("\ncart_speed: %f (microns/sec)\n", cart_speed);
+					printf("\nmy_point_start: ");
+					print_vector(my_point_start);
+					printf("\nmy_dir_start: ");
+					print_vector(my_dir_start);
+					printf("\nBool input: %d, %d, %d\n", atoi(p17), atoi(p18), atoi(p19));
+					printf("\nmy_config_start:" );
+					print_config(my_config_start);
+					*/
 					struct XYZ xyz_start = new_XYZ(my_point_start, my_dir_start, my_config_start);
 					
-					struct Vector my_point_end = new_vector((float)atoi(p11), (float)atoi(p12), (float)atoi(p13));
-					struct Vector my_dir_end = new_vector((float)atoi(p14), (float)atoi(p15), (float)atoi(p16));
-					struct Config my_config_end = new_config((bool)atoi(p17), (bool)atoi(p18), (bool)atoi(p19));
-					struct XYZ xyz_end = new_XYZ(my_point_end, my_dir_end, my_config_end);
 					
+					//printf("\n5");
+					struct Vector my_point_end = new_vector((float)atoi(p11), (float)atoi(p12), (float)atoi(p13));
+					//printf("\n6");
+					struct Vector my_dir_end = new_vector((float)atoi(p14), (float)atoi(p15), (float)atoi(p16));
+					//printf("\n7");
+					struct Config my_config_end = new_config((bool)atoi(p17), (bool)atoi(p18), (bool)atoi(p19));
+					//printf("\n8");
+					struct XYZ xyz_end = new_XYZ(my_point_end, my_dir_end, my_config_end);
+					//printf("\n9");
 					
 					//printf("\nJangles: \n");
 					//printf("[%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
 					//printf("\n");
 					
+					//printf("\n\nStarting MOVETOSTRAIGHT:");
 					
+					//print_config(my_config_start);
+					/*
+					printf("\nxyz_start: ");
+					print_XYZ(xyz_start);
+					
+					printf("\n\nmy_point_end: ");
+					print_vector(my_point_end);
+					printf("\nmy_dir_end: ");
+					print_vector(my_dir_end);
+					printf("\nmy_config_end");
+					print_config(my_config_end);
+					printf("\nxyz_end: ");
+					print_XYZ(xyz_end);
+					printf("\n");
+					*/					
 
 					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL)
 						MoveRobotStraight(xyz_start, xyz_end, cart_speed);
