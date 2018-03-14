@@ -312,6 +312,9 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 //////////////////////////////////////////////////////////////////////////
 #define MOVETO_CMD 26
 #define MOVETOSTRAIGHT_CMD 27
+
+#define DEFAULT_MAXSPEED = 232642; // 30 (deg/s)
+#define DEFAULT_STARTSPEED = 512; // .066 (deg/s) This is the smallest number allowed
 //////////////////////////////////////////////////////////////////////////
 /* End Wigglesworth Code*/
 //////////////////////////////////////////////////////////////////////////
@@ -387,8 +390,13 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 
 
 
+
+
+
 //////////////////////////////////////////////////////////////////////////
 /* Start Wigglesworth Code*/
+
+
 
 //#include <cstdlib> //C++ header
 #include <math.h> // for trig and floor functions
@@ -544,7 +552,7 @@ bool is_equal(struct Vector v1, struct Vector v2, int decimals) {
 	*/
 	
 	//bool result = (r_v1.x == r_v2.x && r_v1.y == r_v2.y && r_v1.z == r_v2.z);
-	printf("\nresult: %d", result);
+	//printf("\nresult: %d", result);
 	return result;
 	
 }
@@ -648,11 +656,13 @@ double signed_angle(struct Vector v1, struct Vector v2, struct Vector plane) {
 }
 
 double dist_point_to_point(struct Vector point_a, struct Vector point_b) {
+	/*
 	printf("point_a: ");
 	print_vector(point_a);
 	printf(", point_b: ");
 	print_vector(point_b);
 	printf("\n");
+	*/
 	return magnitude(subtract(point_a, point_b));
 }
 
@@ -1072,9 +1082,11 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 
 	
 	//Debugging code
+	/*
 	printf("\n\nxyz_to_J_angles started:");
 	printf("\nInput: ");
 	print_XYZ(xyz);
+	*/
 	
 	/*
 	printf("\nU2_a: ");
@@ -1089,7 +1101,7 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 	printf("\n");
 	*/
 	
-	
+	/*
 	printf("\nU1: ");
 	print_vector(U1);
 	printf("\nU2: ");
@@ -1103,7 +1115,7 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 	printf("J_angles results: ");
 	print_J_angles(J);
 	printf("\n");
-
+	*/
 	
 
 	return J;
@@ -1114,7 +1126,7 @@ int k_tip_speed_to_angle_speed(struct J_angles J_angles_old, struct J_angles J_a
 	struct Vector EE_point_2 = J_angles_to_xyz(J_angles_old).position;
 	double dist_EE = dist_point_to_point(EE_point_1, EE_point_2);
 	if(dist_EE == 0){
-		return 232642; //30 (deg/s)
+		return 3877; //30 (deg/s)
 	}
 	double max_theta = J_angles_max_diff(J_angles_old, J_angles_new);
 	
@@ -1565,7 +1577,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 	long iTimeNormal = 1494628400;
 	int iTime=0;
 	int iElTime=0;
-	long            ms; // Milliseconds
+	long            ms; // Millisecondski
     time_t          s;  // Seconds
 	long lTime;
     struct timespec spec;
@@ -1677,7 +1689,7 @@ bool ProcessServerReceiveDataDDE(char *recBuff)
 	if(GotDelim==FALSE)
 	{
 		DexError=2;
-		////printf("%s",recBuff);
+		printf("%s",recBuff);
 		return FALSE;
 	}
 	CmdString[j-1]=0;
@@ -2927,7 +2939,8 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 
 int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 {
-	double max_step_size = 1000; //microns
+	
+	double max_step_size = 1; //microns
 	struct Vector U1 = xyz_1.position;
 	struct Vector U2 = xyz_2.position;
 	struct Vector U21 = subtract(U2, U1);
@@ -2936,7 +2949,7 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 	int num_div = (int)ceil(U21_mag/max_step_size);
 	double step = U21_mag / num_div;
 	
-	double angular_velocity;
+	int angular_velocity;
 	struct Vector Ui;
 	
 	
@@ -2951,7 +2964,8 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 	struct J_angles J_angles_old = xyz_to_J_angles(cur_xyz);
 	
 	
-	printf("\n\nStarting MoveRobotStraight:");
+	printf("\n\nStarting pre-calculation for MoveRobotStraight:");
+	
 	printf("\nxyz_1: ");
 	print_XYZ(xyz_1);
 	printf("\nxyz_2: ");
@@ -2963,11 +2977,12 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 	printf("\nv21:");
 	print_vector(v21);
 	printf("\nU21_mag: %f", U21_mag);
-	printf("\nnum_div: %f", num_div);
-	printf("\step: %f", step);
+	printf("\nnum_div: %i", num_div);
+	printf("\nstep: %f", step);
 	
 	
 	int i;
+	int cal_max_angular_velocity = 0;
 	for(i=0;i<=num_div;i++){
 		Ui = add(U1, scalar_mult(((float)i)*step, v21));
 		cur_xyz.position = Ui;
@@ -2977,23 +2992,34 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 		J_angles_list[i] = J_angles_new;
 		speeds_list[i] = angular_velocity;
 		
-		printf("\nang_vel: %d  J: ");
-		print_J_angles(J_angles_new);
+		
+		//printf("\nang_vel: %d  J: ");
+		//print_J_angles(J_angles_new);
+		if(angular_velocity > cal_max_angular_velocity){
+			cal_max_angular_velocity = angular_velocity;
+		}
+		//printf("%i: %i", i, angular_velocity);
 		
 	}
-	printf("\nDone with MoveRobotStraight");
-	printf("\n\n");
+	
+	printf("\nDone pre-calculating MoveRobotStraight");
+	printf("cal_max_angular_velocity = %i", cal_max_angular_velocity);
+	printf("\nStarting MoveRobotStraight movement");
+	printf("\n");
 	
 	
 	
-	int cur_angular_velocity;
+	int cur_angular_velocity = 38773; //5 (deg/s)
 	for(i=0;i<=num_div;i++){
-		cur_angular_velocity = speeds_list[i];
+		//cur_angular_velocity = speeds_list[i];
+		
+		
 		
 		//Maxspeed
-		maxSpeed=cur_angular_velocity & 0b00000000000011111111111111111111;
-		mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
-
+		mapped[ACCELERATION_MAXSPEED]=cur_angular_velocity;
+		maxSpeed=(cur_angular_velocity) & 0b00000000000011111111111111111111;
+		coupledAcceleration=((cur_angular_velocity) & 0b00000011111100000000000000000000) >> 20;
+		
 		//Startspeed
 		mapped[START_SPEED]=1 ^ cur_angular_velocity;
 		
@@ -4016,6 +4042,7 @@ int ParseInput(char *iString)
 					*/					
 
 					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL)
+						//printf("\n\nStarting MoveRobotStraight:\n");
 						MoveRobotStraight(xyz_start, xyz_end, cart_speed);
 						//MoveRobot(J1, J2, J3, J4, J5, BLOCKING_MOVE);
 					
@@ -4247,7 +4274,22 @@ int main(int argc, char *argv[]) {
 		}
 		mapped[BASE_POSITION]=1;
     	#ifndef NO_BOOT_DANCE
-
+		
+		
+		/*
+		//Wigglesworth Code Start
+		int DEFAULT_MAXSPEED = 232642; // 30 (deg/s)
+		int DEFAULT_STARTSPEED = 512; // .066 (deg/s) This is the smallest number allowed
+		
+		//Maxspeed
+		mapped[ACCELERATION_MAXSPEED]=DEFAULT_MAXSPEED;
+		maxSpeed=(DEFAULT_MAXSPEED) & 0b00000000000011111111111111111111;
+		coupledAcceleration=((DEFAULT_MAXSPEED) & 0b00000011111100000000000000000000) >> 20;
+		
+		//Startspeed
+		mapped[START_SPEED]=1 ^ DEFAULT_STARTSPEED;
+		//Wigglesworth Code End
+		*/
 
 		MoveRobot(0,0,0,50000,50000,BLOCKING_MOVE);
 	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
