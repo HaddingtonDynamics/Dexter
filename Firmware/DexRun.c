@@ -3008,25 +3008,28 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 	printf("\n");
 	
 	
-	
+	/*
 	int cur_angular_velocity = 38773; //5 (deg/s)
 	for(i=0;i<=num_div;i++){
 		//cur_angular_velocity = speeds_list[i];
 		
 		
-		
-		//Maxspeed
-		mapped[ACCELERATION_MAXSPEED]=cur_angular_velocity;
-		maxSpeed=(cur_angular_velocity) & 0b00000000000011111111111111111111;
-		coupledAcceleration=((cur_angular_velocity) & 0b00000011111100000000000000000000) >> 20;
-		
 		//Startspeed
+		printf("mapped startspeed: %i", 1 ^ cur_angular_velocity);
 		mapped[START_SPEED]=1 ^ cur_angular_velocity;
 		
-		MoveRobot(J_angles_list[i].J1, J_angles_list[i].J2, J_angles_list[i].J3, J_angles_list[i].J4, J_angles_list[i].J5, BLOCKING_MOVE);
+		
+		//Maxspeed
+		maxSpeed=cur_angular_velocity & 0b00000000000011111111111111111111;
+		printf("maxSpeed: %i", cur_angular_velocity & 0b00000000000011111111111111111111);
+		mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
+		printf("mapped startspeed: %i", maxSpeed + (coupledAcceleration << 20));
+		
+		printf("i = %i, J1 = %f", i, J_angles_list[i].J1);
+		//MoveRobot(J_angles_list[i].J1, J_angles_list[i].J2, J_angles_list[i].J3, J_angles_list[i].J4, J_angles_list[i].J5, BLOCKING_MOVE);
 	}
-	
-	
+	*/
+	printf("\n MoveRobotStraight movement");
 	
 	return 0;
 }
@@ -3914,7 +3917,7 @@ int ParseInput(char *iString)
 				case MOVETOSTRAIGHT_CMD:
 					printf("\n\nStarting MoveToStraight\n");
 					
-					printf("\niString: \n%s", iString);
+					//printf("\niString: \n%s", iString);
 					
 				
 					p1 = strtok(NULL, delimiters);
@@ -3926,9 +3929,6 @@ int ParseInput(char *iString)
 					p7 = strtok(NULL, delimiters);
 					p8 = strtok(NULL, delimiters);
 					p9 = strtok(NULL, delimiters);
-					
-					
-					
 					p10 = strtok(NULL, delimiters);
 					
 					/*
@@ -4041,10 +4041,12 @@ int ParseInput(char *iString)
 					printf("\n");
 					*/					
 
-					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL)
+					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL){
+						
 						//printf("\n\nStarting MoveRobotStraight:\n");
 						MoveRobotStraight(xyz_start, xyz_end, cart_speed);
 						//MoveRobot(J1, J2, J3, J4, J5, BLOCKING_MOVE);
+					}
 					
 				break;
 				
