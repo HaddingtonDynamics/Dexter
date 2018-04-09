@@ -8,8 +8,10 @@ Username: root
 password: klg
 
 Change Makefile:
+````
 cd /usr/src/xillinux/xillybus-lite/demo
 nano Makefile
+````
 change Makefile to:
 
 ````
@@ -44,42 +46,55 @@ clean:
 .c.o:
         $(CC) $(CFLAGS) -c -o $@ $<
 ````
+ctr+x and hit y then enter to save a file from nano.
 
 Change pg:
-
-cd srv/samba/share
+````
+cd /srv/samba/share
 nano pg
-change "uiotest" to "DexRun"
-
+````
+change "uiotest" to "DexRun". It should look like this:
+````
 #!/bin/sh
 ech0 "changing directory"
 cd /usr/src/xillinux/xillybus-lite/demo
 cp -f /srv/samba/share/DexRun.c .
 make
 cp -f DexRun.c /srv/samba/share/.
-
-
-
-
+````
 
 Setup to auto-run DexRun on bootup:
+````
 cd /etc/
 nano rc.local
+````
 change "uiotest" to "DexRun"
-ctr+x and hit y then enter to save
 
 
 
 Put DexRun.c into /srv/samba/share/
-To do this from usb:
 
+If you have access to the share from your PC, just save the file there. E.g. to
+\\192.168.1.142\share
+
+Otherwise, copy the file from you PC to a USB flash drive, and then eject it and plug it into Dexter, then:
+```
 mount /dev/sda1 /mnt/usbstick		(if mount doesn't work lsblk and look for usb name)
 cd /srv/samba/share
 cp /mnt/usbstick/DexRun.c .		(hit y to overwrite if it already exists)
+````
+
+In either case, you need to update the file date:
+````
 date -s "5mar18 21:30"			(change to current date)
 ./pg					(if ./pg has an error I screwed up and gave you uncomplible code)
-./DexRun 1 3 0
+````
 
+Kill the 
+
+top
+./DexRun 1 3 0
+```
 
 
 
