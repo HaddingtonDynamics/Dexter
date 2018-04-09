@@ -12,7 +12,7 @@ cd /usr/src/xillinux/xillybus-lite/demo
 nano Makefile
 change Makefile to:
 
-
+````
 GNUPREFIX=
 
 CC=$(GNUPREFIX)gcc
@@ -43,7 +43,7 @@ clean:
 
 .c.o:
         $(CC) $(CFLAGS) -c -o $@ $<
-
+````
 
 Change pg:
 
