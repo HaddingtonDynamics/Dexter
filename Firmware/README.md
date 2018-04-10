@@ -1,13 +1,10 @@
-Written on 3/5/18
-
-
 DexRun install:
 
-putty into Dexter.
+**putty into Dexter.**
 Username: root
 password: klg
 
-Change Makefile:
+**Change Makefile:**
 ````
 cd /usr/src/xillinux/xillybus-lite/demo
 nano Makefile
@@ -48,7 +45,7 @@ clean:
 ````
 ctr+x and hit y then enter to save a file from nano.
 
-Change pg:
+**Change pg:**
 ````
 cd /srv/samba/share
 nano pg
@@ -63,7 +60,7 @@ make
 cp -f DexRun.c /srv/samba/share/.
 ````
 
-Setup to auto-run DexRun on bootup:
+**Setup to auto-run DexRun on bootup:**
 ````
 cd /etc/
 nano rc.local
@@ -72,7 +69,7 @@ change "uiotest" to "DexRun"
 
 
 
-Put DexRun.c into /srv/samba/share/
+**Put DexRun.c into /srv/samba/share/**
 
 If you have access to the share from your PC, just save the file there. E.g. to
 \\192.168.1.142\share
@@ -84,29 +81,34 @@ cd /srv/samba/share
 cp /mnt/usbstick/DexRun.c .		(hit y to overwrite if it already exists)
 ````
 
-In either case, you need to update the file date:
+In either case, you need to 
+**Update the file date:**
 ````
 date -s "5mar18 21:30"			(change to current date)
 ./pg					(if ./pg has an error I screwed up and gave you uncomplible code)
 ````
 
-Kill the 
-
+**Kill the currently running program**
+````
 top
+````
+Find the PID for the old program and press 'k' then enter that PID. Answer 'Y' to confirm and ctrl-C to exit top.
+
+**Run the new program**
+<br>You can run it from the command line, or just restart Dexter to run it via the rc.local file.
+```
 ./DexRun 1 3 0
 ```
-
-
 
 Back in DDE:
 
 Format of MOVETO:
-make_ins("M", x(microns), y(microns), z(microns), dir_x, dir_y, dir_z, config_right_left, elbow_up_down, wrist_in_out)
-Example:
-make_ins("M", 0, 0.5/_um, 0.075/_um, 0, 0, -1, 1, 1, 1)
+<br>`make_ins("M", x(microns), y(microns), z(microns), dir_x, dir_y, dir_z, config_right_left, elbow_up_down, wrist_in_out)`
+<br>Example:
+<br>`make_ins("M", 0, 0.5/_um, 0.075/_um, 0, 0, -1, 1, 1, 1)`
 
 Format of MOVETOSTRAIGHT:
-make_ins("T", cartesian_speed(micron/sec), x1(microns), y1(microns), z1(microns), dir_x1, dir_y1, dir_z1, config_right_left1, elbow_up_down1, wrist_in_out1, x2, y2, z2, dir_x2, dir_y2, dir_z2, config_right_left2, elbow_up_down2, wrist_in_out2)
-Example:
-make_ins("T", 50000, .1 /_um, 0.5 /_um, 0.075 /_um, 0, 0, -1, 1, 1, 1, -.1/_um, 0.5/_um, 0.075/_um, 0, 0, -1, 1, 1, 1)
+<br>`make_ins("T", cartesian_speed(micron/sec), x1(microns), y1(microns), z1(microns), dir_x1, dir_y1, dir_z1, config_right_left1, elbow_up_down1, wrist_in_out1, x2, y2, z2, dir_x2, dir_y2, dir_z2, config_right_left2, elbow_up_down2, wrist_in_out2)`
+<br>Example:
+<br>`make_ins("T", 50000, .1 /_um, 0.5 /_um, 0.075 /_um, 0, 0, -1, 1, 1, 1, -.1/_um, 0.5/_um, 0.075/_um, 0, 0, -1, 1, 1, 1)`
 
