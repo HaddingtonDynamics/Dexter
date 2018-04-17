@@ -85,7 +85,12 @@ In either case, you need to
 **Update the file date:**
 ````
 date -s "5mar18 21:30"			(change to current date)
-./pg					(if ./pg has an error I screwed up and gave you uncomplible code)
+````
+
+And now you can compile DexRun.c
+**Compile**
+````
+./pg 2>&1 | grep "error"		(if ./pg has an error I screwed up and gave you uncomplible code)
 ````
 
 **Kill the currently running program**
