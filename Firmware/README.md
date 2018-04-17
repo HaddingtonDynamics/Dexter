@@ -81,14 +81,13 @@ cd /srv/samba/share
 cp /mnt/usbstick/DexRun.c .		(hit y to overwrite if it already exists)
 ````
 
-In either case, you need to 
+In either case, you need to <br>
 **Update the file date:**
 ````
 date -s "5mar18 21:30"			(change to current date)
 ````
 
-And now you can compile DexRun.c
-**Compile**
+**Compile** And now you can compile DexRun.c
 ````
 ./pg 2>&1 | grep "error"		(if ./pg has an error I screwed up and gave you uncomplible code)
 ````
