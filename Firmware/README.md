@@ -45,7 +45,7 @@ clean:
 ````
 ctr+x and hit y then enter to save a file from nano.
 
-**Change pg:**
+**Change pg:** pg is just a simple script that makes it easy to make DexRun from the share folder. 
 ````
 cd /srv/samba/share
 nano pg
@@ -57,8 +57,9 @@ ech0 "changing directory"
 cd /usr/src/xillinux/xillybus-lite/demo
 cp -f /srv/samba/share/DexRun.c .
 make
-cp -f DexRun.c /srv/samba/share/.
+cp -f DexRun /srv/samba/share/.
 ````
+You might want to rename pg to makeDexRun. This would also be a good place to backup the prior DexRun file so that if there are problems, they can be easily reverted.  
 
 **Setup to auto-run DexRun on bootup:**
 ````
