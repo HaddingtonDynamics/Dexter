@@ -1,9 +1,19 @@
 # Dexter
 
-You can find our main website: http://hdrobotic.com/
+Main website:<br>
+http://hdrobotic.com/
 
-You can find DDE at: https://github.com/cfry/dde
+You can find DDE at:<br>
+https://github.com/cfry/dde
 
-You can find existing Dexter hardware interface code at: https://github.com/kgallspark/Dexter (The Firmware folder here has new development which should be useful in the near future)
+FPGA Gateware:<br>
+https://github.com/kgallspark/Dexter (The Firmware folder here replaces the firmware part of that repo)
 
-You can find Dexter STL files at: https://www.thingiverse.com/thing:2108244
+STL files:<br>
+https://www.thingiverse.com/thing:2108244 main<br>
+https://www.thingiverse.com/thing:2842496 covers<br>
+OnShape CAD:<br>
+https://cad.onshape.com/documents/2af8ed0e61a34ebf69284c68/w/72caf65e51bde98e456925d2/e/6843c182cbf9181dbb307455
+
+Unity visualization and control:
+https://github.com/zalo/Dexter
