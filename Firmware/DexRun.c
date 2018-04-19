@@ -312,6 +312,7 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 //////////////////////////////////////////////////////////////////////////
 #define MOVETO_CMD 26
 #define MOVETOSTRAIGHT_CMD 27
+#define WRITE_TO_ROBOT 28
 
 #define DEFAULT_MAXSPEED = 232642; // 30 (deg/s)
 #define DEFAULT_STARTSPEED = 512; // .066 (deg/s) This is the smallest number allowed
@@ -653,6 +654,7 @@ double signed_angle(struct Vector v1, struct Vector v2, struct Vector plane) {
 		print_vector(plane);
 		printf("\n\n");
 	}
+	return 0;
 }
 
 double dist_point_to_point(struct Vector point_a, struct Vector point_b) {
@@ -828,7 +830,7 @@ struct XYZ J_angles_to_xyz(struct J_angles angles) {
 	
 	struct Vector P0 = {1, 0, 0};
 	struct Vector P1 = {0, 0, 0};
-	struct Vector P2 = {0, 0, 0};
+	//struct Vector P2 = {0, 0, 0};
 	
 
 	// Forward Kinematic solved, now to determine configuration:
@@ -1151,7 +1153,7 @@ int k_tip_speed_to_angle_speed(struct J_angles J_angles_old, struct J_angles J_a
 
 
 
-
+FILE *wfp; //File handle to write data into via socket 'W' command
 int XLowBound[5]={BASE_COS_LOW,END_COS_LOW,PIVOT_COS_LOW,ANGLE_COS_LOW,ROT_COS_LOW};
 int XHighBound[5]={BASE_COS_HIGH,END_COS_HIGH,PIVOT_COS_HIGH,ANGLE_COS_HIGH,ROT_COS_HIGH};
 int YLowBound[5]={BASE_SIN_LOW,END_SIN_LOW,PIVOT_SIN_LOW,ANGLE_SIN_LOW,ROT_SIN_LOW};
@@ -1237,7 +1239,7 @@ struct CaptureArgs {
    FILE *fp;
 };
 struct CaptureArgs CptA,CptMove;
-#define MAX_PARAMS 26
+#define MAX_PARAMS 28
 #define PARAM_LENGTH 20
 char Params[MAX_PARAMS][PARAM_LENGTH+1] = {"MaxSpeed", "Acceleration", "J1Force","J3Force","J2Force","J4Force","J5Force","J1Friction","J3Friction","J2Friction","J4Friction","J5Friction","J1BoundryHigh","J1BoundryLow","J3BoundryHigh","J3BoundryLow","J2BoundryHigh","J2BoundryLow","J4BoundryHigh","J4BoundryLow","J5BoundryHigh","J5BoundryLow","GripperMotor","EERoll","EESpan","StartSpeed","EndSpeed","End"};
 
@@ -1258,6 +1260,18 @@ int LastGoal[5]={0,0,0,0,0};
 
 float JointsCal[5];
 int SoftBoundries[5];
+
+//prototypes
+int getNormalizedInput(int);
+int RestoreCalTables(char *filename);
+void ProcessServerReceiveData(char *recBuff);
+bool ProcessServerReceiveDataDDE(char *recBuff);
+bool ProcessServerSendData(char *recBuff);
+bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff);
+int ParseInput(char *iString);
+int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode);
+int ReadDMA(int p1,int p2,char *p3);
+int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5);
 
 void printPosition()
 {
@@ -1280,7 +1294,7 @@ int sign(int i)
 	return 0;
 }
 
-void RealtimeMonitor(void *arg)
+void *RealtimeMonitor(void *arg)
 {
 	int* ExitState = arg;
 	int i,j,ForceDelta,disTime=0;
@@ -1334,7 +1348,9 @@ void RealtimeMonitor(void *arg)
 		usleep(1000);
 	}
 	//printf("\nMonitor Thread Exiting\n");
+    return NULL;
 }
+
 void SetGripperRoll(int Possition)
 {
 	int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
@@ -1358,7 +1374,7 @@ void SetGripperMotor(int state)
 	mapped[GRIPPER_MOTOR_OFF_WIDTH]=0;
 	mapped[GRIPPER_MOTOR_CONTROL]=state;
 }
-void StartServerSocketDDE(void *arg)
+void *StartServerSocketDDE(void *arg)
 {
 	struct timeval tv;
 	tv.tv_sec = 30;  /* 30 Secs Timeout */
@@ -1427,9 +1443,9 @@ void StartServerSocketDDE(void *arg)
 //			while ( (RLength = recv (connfd,recBuff,sizeof(recBuff),0 )) > 0)
 				{
 					//recBuff[RLength]=0;
-					ProcessServerReceiveDataDDE(recBuff);
+					(void)ProcessServerReceiveDataDDE(recBuff);
 				
-					ProcessServerSendDataDDE(sendBuff,recBuff);/*==TRUE)*/
+					(void)ProcessServerSendDataDDE(sendBuff,recBuff);/*==TRUE)*/
 						write (connfd,sendBuff,60*4/*sizeof(sendBuff)*/); 
 				}
 			}
@@ -1439,9 +1455,10 @@ void StartServerSocketDDE(void *arg)
         close(connfd);
         //sleep(1);
      }
-
+    return NULL;
 }
-void StartServerSocket(void *arg)
+
+void *StartServerSocket(void *arg)
 {
 	int* ExitState = arg;
 	int listenfd = 0, connfd = 0,RLength = 0,SLength = 0;
@@ -1489,8 +1506,9 @@ void StartServerSocket(void *arg)
         close(connfd);
        
     }
-
+    return NULL;
 }
+
 int MaxForce(int Max,int Val)
 {
 	if(abs(Max) > abs(Val))
@@ -1502,7 +1520,7 @@ int MaxForce(int Max,int Val)
 		return abs(Max)*sign(Val);
 	}
 }
-bool ProcessServerReceiveData(char *recBuff)
+void ProcessServerReceiveData(char *recBuff)
 {
 	struct BotPossition MyBot;
 	int MxForce=9800;
@@ -1706,7 +1724,7 @@ bool ProcessServerReceiveDataDDE(char *recBuff)
 	return TRUE;
 }
 
-void StartClientSocket()
+void *StartClientSocket()
 {
     int sockfd = 0, n = 0,j;
     char recvBuff[64];
@@ -1721,7 +1739,7 @@ void StartClientSocket()
     if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
         //printf("\n Error : Could not create socket \n");
-        return 1;
+        return &"Socket create failed";
     } 
 
     memset(&serv_addr, '0', sizeof(serv_addr)); 
@@ -1733,12 +1751,12 @@ void StartClientSocket()
     if(inet_pton(AF_INET, RemoteRobotAdd/*"192.168.1.145"*/, &serv_addr.sin_addr)<=0)
     {
         //printf("\n inet_pton error occured\n");
-        return 1;
+        return &"inet_pton failed";
     } 
     if( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
        //printf("\n Error : Connect Failed \n");
-       return 1;
+       return &"connect failed";
     } 
 //	//printf("\n Socket connect\n");
 //	while(1)//for(j=0;j<1000;j++)
@@ -1794,13 +1812,15 @@ void StartClientSocket()
 
 #else
 			ProcessServerReceiveData(recvBuff);
-			ProcessServerSendData(sendBuff);
+			(void)ProcessServerSendData(sendBuff);
 			
 #endif			
 			write(sockfd,sendBuff,sizeof(sendBuff));
 		}
 	}
+    return NULL;
 }
+
 int GetAxisCurrent(int Axis)
 {
 	return getNormalizedInput(BASE_POSITION_AT+Axis)+getNormalizedInput(BASE_POSITION_FORCE_DELTA+Axis);
@@ -1845,7 +1865,7 @@ char getche(void)
 
 int FindIndex(int Axis,int Start,int Length,int Delay)
 {
-	int i,j,k,ADVal,AvgCOS,AvgSIN;
+	int i,j,k,ADVal,AvgCOS=0,AvgSIN=0;
 	switch(Axis)
 	{
 	    case 0  :
@@ -1907,7 +1927,8 @@ void* CapturePoints(void *arg)
 	int a1,a2,a3,a4,a5,f1,f2,f3,f4,f5,BGM=10,EmbedRec=1,RecState=0,Length=0,GripperToggle=0,ServoSet=180;
 	const char delimiters[] = ".";
 
-	char c,*FileNameBase,*FileNameExt,*tmpSt,RecordFilename[256],iString[256];
+	char c,*FileNameBase,*FileNameExt,RecordFilename[256],iString[256];
+      char tmpSt[(8 * sizeof(EmbedRec) / 3) + 3]; //safe bet for the number of decimal digits
 //    pthread_t id = pthread_self();
 	initTermios(0);
 	f1=0;
@@ -1951,9 +1972,9 @@ void* CapturePoints(void *arg)
 				//FileNameExt=strtok (NULL, delimiters);
 				strcpy(RecordFilename,FileNameBase);
 				strcat(RecordFilename,"ERM");
-				asprintf(&tmpSt, "%d", EmbedRec++);
+				snprintf(tmpSt, sizeof(tmpSt), "%d", EmbedRec++);
 				strcat(RecordFilename,tmpSt);
-				free(tmpSt);
+				//free(tmpSt);
 				strcat(RecordFilename,".dta");
 				a1=getNormalizedInput(BASE_POSITION_AT)+getNormalizedInput(BASE_POSITION_FORCE_DELTA)+f1;
 				a3=getNormalizedInput(END_POSITION_AT)+getNormalizedInput(END_POSITION_FORCE_DELTA)+f3;
@@ -2342,14 +2363,16 @@ int fixedPointCV(float Val,int whole,int fract)
 	return 0;
 }
 
+/* Never used
 void CvrtBoundary_CenterMag_to_HILOW(int Center, int Magnitude, int *ResultHi, int *ResultLow)
 {
-  ResultHi = Center + Magnitude;
-  ResultLow = Center - Magnitude;  
+  *ResultHi = Center + Magnitude;
+  *ResultLow = Center - Magnitude;  
 }
-unsigned int CvrtBoundary_HILOW_to_CenterMag(int High, int Low)
-{
-}
+*/
+
+
+//unsigned int CvrtBoundary_HILOW_to_CenterMag(int High, int Low){}
 
 
 void setDefaults(int State)
@@ -2397,7 +2420,7 @@ void setDefaults(int State)
 	RemoteRobotAddress = fopen("RemoteRobotAddress.txt", "rs");
 	if(RemoteRobotAddress!=NULL)
 	{
-		fgets(RemoteRobotAdd, sizeof(RemoteRobotAdd)+1, RemoteRobotAddress);
+		fgets(RemoteRobotAdd, sizeof(RemoteRobotAdd), RemoteRobotAddress);
 		//fscanf(RemoteRobotAddress,"%[^\n]",RemoteRobotAdd);
 		//printf("%s \n",RemoteRobotAdd);
 		fclose(RemoteRobotAddress);
@@ -2713,6 +2736,8 @@ void wait_fifo_flush(void)
 int HashInputCMD(char *s)
 {
 
+	if(s[0]=='W') 
+            return WRITE_TO_ROBOT;
 	if(s[0]=='r')
 		return READ_CMD;
 	if(s[0]=='B')
@@ -2867,7 +2892,7 @@ int WaitMoveGoal(int a1,int a2,int a3,int a4,int a5,int timeout)
 		
 }
 
-int moverobotPID(int a1,int a2,int a3,int a4,int a5)
+void moverobotPID(int a1,int a2,int a3,int a4,int a5)
 {
 	CheckBoundry(&a1,&a2,&a3,&a4,&a5);	
 	a1=(int)((double)a1 * JointsCal[0]);
@@ -2922,7 +2947,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	a4=(int)((double)a4 * JointsCal[3]);
 	a5=(int)((double)a5 * JointsCal[4]);
 	//printf("angles result %d %d %d %d %d",a1,a2,a3,a4,a5);
-	while(mapped[CMD_FIFO_STATE] & 0x01 != 0);
+	while((mapped[CMD_FIFO_STATE] & 0x01) != 0);
 	
 	mapped[COMMAND_REG]=CMD_MOVEEN | CmdVal;
 	mapped[BASE_POSITION]=a1;
@@ -3332,7 +3357,7 @@ int ReadDMA(int p1,int p2,char *p3)
 	}
 	return 0;
 }
-int SaveTables(int Address,char *FileName)
+void SaveTables(int Address,char *FileName)
 {
 	FILE *fp;
 	int writeSize=0,i;
@@ -3355,7 +3380,7 @@ int SaveTables(int Address,char *FileName)
 		fprintf(fp,"var fileArray = [");
 		for(i = 0;i < 4*1024*1024;i ++)
 		{
-			fprintf(fp,"%d, ",(int *)CalTables[i]);
+			fprintf(fp,"%d, ",CalTables[i]);
 		}
 		fprintf(fp,"0 ]");
 		fclose(fp);
@@ -3425,7 +3450,7 @@ int RestoreCalTables(char *FileName)
 int WriteDMA(int Address,char *FileName)
 {
 	FILE *fp;
-	int i,j,blocks,readSize,Length;
+	int i,j,blocks,readSize,Length=0;
 	int dataarray[256];
 	fp=fopen(FileName, "rb");
 	if(fp!=0)
@@ -3439,7 +3464,7 @@ int WriteDMA(int Address,char *FileName)
 		blocks=Length/256;
 		for(j=0;j<blocks;j++) // only do full blocks inside loop
 		{	
-			if(readSize=fread((const void *)dataarray,sizeof(int),256,fp)==256)
+			if( ( readSize=fread((const void *)dataarray,sizeof(int),256,fp) )==256)
 			{
 				mapped[DMA_WRITE_ADDRESS]=Address+(j*1024);
 				mapped[DMA_WRITE_PARAMS]=(2<<8) | 127;
@@ -3687,13 +3712,14 @@ int getInput(void)
 	{
 		return ParseInput(iString);
 	}
+    return 0;
 }
 
 int ParseInput(char *iString)
 {
 	//char iString[255];
 	const char delimiters[] = " ,";
-	char *token,*p1,*p2,*p3,*p4,*p5,*p6,*p7,*p8,*p9,*p10,*p11,*p12,*p13,*p14,*p15,*p16,*p17,*p18,*p19,*p20;
+	char *token,*p1,*p2,*p3,*p4,*p5,*p6,*p7,*p8,*p9,*p10,*p11,*p12,*p13,*p14,*p15,*p16,*p17,*p18,*p19;
 	int BDH,BDL;
 
 
@@ -3711,7 +3737,42 @@ int ParseInput(char *iString)
 			return 1;
 		if (tokenVal != 0 ){
 			switch(tokenVal)
-			{	
+			{
+				case WRITE_TO_ROBOT:
+					p1=strtok (NULL, delimiters);
+                              Add=(int)p1[0];
+                              printf("write %s %d: ",p1,Add);
+					switch(Add) {
+					   case 'f': //filename
+						p2=strtok(NULL, delimiters);//always zero, toss it.
+						p2=strtok(NULL, delimiters);//filename
+						if(wfp) fclose(wfp);
+						wfp = fopen(p2, "w");
+                                    printf("Opened %s as handle %d. ",p2,fileno(wfp));
+						break;
+					   case 's': //start
+					   case 'm': //middle
+					   case 'e': //end
+						p2=strtok(NULL, delimiters);//bytes
+                                    Length=atoi(p2);
+                                    printf("Length: %d bytes. ", Length);
+                                    if (0<Length && 128>Length) {
+                                        p3=strtok(NULL, "");//remaining data
+                                        printf("Found: %d bytes. ", strlen(p3));
+                                        i=fwrite(p3, 1, Length, wfp);
+                                        printf("Wrote %d bytes. ",i);
+                                        }
+						if('e'==Add && wfp) {
+                                        fclose(wfp);
+                                        wfp = 0;
+                                        printf(" Finished write.");
+                                        }
+						break;
+				          default : 
+		              		printf("\nunrecognized subcommand");
+            				break;
+						}
+				break;
 				case PID_FINEMOVE :
 					p1=strtok (NULL, delimiters);
 					p2=strtok (NULL, delimiters);
