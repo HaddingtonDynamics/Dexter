@@ -96,11 +96,11 @@ date -s "5mar18 21:30"			(change to current date)
 ./pg 2>&1 | grep "error"		(if ./pg has an error I screwed up and gave you uncomplible code)
 ````
 
-**Kill the currently running program**
+**Kill the currently running program** <sup><a href="https://stackoverflow.com/questions/160924/how-can-i-kill-a-process-by-name-instead-of-pid">1</a></sup>
 ````
-top
+pkill DexRun
 ````
-Find the PID for the old program and press 'k' then enter that PID. Answer 'Y' to confirm and ctrl-C to exit top.
+
 
 **Run the new program**
 <br>You can run it from the command line, or just restart Dexter to run it via the rc.local file.
