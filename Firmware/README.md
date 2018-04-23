@@ -108,7 +108,12 @@ pkill DexRun
 ./DexRun 1 3 0
 ```
 
-Back in DDE:
+**Debugging notes**
+<br>1. printf's used for debugging don't show up until a `\n` is sent. E.g. `printf("hello");` shows nothing at all. `printf(" world\n");` then shows "hello world"
+<br>2. printfs slow down network communications when DexRun is not running from the shell. e.g. When it is run on startup from rc.local, any printf's will cause a delay to replies while the system times out waiting for the message to print to nothing. Use sparingly and avoid in areas where speed is critical.
+
+
+**Back in DDE:**
 
 Format of MOVETO:
 <br>`make_ins("M", x(microns), y(microns), z(microns), dir_x, dir_y, dir_z, config_right_left, elbow_up_down, wrist_in_out)`
