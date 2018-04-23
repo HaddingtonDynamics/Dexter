@@ -314,6 +314,8 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define MOVETOSTRAIGHT_CMD 27
 #define WRITE_TO_ROBOT 28
 
+#define WRITE_TO_ROBOT_MAX_CHARS 64
+
 #define DEFAULT_MAXSPEED = 232642; // 30 (deg/s)
 #define DEFAULT_STARTSPEED = 512; // .066 (deg/s) This is the smallest number allowed
 //////////////////////////////////////////////////////////////////////////
@@ -1707,7 +1709,7 @@ bool ProcessServerReceiveDataDDE(char *recBuff)
 	if(GotDelim==FALSE)
 	{
 		DexError=2;
-		printf("%s",recBuff);
+		printf("\n No delim:%s\n",recBuff);
 		return FALSE;
 	}
 	CmdString[j-1]=0;
@@ -1718,7 +1720,7 @@ bool ProcessServerReceiveDataDDE(char *recBuff)
 		
 	}
 	////printf("\n%s \n",recBuff);
-	printf("\n%s \n",CmdString);
+	//printf("\n%s \n",CmdString);
 	DexError=ParseInput(CmdString); 
 ////printf("\nsent parse\n"); 
 	return TRUE;
@@ -3715,6 +3717,30 @@ int getInput(void)
     return 0;
 }
 
+unsigned char h2int(char c) {
+  if (c >= '0' && c <='9') { return((unsigned char)c - '0');      }
+  if (c >= 'a' && c <='f') { return((unsigned char)c - 'a' + 10); }
+  if (c >= 'A' && c <='F') { return((unsigned char)c - 'A' + 10); }
+  return(0);
+  }
+
+int unescape(char *buf, int len) {
+// (originally based on https://code.google.com/p/avr-netino/)
+  char c;
+  int olen=0;
+  char *out;
+  out = buf;
+  for(;len>0;len--) {
+    c = *buf++;
+    if (c == '%') {
+      c = *buf++;len--;
+      c = (h2int(c) << 4) | h2int(*buf++);len--;
+      }
+    *out++=c;olen++;
+    }
+  return olen;
+  }
+
 int ParseInput(char *iString)
 {
 	//char iString[255];
@@ -3741,7 +3767,7 @@ int ParseInput(char *iString)
 				case WRITE_TO_ROBOT:
 					p1=strtok (NULL, delimiters);
                               Add=(int)p1[0];
-                              printf("write %s %d: ",p1,Add);
+                              printf("\nwrite %s %d: ",p1,Add);
 					switch(Add) {
 					   case 'f': //filename
 						p2=strtok(NULL, delimiters);//always zero, toss it.
@@ -3755,17 +3781,19 @@ int ParseInput(char *iString)
 					   case 'e': //end
 						p2=strtok(NULL, delimiters);//bytes
                                     Length=atoi(p2);
-                                    printf("Length: %d bytes. ", Length);
-                                    if (0<Length && 128>Length) {
+                                    printf("Length: %d bytes. \n", Length);
+                                    if (0<Length && WRITE_TO_ROBOT_MAX_CHARS>=Length) {
                                         p3=strtok(NULL, "");//remaining data
                                         printf("Found: %d bytes. ", strlen(p3));
+                                        Length = unescape(p3, Length);
+                                        printf(" %d bytes after unescape",Length);
                                         i=fwrite(p3, 1, Length, wfp);
                                         printf("Wrote %d bytes. ",i);
                                         }
 						if('e'==Add && wfp) {
                                         fclose(wfp);
                                         wfp = 0;
-                                        printf(" Finished write.");
+                                        printf(" Finished write.\n");
                                         }
 						break;
 				          default : 
