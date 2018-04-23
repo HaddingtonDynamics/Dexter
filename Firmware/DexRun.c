@@ -314,8 +314,6 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define MOVETOSTRAIGHT_CMD 27
 #define WRITE_TO_ROBOT 28
 
-#define WRITE_TO_ROBOT_MAX_CHARS 64
-
 #define DEFAULT_MAXSPEED = 232642; // 30 (deg/s)
 #define DEFAULT_STARTSPEED = 512; // .066 (deg/s) This is the smallest number allowed
 //////////////////////////////////////////////////////////////////////////
@@ -3782,7 +3780,7 @@ int ParseInput(char *iString)
 						p2=strtok(NULL, delimiters);//bytes
                                     Length=atoi(p2);
                                     printf("Length: %d bytes. \n", Length);
-                                    if (0<Length && WRITE_TO_ROBOT_MAX_CHARS>=Length) {
+                                    if (0<Length) {
                                         p3=strtok(NULL, "");//remaining data
                                         printf("Found: %d bytes. ", strlen(p3));
                                         Length = unescape(p3, Length);
