@@ -1,4 +1,8 @@
 Future home of Dexter hardware design files. Currently, you can find these files at:
+- Motor board:<br>
+https://github.com/kgallspark/Dexter/tree/master/MotorControl (see updated schematic PDF in this folder)<br>
+- Opto interruptors:<br>
+https://github.com/kgallspark/Dexter/tree/master/OPTO<br>
 - STL files:<br>
 https://www.thingiverse.com/thing:2108244 main<br>
 https://www.thingiverse.com/thing:2842496 covers<br>
