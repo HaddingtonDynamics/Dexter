@@ -24,6 +24,23 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
+
+
+//prototypes
+int getNormalizedInput(int);
+int RestoreCalTables(char *filename);
+void ProcessServerReceiveData(char *recBuff);
+bool ProcessServerReceiveDataDDE(char *recBuff);
+bool ProcessServerSendData(char *recBuff);
+bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff);
+int ParseInput(char *iString);
+int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode);
+int ReadDMA(int p1,int p2,char *p3);
+int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5);
+void SendPacket(unsigned char *TxPkt, int length, int TxRxTimeDelay, unsigned char *RxPkt, int ReadLength);
+void KeyholeSend(int *DataArray, int controlOffset, int size, int entryOffset );
+
 
 
 #define L1_TABLE 0x600000
@@ -385,9 +402,6 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define SERVO_HI_BOUND 1355000
 
 
-#define bool int
-#define TRUE 1
-#define FALSE 0
 
 
 
@@ -1482,17 +1496,7 @@ void SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int 
   	//UnloadUART(RxBuf,Length + 7); // TODO refine actual size
 }
 
-//prototypes
-int getNormalizedInput(int);
-int RestoreCalTables(char *filename);
-void ProcessServerReceiveData(char *recBuff);
-bool ProcessServerReceiveDataDDE(char *recBuff);
-bool ProcessServerSendData(char *recBuff);
-bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff);
-int ParseInput(char *iString);
-int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode);
-int ReadDMA(int p1,int p2,char *p3);
-int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5);
+
 
 
 void printPosition()
@@ -3109,7 +3113,7 @@ int RestoreCalTables(char *FileName)
 		fseek(fp, 0, SEEK_END);    /* file pointer at the end of file */
 		Length = ftell(fp);   /* take a position of file pointer size variable */
 		fseek(fp, 0, SEEK_SET);    /* file pointer at the beginning of file */
-		if((readSize=fread((const void *)CalTables,sizeof(int),4*1024*1024,fp))==(Length/4))
+		if((readSize=fread((void *)CalTables,sizeof(int),4*1024*1024,fp))==(Length/4))
 		{
 
 			//printf(" size good %d %d",readSize ,Length);
@@ -3149,7 +3153,7 @@ int WriteDMA(int Address,char *FileName)
 		blocks=Length/256;
 		for(j=0;j<blocks;j++) // only do full blocks inside loop
 		{	
-			if( ( readSize=fread((const void *)dataarray,sizeof(int),256,fp) )==256)
+			if( ( readSize=fread((void *)dataarray,sizeof(int),256,fp) )==256)
 			{
 				mapped[DMA_WRITE_ADDRESS]=Address+(j*1024);
 				mapped[DMA_WRITE_PARAMS]=(2<<8) | 127;
