@@ -24,7 +24,7 @@ CXX=$(GNUPREFIX)g++
 LD=$(GNUPREFIX)ld
 STRIP=$(GNUPREFIX)strip
 
-CFLAGS=-g -Wall -I. -O3 -pthread -lm
+CFLAGS=-g -I. -O3 -pthread -lm -Wno-unused-result
 
 APPLICATION=DexRun
 
