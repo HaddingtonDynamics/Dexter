@@ -1,9 +1,10 @@
 # Dexter
 
-You can find our main website: http://hdrobotic.com/
+Main website:<br>
+http://hdrobotic.com/
 
-You can find DDE at: https://github.com/cfry/dde
+See the folders above for each part of Dexter, or browse the [Wiki](https://github.com/HaddingtonDynamics/Dexter/wiki)
 
-You can find Dexter hardware interface code at: https://github.com/kgallspark/Dexter
-
-You can find Dexter STL files at: https://www.thingiverse.com/thing:2108244
+See also:
+- Unity visualization and control:<br>
+https://github.com/zalo/Dexter
