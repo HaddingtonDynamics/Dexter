@@ -2,11 +2,13 @@ For more information on the Firmware system, please see the [Firmware page on th
 
 Note that updated versions of DexRun.c may not be able to support new features in the Gateware unless the drive image is updated. For example, the 6 and 7th access (twist and grip of end effector on new tool interface) requires an interface to the servos which is implemented in the FPGAs and so needs an updated image. 
 
-DexRun install:
+## DexRun.c Manual update
 
-**putty into Dexter.**
+While it is possible to update DexRun.c as documented here, it is very unlikely that this is worth doing or recommended for the average user. It is far better to just request and download a new SD Card image. For programmers, these notes will help you navigate some of the unusual points of the firmware build.
 
-To SSH into Dexter, you will need an [SSH client](https://en.wikipedia.org/wiki/Comparison_of_SSH_clients) (e.g. [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/)). Configure the IP address in the client software to 192.168.1.142 (this is [Dexters default IP address](../../../wiki/Dexter-Networking)), set the port to 22, and select SSH. 
+**Log into Dexter.**
+
+To SSH into Dexter, you will need an [SSH client](https://en.wikipedia.org/wiki/Comparison_of_SSH_clients) (e.g. [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/)). Configure the IP address in the client software to 192.168.1.142 (this is [Dexters default IP address](../../../wiki/Dexter-Networking), newer versions may use DHCP, in which case you will need to find Dexters IP address from your router or via an app like Fing), set the port to 22, and select SSH. 
 
 Username: root
 <br>password: klg
