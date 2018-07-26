@@ -40,8 +40,10 @@ int ReadDMA(int p1,int p2,char *p3);
 int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5);
 void SendPacket(unsigned char *TxPkt, int length, int TxRxTimeDelay, unsigned char *RxPkt, int ReadLength);
 void KeyholeSend(int *DataArray, int controlOffset, int size, int entryOffset );
+int CalcUartTimeout(int size);
 
-
+#define MAX_CONTENT_CHARS 62
+//maybe could be 112, 4 * 32 bit integers and then 128 bytes in the socket
 
 #define L1_TABLE 0x600000
 #define L1_TABLE_LENGTH 0xa8000
@@ -1847,6 +1849,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 	int *sendBuffReTyped;
 	const char delimiters[] = " ,";
 	char *token;
+	char oplet;
 	float timeStart=0;
     float timeNormal = 1494640000000;
 	long iTimeNormal = 1494628400;
@@ -1879,32 +1882,56 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 //	if(recBuff[0]=="g")
 	
 
-	token = strtok (recBuff, delimiters);
+	token = strtok (recBuff, delimiters); //Job ID?
 
-	{
-		////printf("returning heartbeat\n");
-		sendBuffReTyped=(int *)sendBuff;
-		sendBuffReTyped[0]=atoi(token);
-		token = strtok (NULL, delimiters);
-		//printf("\n %s \n",token);
-		sendBuffReTyped[1]=atoi(token);
-		token = strtok (NULL, delimiters);
-		//printf("\n %s \n",token);
-		timeStart = atof(token) - timeNormal;
-		iTime = timeStart;
+	////printf("returning heartbeat\n");
+	sendBuffReTyped=(int *)sendBuff;
+	sendBuffReTyped[0]=atoi(token);
+	token = strtok (NULL, delimiters); //Instruction ID?
+	//printf("\n %s \n",token);
+	sendBuffReTyped[1]=atoi(token);
+	token = strtok (NULL, delimiters); //Start Time?
+	//printf("\n %s \n",token);
+	timeStart = atof(token) - timeNormal;
+	iTime = timeStart; 
 
-		sendBuffReTyped[2] = spec.tv_sec;//iTime;//   this shoud be start_time_internal broken into 2 words atoi(token);
-		token = strtok (NULL, delimiters);
-		//printf("\n %s \n",token);
-		token = strtok (NULL, delimiters);
-		
-		sendBuffReTyped[3]=(int)(spec.tv_nsec  / 1.0e3);//iElTime;//   this shoud be start_time_internal broken into 2 words atoi(token);
-		sendBuffReTyped[4]=token[0];
-		sendBuffReTyped[5]=DexError;
-		
-
-
-
+	sendBuffReTyped[2] = spec.tv_sec;//iTime;//   this shoud be start_time_internal broken into 2 words atoi(token);
+	token = strtok (NULL, delimiters); //End time?
+	//printf("\n %s \n",token);
+	sendBuffReTyped[3]=(int)(spec.tv_nsec  / 1.0e3);//iElTime;//   this shoud be start_time_internal broken into 2 words atoi(token);
+	token = strtok (NULL, delimiters); //Oplet?
+	oplet = token[0]; //printf("\n Oplet:%c.",oplet);
+	sendBuffReTyped[4]=token[0];
+	sendBuffReTyped[5]=DexError;
+	if('r'==oplet) { //printfs included for debugging in this block only since speed isn't critical at this point.
+		printf("\n r:read_from_robot\n");
+		token = strtok (NULL, delimiters); //length
+		i = atoi(token); //number of block to read
+		printf("read block %d \n",i);
+		token=strtok(NULL, delimiters);//filename
+		printf("opening file:%s.\n ",token);
+		//if(wfp) {fclose(wfp);} //not needed?
+		wfp = fopen(token, "r");
+		if (wfp) {
+			printf("Opened as handle %d.\n ",fileno(wfp));
+			i *= MAX_CONTENT_CHARS; //starting byte in the file
+			printf("read from byte %d\n",i);
+			fseek(wfp, i, SEEK_SET);
+			sendBuffReTyped[6] = fread ( sendBuff + sizeof(sendBuffReTyped[0])*7, 1, MAX_CONTENT_CHARS, wfp );
+			printf("Read %d bytes\n",sendBuffReTyped[6]);
+			printf("\n%s",sendBuff + sizeof(sendBuffReTyped[0])*6);
+			fclose(wfp);
+			}
+		else {
+			printf("Error %d\n", errno);
+			sendBuffReTyped[5] = errno; //there was an error
+			sendBuffReTyped[6] = 0; //no bytes returned
+			//strerror_s( sendBuff + sizeof(sendBuffReTyped[0])*7, MAX_CONTENT_CHARS, errno );
+			}
+		return TRUE;
+		}
+	else { //if('r'==oplet)
+		// Response with status.
 		//sendBuffReTyped[1]=token[0];
 		//sendBuffReTyped[2]=DexError;
 		
@@ -1913,7 +1940,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 			sendBuffReTyped[i+6]=getNormalizedInput(StatusReportIndirection[i]);
 		}
 		return TRUE;
-	}
+	} //if('r'==oplet)
 	return FALSE;
 }
 bool ProcessServerReceiveDataDDE(char *recBuff)
