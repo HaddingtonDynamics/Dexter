@@ -7,7 +7,7 @@ CXX=$(GNUPREFIX)g++
 LD=$(GNUPREFIX)ld
 STRIP=$(GNUPREFIX)strip
 
-CFLAGS=-g -I. -O3 -pthread -lm -Wno-unused-result 
+CFLAGS=-g -I. -O3 -pthread -lm -Wno-unused-result -Wno-unused-variable -Wno-unused-but-set-variable
 
 APPLICATION=DexRun
 
