@@ -11,3 +11,4 @@ https://cad.onshape.com/documents/2af8ed0e61a34ebf69284c68/w/72caf65e51bde98e456
 
 See also:
 - [Hardware in Wiki](https://github.com/HaddingtonDynamics/Dexter/wiki/Hardware)
+- [A few updated / in work STL files](https://www.dropbox.com/sh/5bdyhcyyrf3x53k/AAAagpOvq-TxkVKE1Ax-uodEa/STLs?dl=0&lst=)
