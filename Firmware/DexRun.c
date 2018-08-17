@@ -62,7 +62,7 @@ int CalcUartTimeout(int size);
 
 
 
-#define INPUT_OFFSET 11
+#define INPUT_OFFSET 12
 
    // Motor position index
 #define CMD_POSITION_KEYHOLE 0
@@ -445,6 +445,22 @@ double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
 struct Vector {
 	double x, y, z;
 };
+
+double max(double a, double b){
+	if(a > b){
+		return a;
+	}else{
+		return b;
+	}
+}
+
+double min(double a, double b){
+	if(a < b){
+		return a;
+	}else{
+		return b;
+	}
+}
 
 
 struct Vector new_vector(double x, double y, double z) {
@@ -1353,6 +1369,454 @@ size_t strlcpy(char *dst, const char *src, size_t dstsize)
 }
 
 
+struct ellipse{
+	double a, b, c, d, e, f;
+	double center_x, center_y;
+	double eccentricity;
+	double major_radius, minor_radius;
+	double quad_points_major_Ax, quad_points_major_Ay;
+	double quad_points_major_Bx, quad_points_major_By;
+	double quad_points_minor_Ax, quad_points_minor_Ay;
+	double quad_points_minor_Bx, quad_points_minor_By;
+	double rotation_angle;
+	double error_state;
+};
+
+struct eye_data{
+	double xs[128];
+	double ys[128];
+	double ts[128];
+};
+
+
+double matrix_determinant(int rows, int cols, double matrix[rows][cols]){
+	double result;
+	if(2 == rows && 2 == cols){
+		result = matrix[0][0]*matrix[1][1] - matrix[0][1]*matrix[1][0];
+	}else if(3 == rows && 3 == cols){
+		//Source: https://en.wikipedia.org/wiki/Determinant#n_.C3.97_n_matrices
+		double a, b, c, d, e, f, g, h, i;
+		a = matrix[0][0];
+		b = matrix[0][1];
+		c = matrix[0][2];
+		d = matrix[1][0];
+		e = matrix[1][1];
+		f = matrix[1][2];
+		g = matrix[2][0];
+		h = matrix[2][1];
+		i = matrix[2][2];
+		result = a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);
+	}else if(rows == 4 && cols == 4){
+		// Source: http://www.cg.info.hiroshima-cu.ac.jp/~miyazaki/knowledge/teche23.html
+		double a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41, a42, a43, a44;
+		a11 = matrix[0][0];
+		a12 = matrix[0][1];
+		a13 = matrix[0][2];
+		a14 = matrix[0][3];
+		a21 = matrix[1][0];
+		a22 = matrix[1][1];
+		a23 = matrix[1][2];
+		a24 = matrix[1][3];
+		a31 = matrix[2][0];
+		a32 = matrix[2][1];
+		a33 = matrix[2][2];
+		a34 = matrix[2][3];
+		a41 = matrix[3][0];
+		a42 = matrix[3][1];
+		a43 = matrix[3][2];
+		a44 = matrix[3][3];
+		
+		result = a11*a22*a33*a44 + a11*a23*a34*a42 + a11*a24*a32*a43
+				+a12*a21*a34*a43 + a12*a23*a31*a44 + a12*a24*a33*a41
+				+a13*a21*a32*a44 + a13*a22*a34*a41 + a13*a24*a31*a42
+				+a14*a21*a33*a42 + a14*a22*a31*a43 + a14*a23*a32*a41
+				-a11*a22*a34*a43 - a11*a23*a32*a44 - a11*a24*a33*a42
+				-a12*a21*a33*a44 - a12*a23*a34*a41 - a12*a24*a31*a43
+				-a13*a21*a34*a42 - a13*a22*a31*a44 - a13*a24*a32*a41
+				-a14*a21*a32*a43 - a14*a22*a33*a41 - a14*a23*a31*a42;
+	}else{
+		printf("Error: matrix_determinant() was passed invalid rows and cols, [%d][%d]", rows, cols);
+	}
+	return result;
+}
+
+
+void matrix_inverse(int rows, int cols, double mat_in[rows][cols], double mat_out[rows][cols]){
+	if(2 == rows && 2 == cols){
+		//mat_out = {{mat_in[1][1], -mat_in[1][0]}, {-mat_in[0][1], mat_in[0][0]}};
+		mat_out[0][0] = mat_in[1][1];
+		mat_out[0][1] = -mat_in[1][0];
+		mat_out[1][0] = -mat_in[0][1];
+		mat_out[1][1] = mat_in[0][0];
+		
+	}else if(3 == rows && 3 == cols){
+		double a, b, c, d, e, f, g, h, i, A, B, C, D, E, F, G, H, I;
+		a = mat_in[0][0];
+		b = mat_in[0][1];
+		c = mat_in[0][2];
+		d = mat_in[1][0];
+		e = mat_in[1][1];
+		f = mat_in[1][2];
+		g = mat_in[2][0];
+		h = mat_in[2][1];
+		i = mat_in[2][2];
+		
+		double inv_det = 1.0/matrix_determinant(rows,cols,mat_in);
+		double temp[2][2];
+		
+		temp[0][0] = e;
+		temp[0][1] = f;
+		temp[1][0] = h;
+		temp[1][1] = i;
+		A = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = d;
+		temp[0][1] = f;
+		temp[1][0] = g;
+		temp[1][1] = i;
+		B = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = d;
+		temp[0][1] = e;
+		temp[1][0] = g;
+		temp[1][1] = h;
+		C = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = b;
+		temp[0][1] = c;
+		temp[1][0] = h;
+		temp[1][1] = i;
+		D = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = a;
+		temp[0][1] = c;
+		temp[1][0] = g;
+		temp[1][1] = i;
+		E = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = a;
+		temp[0][1] = b;
+		temp[1][0] = g;
+		temp[1][1] = h;
+		F = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = b;
+		temp[0][1] = c;
+		temp[1][0] = e;
+		temp[1][1] = f;
+		G = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = a;
+		temp[0][1] = c;
+		temp[1][0] = d;
+		temp[1][1] = f;
+		H = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = a;
+		temp[0][1] = b;
+		temp[1][0] = d;
+		temp[1][1] = e;
+		I = inv_det * matrix_determinant(2,2,temp);
+		
+		
+		// A =  inv_det * matrix_determinant(rows,cols,(double [rows]){(double[]){e, f}, (double[]){h, i}});
+		// B = -inv_det * matrix_determinant(rows,cols,(double [rows]){(double[cols]){d, f}, (double[]){g, i}});
+		// C =  inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){d, e}, (double[]){g, h}});
+		// D = -inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){b, c}, (double[]){h, i}});
+		// E =  inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){a, c}, (double[]){g, i}});
+		// F = -inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){a, b}, (double[]){g, h}});
+		// G =  inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){b, c}, (double[]){e, f}});
+		// H = -inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){a, c}, (double[]){d, f}});
+		// I =  inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){a, b}, (double[]){d, e}});
+		
+		//mat_out = {{A, B, C}, {D, E, F}, {G, H, I}};
+		mat_out[0][0] = A;
+		mat_out[0][1] = B;
+		mat_out[0][2] = C;
+		mat_out[1][0] = D;
+		mat_out[1][1] = E;
+		mat_out[1][2] = F;
+		mat_out[2][0] = G;
+		mat_out[2][1] = H;
+		mat_out[2][2] = I;
+		
+		
+	}else if(4 == rows && 4 == cols){
+		// Source: http://www.cg.info.hiroshima-cu.ac.jp/~miyazaki/knowledge/teche23.html
+		double a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41, a42, a43, a44;
+		double b11, b12, b13, b14, b21, b22, b23, b24, b31, b32, b33, b34, b41, b42, b43, b44;
+		a11 = mat_in[0][0];
+		a12 = mat_in[0][1];
+		a13 = mat_in[0][2];
+		a14 = mat_in[0][3];
+		a21 = mat_in[1][0];
+		a22 = mat_in[1][1];
+		a23 = mat_in[1][2];
+		a24 = mat_in[1][3];
+		a31 = mat_in[2][0];
+		a32 = mat_in[2][1];
+		a33 = mat_in[2][2];
+		a34 = mat_in[2][3];
+		a41 = mat_in[3][0];
+		a42 = mat_in[3][1];
+		a43 = mat_in[3][2];
+		a44 = mat_in[3][3];
+		
+		double inv_det = 1.0/matrix_determinant(rows,cols,mat_in);
+		mat_out[0][0] = inv_det * (a22*a33*a44 + a23*a34*a42 + a24*a32*a43 - a22*a34*a43 - a23*a32*a44 - a24*a33*a42);
+		mat_out[0][1] = inv_det * (a12*a34*a43 + a13*a32*a44 + a14*a33*a42 - a12*a33*a44 - a13*a34*a42 - a14*a32*a43);
+		mat_out[0][2] = inv_det * (a12*a23*a44 + a13*a24*a42 + a14*a22*a43 - a12*a24*a43 - a13*a22*a44 - a14*a23*a42);
+		mat_out[0][3] = inv_det * (a12*a24*a33 + a13*a22*a34 + a14*a23*a32 - a12*a23*a34 - a13*a24*a32 - a14*a22*a33);
+		
+		mat_out[1][0] = inv_det * (a21*a34*a43 + a23*a31*a44 + a24*a33*a41 - a21*a33*a44 - a23*a34*a41 - a24*a31*a43);
+		mat_out[1][1] = inv_det * (a11*a33*a44 + a13*a34*a41 + a14*a31*a43 - a11*a34*a43 - a13*a31*a44 - a14*a33*a41);
+		mat_out[1][2] = inv_det * (a11*a24*a43 + a13*a21*a44 + a14*a23*a41 - a11*a23*a44 - a13*a24*a41 - a14*a21*a43);
+		mat_out[1][3] = inv_det * (a11*a23*a34 + a13*a24*a31 + a14*a21*a33 - a11*a24*a33 - a13*a21*a34 - a14*a23*a31);
+		
+		mat_out[2][0] = inv_det * (a21*a32*a44 + a22*a34*a41 + a24*a31*a42 - a21*a34*a42 - a22*a31*a44 - a24*a32*a41);
+		mat_out[2][1] = inv_det * (a11*a34*a42 + a12*a31*a44 + a14*a32*a41 - a11*a32*a44 - a12*a34*a41 - a14*a31*a42);
+		mat_out[2][2] = inv_det * (a11*a22*a44 + a12*a24*a41 + a14*a21*a42 - a11*a24*a42 - a12*a21*a44 - a14*a22*a41);
+		mat_out[2][3] = inv_det * (a11*a24*a32 + a12*a21*a34 + a14*a22*a31 - a11*a22*a34 - a12*a24*a31 - a14*a21*a32);
+		
+		mat_out[3][0] = inv_det * (a21*a33*a42 + a22*a31*a43 + a23*a32*a41 - a21*a32*a43 - a22*a33*a41 - a23*a31*a42);
+		mat_out[3][1] = inv_det * (a11*a32*a43 + a12*a33*a41 + a13*a31*a42 - a11*a33*a42 - a12*a31*a43 - a13*a32*a41);
+		mat_out[3][2] = inv_det * (a11*a23*a42 + a12*a21*a43 + a13*a22*a41 - a11*a22*a43 - a12*a23*a41 - a13*a21*a42);
+		mat_out[3][3] = inv_det * (a11*a22*a33 + a12*a23*a31 + a13*a21*a32 - a11*a23*a32 - a12*a21*a33 - a13*a22*a31);
+		
+		//mat_out = {{b11, b12, b13, b14}, {b21, b22, b23, b24}, {b31, b32, b33, b34}, {b41, b42, b43, b44}};
+	}else if(rows == cols){
+		//Source: http://blog.acipo.com/matrix-inversion-in-javascript/
+		
+		//16 Nov 2013 by Andrew Ippoliti
+		// I use Guassian Elimination to calculate the inverse:
+    	// (1) 'augment' the matrix (left) by the identity (on the right)
+    	// (2) Turn the matrix on the left into the identity by elemetry row ops
+    	// (3) The matrix on the right is the inverse (was the identity matrix)
+    	// There are 3 elemtary row ops: (I combine b and c in my code)
+    	// (a) Swap 2 rows
+    	// (b) Multiply a row by a scalar
+    	// (c) Add 2 rows
+    
+    	//if the matrix isn't square: exit (error)
+    	// if(M.length !== M[0].length){return;}
+    
+    	//create the identity matrix (I), and a copy (C) of the original
+    	int i = 0;
+		int ii = 0;
+		int j = 0;
+		double e = 0;
+		double t = 0;
+    	double mat_out[rows][cols];
+		double C[rows][cols];
+    	for(i = 0; i < rows; i++){
+        	for(j = 0; j < rows; j++){
+            	//if we're on the diagonal, put a 1 (for identity)
+            	if(i == j){ mat_out[i][j] = 1; }
+            	else{ mat_out[i][j] = 0; }
+            	// Also, make the copy of the original
+            	C[i][j] = mat_in[i][j];
+        	}
+    	}
+    
+    	// Perform elementary row operations
+    	for(i=0; i<rows; i+=1){
+        	// get the element e on the diagonal
+        	e = C[i][i];
+        
+        	// if we have a 0 on the diagonal (we'll need to swap with a lower row)
+        	if(e==0){
+            	//look through every row below the i'th row
+            	for(ii = i+1; ii < rows; ii++){
+                	//if the ii'th row has a non-0 in the i'th col
+                	if(C[ii][i] != 0){
+                    	//it would make the diagonal have a non-0 so swap it
+                    	for(j=0; j < rows; j++){
+                        	e = C[i][j];       //temp store i'th row
+                        	C[i][j] = C[ii][j];//replace i'th row by ii'th
+                        	C[ii][j] = e;      //repace ii'th by temp
+                        	e = mat_out[i][j];       //temp store i'th row
+                        	mat_out[i][j] = mat_out[ii][j];//replace i'th row by ii'th
+                        	mat_out[ii][j] = e;      //repace ii'th by temp
+                    	}
+                    	//don't bother checking other rows since we've swapped
+                    	break;
+                	}
+            	}
+            	//get the new diagonal
+            	e = C[i][i];
+            	//if it's still 0, not invertable (error)
+            	if(e==0){
+					return;
+				}
+        	}
+        
+        	// Scale this row down by e (so we have a 1 on the diagonal)
+        	for(j=0; j<rows; j++){
+            	C[i][j] = C[i][j]/e; //apply to original matrix
+            	mat_out[i][j] = mat_out[i][j]/e; //apply to identity
+        	}
+        
+        	// Subtract this row (scaled appropriately for each row) from ALL of
+        	// the other rows so that there will be 0's in this column in the
+        	// rows above and below this one
+        	for(ii=0; ii<rows; ii++){
+            	// Only apply to other rows (we want a 1 on the diagonal)
+            	if(ii != i){
+				
+					// We want to change this element to 0
+					e = C[ii][i];
+				
+					// Subtract (the row above(or below) scaled by e) from (the
+					// current row) but start at the i'th column and assume all the
+					// stuff left of diagonal is 0 (which it should be if we made this
+					// algorithm correctly)
+					for(j=0; j<rows; j++){
+						C[ii][j] -= e*C[i][j]; //apply to original matrix
+						mat_out[ii][j] -= e*mat_out[i][j]; //apply to identity
+					}
+				}
+        	}
+    	}
+    
+    	//we've done all operations, C should be the identity
+    	//matrix mat_out should be the inverse:
+	}else{
+		printf("Error: Dimensions of [%d}[%d] invalid. cmatrix_inverse() requires square matrix", rows, cols);
+	}
+}
+
+struct ellipse v_ellipse_fit(struct eye_data eye, int start_idx, int end_idx) {
+	struct ellipse res;
+	double orientation_tolerance = 1e-3;
+	double sum_x = 0;
+	double sum_y = 0;
+	int n = end_idx - start_idx;
+	double xs[n];
+	double ys[n];
+	int i, j, k;
+	for(i = 0; i < n; i++){
+		xs[i] = eye.xs[i+start_idx];
+		sum_x += xs[i];
+		sum_y += ys[i];
+	}
+	double mean_x = sum_x / n;
+	double mean_y = sum_y / n;
+	
+	for(i = 0; i < n; i++){
+		xs[i] -= mean_x;
+		ys[i] -= mean_y;
+	}
+	
+	double X[n][5];
+	double X_prime[5][n];
+	double X_square[5][5];
+	for(i = 0; i < n; i++){
+		X_prime[0][i] = xs[i] * xs[i];
+		X_prime[1][i] = xs[i] * ys[i];
+		X_prime[2][i] = ys[i] * ys[i];
+		X_prime[3][i] = xs[i];
+		X_prime[4][i] = ys[i];
+		
+		X[i][0] = X_prime[0][i];
+		X[i][1] = X_prime[1][i];
+		X[i][2] = X_prime[2][i];
+		X[i][3] = X_prime[3][i];
+		X[i][4] = X_prime[4][i];
+	}
+	
+	//matrix multiply X_prime*X
+	double dot_sum;
+	for(i = 0; i < 5; i++){
+		for(j = 0; j < 5; j++){
+			dot_sum = 0;
+			for(k = 0; k < n; k++){
+				dot_sum += X_prime[i][k] * X[k][j];
+			}
+			X_square[i][j] = dot_sum;
+		}
+	}
+	
+	double X_inv[5][5];
+	matrix_inverse(5, 5, X_square, X_inv);
+
+	double row_sum[5] = {0, 0, 0, 0, 0};
+	for(i = 0; i < n; i++){
+		for(j = 0; j < 5; j++){
+			row_sum[j] += X[i][j];
+		}
+    }
+	
+	double coeffs[5];
+	//matrix multiply row_sum*X_inv
+	for(j = 0; j < 5; j++){
+		dot_sum = 0;
+		for(k = 0; k < n; k++){
+			dot_sum += row_sum[k] * X_inv[k][j];
+		}
+		coeffs[j] = dot_sum;
+	}
+	
+	res.a = coeffs[0];
+	res.b = coeffs[1];
+	res.c = coeffs[2];
+	res.d = coeffs[3];
+	res.e = coeffs[4];
+	res.f = coeffs[5];
+	
+	double cos_phi, sin_phi, orientation_rad;
+	if(min(abs(res.b/res.a), abs(res.b/res.c)) > orientation_tolerance){
+		orientation_rad = 0.5 * atan(res.b/(res.c-res.a));
+		cos_phi = cos(orientation_rad);
+		sin_phi = sin(orientation_rad);
+		res.a = res.a*cos_phi*cos_phi - res.b*cos_phi*sin_phi + res.c*sin_phi*sin_phi;
+		res.b = 0;
+		res.c = res.a*sin_phi*sin_phi + res.b*cos_phi*sin_phi + res.c*cos_phi*cos_phi;
+		res.d = res.d*cos_phi - res.e*sin_phi;
+		res.e = res.d*sin_phi + res.e*cos_phi;
+		mean_x = cos_phi*mean_x - sin_phi*mean_y;
+		mean_y = sin_phi*mean_x + cos_phi*mean_y;
+	}else{
+		orientation_rad = 0;
+		cos_phi = cos(orientation_rad);
+		sin_phi = sin(orientation_rad);
+	}
+	
+	double test = res.a * res.c;
+	if(test > 0){
+		res.error_state = false;
+	}else{
+		res.error_state = true;
+	}
+	
+	if(res.a < 0){
+		res.a = -res.a;
+		res.c = -res.c;
+		res.d = -res.d;
+		res.e = -res.e;
+	}
+	
+	res.center_x = mean_x - 0.5*res.d/res.a;
+	res.center_y = mean_x - 0.5*res.e/res.c;
+	double F = 1.0 + (res.d*res.d) / (4.0*res.a) + (res.e*res.e) / (4*res.c);
+	double radius_a = sqrt(F/res.a);
+	double radius_b = sqrt(F/res.c);
+	res.major_radius = max(radius_a, radius_b);
+	res.minor_radius = min(radius_a, radius_b);
+	
+	
+	// double R[2][2];
+	// R[0][0] = cos_phi;
+	// R[1][0] = -sin_phi;
+	// R[0][1] = sin_phi;
+	// R[1][1] = cos_phi;
+	// double P_in
+	
+	res.eccentricity = res.minor_radius / res.major_radius;
+	res.rotation_angle = orientation_rad * 180.0 / PI;
+	
+	return res;
+}
+
 
 
 
@@ -1376,15 +1840,16 @@ int YHighBound[5]={BASE_SIN_HIGH,END_SIN_HIGH,PIVOT_SIN_HIGH,ANGLE_SIN_HIGH,ROT_
 int ForcePossition[5]={0,0,0,0,0};
 int ForceDestination[5]={0,0,0,0,0};
 int ThreadsExit=1;
-int StatusReportIndirection[60]={DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,BASE_POSITION_AT,BASE_POSITION_DELTA,
-								BASE_POSITION_PID_DELTA,BASE_POSITION_FORCE_DELTA,BASE_SIN,BASE_COS,PLAYBACK_BASE_POSITION,SENT_BASE_POSITION,
-								SLOPE_BASE_POSITION,0,PIVOT_POSITION_AT,PIVOT_POSITION_DELTA,PIVOT_POSITION_PID_DELTA,PIVOT_POSITION_FORCE_DELTA,
-								PIVOT_SIN,PIVOT_COS,PLAYBACK_PIVOT_POSITION,SENT_PIVOT_POSITION,SLOPE_PIVOT_POSITION,0,END_POSITION_AT,
-								END_POSITION_DELTA,END_POSITION_PID_DELTA,END_POSITION_FORCE_DELTA,END_SIN,END_COS,PLAYBACK_END_POSITION,
-								SENT_END_POSITION,SLOPE_END_POSITION,0,ANGLE_POSITION_AT,ANGLE_POSITION_DELTA,ANGLE_POSITION_PID_DELTA,
-								ANGLE_POSITION_FORCE_DELTA,ANGLE_SIN,ANGLE_COS,PLAYBACK_ANGLE_POSITION,SENT_ANGLE_POSITION,SLOPE_ANGLE_POSITION,
-								0,ROT_POSITION_AT,ROT_POSITION_DELTA,ROT_POSITION_PID_DELTA,ROT_POSITION_FORCE_DELTA,ROT_SIN,ROT_COS,
-								PLAYBACK_ROT_POSITION,SENT_ROT_POSITION,SLOPE_ROT_POSITION,0};
+
+
+int StatusReportIndirection[60]={
+	DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,
+	BASE_POSITION_AT,  BASE_POSITION_DELTA,  BASE_POSITION_PID_DELTA,  BASE_POSITION_FORCE_DELTA,  BASE_SIN,  BASE_COS,  BASE_MEASURED_ANGLE,  SENT_BASE_POSITION,  SLOPE_BASE_POSITION,0,
+	PIVOT_POSITION_AT, PIVOT_POSITION_DELTA, PIVOT_POSITION_PID_DELTA, PIVOT_POSITION_FORCE_DELTA, PIVOT_SIN, PIVOT_COS, PIVOT_MEASURED_ANGLE, SENT_PIVOT_POSITION, SLOPE_PIVOT_POSITION,0,
+	END_POSITION_AT,   END_POSITION_DELTA,   END_POSITION_PID_DELTA,   END_POSITION_FORCE_DELTA,   END_SIN,   END_COS,   END_MEASURED_ANGLE,   SENT_END_POSITION,   SLOPE_END_POSITION,0,
+	ANGLE_POSITION_AT, ANGLE_POSITION_DELTA, ANGLE_POSITION_PID_DELTA, ANGLE_POSITION_FORCE_DELTA, ANGLE_SIN, ANGLE_COS, ANGLE_MEASURED_ANGLE, SENT_ANGLE_POSITION, SLOPE_ANGLE_POSITION,0,
+	ROT_POSITION_AT,   ROT_POSITION_DELTA,   ROT_POSITION_PID_DELTA,   ROT_POSITION_FORCE_DELTA,   ROT_SIN,   ROT_COS,   ROT_MEASURED_ANGLE,   SENT_ROT_POSITION,   SLOPE_ROT_POSITION,0
+};
 
 void *map_addr,*map_addrCt;
 volatile unsigned int *mapped;
@@ -2114,19 +2579,25 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 			
 			if(0 == i){
 				//Switch case for keywords in read from robot call
-				if(strcmp(token, "#XYZ") == 0){
-
+				if(strcmp(token, "#POM") == 0 || strcmp(token, "#XYZ") == 0){
+						
 						//Read measured angles from memory here:
-						printf("\nAttempting to read measured angles\n");
-						printf("BASE: %d\n", mapped[BASE_MEASURED_ANGLE]);
-						printf("END: %d\n", mapped[END_MEASURED_ANGLE]);
-						printf("PIVOT: %d\n", mapped[PIVOT_MEASURED_ANGLE]);
-						printf("ANGLE: %d\n", mapped[ANGLE_MEASURED_ANGLE]);
-						printf("ROT: %d\n", mapped[ROT_MEASURED_ANGLE]);
+						//printf("\nMeasured Angles:\n");
+						// printf("BASE: %f\n", (float)(getNormalizedInput(BASE_MEASURED_ANGLE))*0.000277777777777777);
+						// printf("END: %f\n", (float)(getNormalizedInput(END_MEASURED_ANGLE))*0.000277777777777777);
+						// printf("PIVOT: %f\n", (float)(getNormalizedInput(PIVOT_MEASURED_ANGLE))*0.000277777777777777);
+						// printf("ANGLE: %f\n", (float)(getNormalizedInput(ANGLE_MEASURED_ANGLE))*0.000277777777777777);
+						// printf("ROT: %f\n", (float)(getNormalizedInput(ROT_MEASURED_ANGLE))*0.000277777777777777);
 						
 						
 						//printf("\nStarting XYZ calc\n");
-						struct J_angles measured_angles = new_J_angles(0, 0, 0, 0, 0);
+						struct J_angles measured_angles = new_J_angles(
+							(float)(getNormalizedInput(BASE_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(PIVOT_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(END_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(ANGLE_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(ROT_MEASURED_ANGLE))
+						);
 						//printf("measured_angles complete\n");
 						struct pos_ori_mat A = J_angles_to_pos_ori_mat(measured_angles);
 						//printf("measured_pos_ori_mat complete\n");
@@ -2507,6 +2978,7 @@ int FineAdjust[5];
 void setDefaults(int State)
 {
 
+	printf("Start of setDefaults()\n");
 	int i,ForceFelt,j,HiBoundry,LowBoundry,BoundryACC;
 	int KeyHoleData[10];
 	char c;
@@ -2569,6 +3041,7 @@ void setDefaults(int State)
 		fclose(DiffFile);
 		KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 	}
+	printf("Boundary Keyhle set\n");
 
 	
 	RemoteRobotAddress = fopen("RemoteRobotAddress.txt", "rs");
@@ -2586,6 +3059,7 @@ void setDefaults(int State)
 	forceBias[4]=0;
 	
 	KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
+	printf("ForceBias Keyhle set\n");
 
 	Friction[0]=0;
 	Friction[1]=0;
@@ -2594,6 +3068,7 @@ void setDefaults(int State)
 	Friction[4]=0;
 	
 	KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
+	printf("Friction Keyhle set\n");
 
 	FineAdjust[0]=0;
 	FineAdjust[1]=0;
@@ -2603,6 +3078,7 @@ void setDefaults(int State)
 	
 	KeyholeSend(FineAdjust, FINE_ADJUST_KEYHOLE_CMD, FINE_ADJUST_KEYHOLE_SIZE, FINE_ADJUST_KEYHOLE );
 
+	printf("FineAdjust Keyhle set\n");
 
 
 	mapped[ACCELERATION_MAXSPEED]=ACCELERATION_MAXSPEED_DEF;
@@ -2654,6 +3130,7 @@ void setDefaults(int State)
 		KeyHoleData[9] = HexValue;
 		fclose(CentersFile);
 		KeyholeSend(KeyHoleData, ADC_CENTERS_KEYHOLE_CMD, ADC_CENTERS_KEYHOLE_SIZE, ADC_CENTERS_KEYHOLE );
+	printf("Centers Keyhle set\n");
 
 	}
 	
@@ -2699,9 +3176,11 @@ void setDefaults(int State)
 			MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
 			#endif
 		}
+	printf("CalTables set\n");
 
 		
 	}
+	printf("End of setDefaults\n");
 }
 
 void wait_fifo_flush(void)
@@ -2808,6 +3287,7 @@ int getNormalizedInput(int param)
 	if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
 	if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
 	if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
+	
 	val = mapped[param];
 	if(param <= ROT_POSITION_FORCE_DELTA)
 	{
@@ -2817,6 +3297,13 @@ int getNormalizedInput(int param)
 	{
 		val = (val | 0xfff80000);
 	}
+	
+	if(param == BASE_MEASURED_ANGLE){corrF = JointsCal[0];}
+	if(param == PIVOT_MEASURED_ANGLE){corrF = JointsCal[1];}
+	if(param == END_MEASURED_ANGLE){corrF = JointsCal[2];}
+	if(param == ANGLE_MEASURED_ANGLE){corrF = JointsCal[3] * 16;}
+	if(param == ROT_MEASURED_ANGLE){corrF = JointsCal[4] * 16;}
+	
 	return (int)((float)val / corrF);
 }
 int getNormalInput(int param) 
@@ -2929,7 +3416,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	a3=(int)((double)a3 * JointsCal[2]);
 	a4=(int)((double)a4 * JointsCal[3]);
 	a5=(int)((double)a5 * JointsCal[4]);
-	//printf("angles result %d %d %d %d %d",a1,a2,a3,a4,a5);
+	printf("angles result %d %d %d %d %d\n",a1,a2,a3,a4,a5);
 
 	KeyHoleArray[0] = a1;
 	KeyHoleArray[1] = a3;
@@ -2938,7 +3425,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	KeyHoleArray[4] = a5;
 
 
-	while((mapped[CMD_FIFO_STATE] & 0x01) != 0);
+	//while((mapped[CMD_FIFO_STATE] & 0x01) != 0);
 	
 	mapped[COMMAND_REG]=CMD_MOVEEN | CmdVal;
 	KeyholeSend(KeyHoleArray, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
@@ -3958,6 +4445,14 @@ int ParseInput(char *iString)
 					p3=strtok (NULL, delimiters);
 					p4=strtok (NULL, delimiters);
 					p5=strtok (NULL, delimiters);
+					
+					p6=strtok (NULL, delimiters);
+					if(p6 =! NULL){
+						printf("p6 exists");
+					}else{
+						printf("p6 doesn't exists");
+					}
+					
 					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)						
 						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
 				break; 
@@ -4178,7 +4673,7 @@ int ParseInput(char *iString)
 						
 
 						//printf("\n  %x %d",CalTables[Add+i],CalTables[Add+i]);
-						//printf("\n %x ",mapped[Add+i]);
+						printf("\n %x ",mapped[Add+i]);
 					}
 				break; 
 				case WRITE_CMD  :
@@ -4255,7 +4750,11 @@ int ParseInput(char *iString)
 }
 
 int main(int argc, char *argv[]) {
-
+  printf("Start of main()\n");
+  //int err_code = 0;
+  //printf("hello world %s", err_code);
+  
+  
   int fd,mfd,err;
   
   int size;
@@ -4420,5 +4919,6 @@ int main(int argc, char *argv[]) {
 
   close(fd);
    close(mfd);
+   printf("End of main()\n");
   return 0;
 }
