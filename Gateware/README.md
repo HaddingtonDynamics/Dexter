@@ -2,9 +2,13 @@ Future home of FPGA logic files.
 Currently, the FPGA Gateware can be found at:<br>
 https://github.com/kgallspark/Dexter (The [Firmware](../Firmware) folder here replaces the uiotest.c / DexRun.c files in that repo)
 
-Update .bit files from Dexter command line (ssh in)
+**Update .bit files**
 
 First, copy the new .bit file to the share folder.
+
+[Establish a network connection to Dexter and SSH in](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking)
+
+At the command prompt
 
 `lsblk`
 
@@ -29,7 +33,7 @@ then mount that. in this case, because the name is mmcblk0p1 do:
 So now you should be able to see the SD card FAT share at /mnt/usbstick:
 
 ````
- ls /mnt/usbstick/
+ls /mnt/usbstick/
 DexRun.c                   boot.bin        uImage
 System Volume Information  devicetree.dtb  xillydemo.bit
 ````
@@ -38,7 +42,7 @@ and now you can copy over the new .bit or other files you previously copied to t
 
 `cp /srv/samba/share/xillydemo.bit /mnt/usbstick/`
 
-If you also updated DexRun.c in the share folder, you should recompile it at this point, but don't kill and relauch DexRun
+If you also updated [DexRun.c in the share folder, you should recompile](https://github.com/HaddingtonDynamics/Dexter/master/Firmware/README.md) it at this point, but don't kill and relauch DexRun
 
 Now restart. 
 
