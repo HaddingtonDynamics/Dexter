@@ -13,7 +13,7 @@ To SSH into Dexter, you will need an [SSH client](https://en.wikipedia.org/wiki/
 Username: root
 <br>password: klg
 
-**Change Makefile:**
+**Change Makefile:** if you haven't already
 ````
 cd /usr/src/xillinux/xillybus-lite/demo
 nano Makefile
@@ -59,10 +59,10 @@ ctr+x and hit y then enter to save a file from nano.
 cd /srv/samba/share
 nano pg
 ````
-change "uiotest" to "DexRun". It should look like this:
+change "uiotest" to "DexRun" if you haven't already. It should look like this:
 ````
 #!/bin/sh
-ech0 "changing directory"
+echo "changing directory"
 cd /usr/src/xillinux/xillybus-lite/demo
 cp -f /srv/samba/share/DexRun.c .
 make
