@@ -8,10 +8,7 @@ While it is possible to update DexRun.c as documented here, it is very unlikely 
 
 **Log into Dexter.**
 
-To SSH into Dexter, you will need an [SSH client](https://en.wikipedia.org/wiki/Comparison_of_SSH_clients) (e.g. [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/)). Configure the IP address in the client software to 192.168.1.142 (this is [Dexters default IP address](../../../wiki/Dexter-Networking), newer versions may use DHCP, in which case you will need to find Dexters IP address from your router or via an app like Fing), set the port to 22, and select SSH. 
-
-Username: root
-<br>password: klg
+[Establish a Network connection and SSH into Dexter](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking)
 
 **Change Makefile:** if you haven't already
 ````
