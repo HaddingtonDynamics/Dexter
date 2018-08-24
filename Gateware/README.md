@@ -42,7 +42,7 @@ and now you can copy over the new .bit or other files you previously copied to t
 
 `cp /srv/samba/share/xillydemo.bit /mnt/usbstick/`
 
-If you also updated [DexRun.c in the share folder, you should recompile](https://github.com/HaddingtonDynamics/Dexter/master/Firmware/README.md) it at this point, but don't kill and relauch DexRun
+If you also updated [DexRun.c in the share folder, you should recompile](https://github.com/HaddingtonDynamics/Dexter/blob/master/Firmware/README.md) it at this point, but don't kill and relauch DexRun
 
 Now restart. 
 
