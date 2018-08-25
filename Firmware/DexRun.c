@@ -19,7 +19,7 @@
 #include <pthread.h>
 #include <termios.h>
 #include <inttypes.h>
-
+//#include "test.h" //TODO: Make that work
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -1390,7 +1390,7 @@ struct eye_data{
 
 
 double matrix_determinant(int rows, int cols, double matrix[rows][cols]){
-	double result;
+	double result = 0;
 	if(2 == rows && 2 == cols){
 		result = matrix[0][0]*matrix[1][1] - matrix[0][1]*matrix[1][0];
 	}else if(3 == rows && 3 == cols){
@@ -1748,7 +1748,7 @@ struct ellipse v_ellipse_fit(struct eye_data eye, int start_idx, int end_idx) {
 	
 	double coeffs[5];
 	//matrix multiply row_sum*X_inv
-	for(j = 0; j < 5; j++){
+	for(j = 0; j < 5; j++){ //TODO: This loop ends at index 4 so coeffs[5] is not addressed
 		dot_sum = 0;
 		for(k = 0; k < n; k++){
 			dot_sum += row_sum[k] * X_inv[k][j];
@@ -1761,7 +1761,7 @@ struct ellipse v_ellipse_fit(struct eye_data eye, int start_idx, int end_idx) {
 	res.c = coeffs[2];
 	res.d = coeffs[3];
 	res.e = coeffs[4];
-	res.f = coeffs[5];
+	//res.f = coeffs[5]; //TODO: This element isn't initialized 
 	
 	double cos_phi, sin_phi, orientation_rad;
 	if(min(abs(res.b/res.a), abs(res.b/res.c)) > orientation_tolerance){
@@ -1922,11 +1922,42 @@ struct CaptureArgs {
 };
 struct CaptureArgs CptA,CptMove;
 
-#define MAX_PARAMS 31
-
-#define PARAM_LENGTH 20
-char Params[MAX_PARAMS][PARAM_LENGTH+1] = {"MaxSpeed", "Acceleration", "J1Force","J3Force","J2Force","J4Force","J5Force","J1Friction","J3Friction","J2Friction","J4Friction","J5Friction","J1BoundryHigh","J1BoundryLow","J3BoundryHigh","J3BoundryLow","J2BoundryHigh","J2BoundryLow","J4BoundryHigh","J4BoundryLow","J5BoundryHigh","J5BoundryLow","GripperMotor","EERoll","EESpan","StartSpeed","EndSpeed","ServoSet2X","ServoSet","RebootServo","End"};
-
+//#define PARAM_LENGTH 20
+//char Params[MAX_PARAMS][PARAM_LENGTH+1] = {
+const char* Params[] = {
+	"MaxSpeed", 
+	"Acceleration", 
+	"J1Force",
+	"J3Force",
+	"J2Force",
+	"J4Force",
+	"J5Force",
+	"J1Friction",
+	"J3Friction",
+	"J2Friction",
+	"J4Friction",
+	"J5Friction",
+	"J1BoundryHigh",
+	"J1BoundryLow",
+	"J3BoundryHigh",
+	"J3BoundryLow",
+	"J2BoundryHigh",
+	"J2BoundryLow",
+	"J4BoundryHigh",
+	"J4BoundryLow",
+	"J5BoundryHigh",
+	"J5BoundryLow",
+	"GripperMotor",
+	"EERoll",
+	"EESpan",
+	"StartSpeed",
+	"EndSpeed",
+	"ServoSet2X",
+	"ServoSet",
+	"RebootServo",
+	"Ctrl", //not actually detected from this list.
+	"End"};
+#define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
 static struct termios old, new;
 
@@ -2903,7 +2934,7 @@ void SetNewBotRef()
 	SetHome.rotate=GetAxisCurrent(4);
 	
 }
-void* CapturePoints(void *arg)
+void CapturePoints(void *arg)
 {
 
 }
@@ -3416,7 +3447,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	a3=(int)((double)a3 * JointsCal[2]);
 	a4=(int)((double)a4 * JointsCal[3]);
 	a5=(int)((double)a5 * JointsCal[4]);
-	printf("angles result %d %d %d %d %d\n",a1,a2,a3,a4,a5);
+	//printf("angles result %d %d %d %d %d\n",a1,a2,a3,a4,a5);
 
 	KeyHoleArray[0] = a1;
 	KeyHoleArray[1] = a3;
@@ -4225,6 +4256,7 @@ int ParseInput(char *iString)
 
 	int i,j,Add,Start,Length,Delay,Axis,tokenVal;
 	int d3,d4,d5;
+	float f1;
 	////printf("\nStart wait Goal");
 	if(iString !=NULL)
 	{
@@ -4269,6 +4301,8 @@ int ParseInput(char *iString)
                                         fclose(wfp);
                                         wfp = 0;
                                         printf("\nFinished writing.\n");
+						// TODO: re load LinkLinks.txt file into L array ?
+
                                         }
 						break;
 				          default : 
@@ -4305,24 +4339,84 @@ int ParseInput(char *iString)
 				break; 
 				case SET_PARAM :
 					p1=strtok (NULL, delimiters);
-					p2=strtok (NULL, delimiters);
-					p3=strtok (NULL, delimiters);
-					p4=strtok (NULL, delimiters);
-					p5=strtok (NULL, delimiters);
-					if(p3!=NULL)
-               					d3=atoi(p3);
-					else
-						d3=0;
-					if(p4!=NULL)
-               					d4=atoi(p4);
-					else
-						d4=0;
-					if(p5!=NULL)
-               					d5=atoi(p5);
-					else
-						d5=0;
 					
-					SetParam(p1,atof(p2),d3,d4,d5);
+					if (!strcmp("Ctrl",p1)) {
+						while ((p1 = strtok(NULL,delimiters))) {
+							printf("key %s\n",p1);
+							if (!strcmp("Diff",p1)) {
+								d3 = atoi(strtok(NULL, delimiters));
+								mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=d3;
+								mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=d3;
+							}
+							else if(!strcmp("FMul",p1)) {
+								d3 = atoi(strtok(NULL, delimiters));
+								mapped[SPEED_FACTORA]=d3;
+							}
+							else if(!strcmp("PIDP",p1)) {
+								d3 = atoi(strtok(NULL, delimiters));
+								mapped[PID_ADDRESS]=0;
+								mapped[PID_P]=d3;
+								d3 = atoi(strtok(NULL, delimiters));
+								mapped[PID_ADDRESS]=1;
+								mapped[PID_P]=d3;
+								mapped[PID_ADDRESS]=2;
+								d3 = atoi(strtok(NULL, delimiters));
+								mapped[PID_ADDRESS]=3;
+								mapped[PID_P]=d3;
+								mapped[PID_ADDRESS]=4;
+							}
+							else if(!strcmp("Frict",p1)) {
+								for ( i = 0; i<5; i++) {
+									f1 = atof(strtok(NULL, delimiters));
+									d3=(int)f1;
+									d4=(d3<<8)+(f1-d3)*256;
+									Friction[i]=d4;
+									printf("Friction[%d]=%d\n",i,d4);
+								}
+								KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
+							}
+							else if (!strcmp("Decay",p1)) {
+								d3 = atoi(strtok(NULL, delimiters));
+								mapped[BASE_FORCE_DECAY]=d3;
+								mapped[END_FORCE_DECAY]=d3;
+								mapped[PIVOT_FORCE_DECAY]=d3;
+								mapped[ANGLE_FORCE_DECAY]=d3;
+								mapped[ROTATE_FORCE_DECAY]=d3;
+							}
+							else if (!strcmp("Cmd",p1)) {
+								CmdVal = atoi(strtok(NULL, delimiters));
+								mapped[COMMAND_REG] = CmdVal;
+							}
+							
+						}
+						mapped[DIFF_FORCE_MAX_SPEED] = 200000; //TODO: Is this needed? Ok for ALL?
+						// CmdVal 	= CMD_ENABLE_LOOP 
+						// 		| CMD_CALIBRATE_RUN 
+						// 		| CMD_RESET_FORCE 
+						// 		| CMD_ANGLE_ENABLE 
+						// 		| CMD_ROT_ENABLE
+						// 		;
+					}
+					else {
+						p2=strtok (NULL, delimiters);
+						p3=strtok (NULL, delimiters);
+						p4=strtok (NULL, delimiters);
+						p5=strtok (NULL, delimiters);
+						if(p3!=NULL)
+									d3=atoi(p3);
+						else
+							d3=0;
+						if(p4!=NULL)
+									d4=atoi(p4);
+						else
+							d4=0;
+						if(p5!=NULL)
+									d5=atoi(p5);
+						else
+							d5=0;
+						
+						SetParam(p1,atof(p2),d3,d4,d5);
+					}
 				break; 
 				case MOVEALL_RELATIVE :
 					p1=strtok (NULL, delimiters);
@@ -4438,7 +4532,7 @@ int ParseInput(char *iString)
 					{
 						//printf("/nIndex not found");
 					}
-				break; 
+				break;
 				case MOVEALL_CMD :
 					p1=strtok (NULL, delimiters);
 					p2=strtok (NULL, delimiters);
@@ -4447,11 +4541,11 @@ int ParseInput(char *iString)
 					p5=strtok (NULL, delimiters);
 					
 					p6=strtok (NULL, delimiters);
-					if(p6 =! NULL){
-						printf("p6 exists");
-					}else{
-						printf("p6 doesn't exists");
-					}
+					// if(p6 != NULL){
+					// 	printf("p6 exists");
+					// }else{
+					// 	printf("p6 doesn't exists");
+					// }
 					
 					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)						
 						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
@@ -4802,6 +4896,14 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   CalTables = map_addrCt;
+
+// TODO: load LinkLinks.txt file into L array
+	wfp = fopen("/srv/samba/share/LinkLengths.txt", "r");
+	if (wfp) {
+		printf("Link Lengths: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &L[0], &L[1], &L[2], &L[3], &L[4]));
+		printf(" %lf, %lf, %lf, %lf, %lf \n", L[0], L[1], L[2], L[3], L[4]);
+		}
+	else { printf("Error %d\n", errno); }
 
 
 //  Addr= = atoi(argv[3]);
