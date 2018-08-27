@@ -4345,22 +4345,27 @@ int ParseInput(char *iString)
 							printf("key %s\n",p1);
 							if (!strcmp("Diff",p1)) {
 								d3 = atoi(strtok(NULL, delimiters));
+								printf("Angle / Rot: %d\n",d3);
 								mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=d3;
 								mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=d3;
 							}
 							else if(!strcmp("FMul",p1)) {
 								d3 = atoi(strtok(NULL, delimiters));
+								printf("SPEED_FACTORA: %d\n",d3);
 								mapped[SPEED_FACTORA]=d3;
 							}
 							else if(!strcmp("PIDP",p1)) {
 								d3 = atoi(strtok(NULL, delimiters));
+								printf("Base: %d\n",d3);
 								mapped[PID_ADDRESS]=0;
 								mapped[PID_P]=d3;
 								d3 = atoi(strtok(NULL, delimiters));
+								printf("End / Pivot: %d\n",d3);
 								mapped[PID_ADDRESS]=1;
 								mapped[PID_P]=d3;
 								mapped[PID_ADDRESS]=2;
 								d3 = atoi(strtok(NULL, delimiters));
+								printf("Angle / Rot: %d\n",d3);
 								mapped[PID_ADDRESS]=3;
 								mapped[PID_P]=d3;
 								mapped[PID_ADDRESS]=4;
@@ -4377,6 +4382,7 @@ int ParseInput(char *iString)
 							}
 							else if (!strcmp("Decay",p1)) {
 								d3 = atoi(strtok(NULL, delimiters));
+								printf("All: %d\n",d3);
 								mapped[BASE_FORCE_DECAY]=d3;
 								mapped[END_FORCE_DECAY]=d3;
 								mapped[PIVOT_FORCE_DECAY]=d3;
@@ -4384,8 +4390,11 @@ int ParseInput(char *iString)
 								mapped[ROTATE_FORCE_DECAY]=d3;
 							}
 							else if (!strcmp("Cmd",p1)) {
-								CmdVal = atoi(strtok(NULL, delimiters));
+								d3 = atoi(strtok(NULL, delimiters));
+								CmdVal = d3;
 								mapped[COMMAND_REG] = CmdVal;
+								for (;d3;d3 >>= 1) printf("%d", d3 & 1);
+								printf(" : %d \n",CmdVal);
 							}
 							
 						}
