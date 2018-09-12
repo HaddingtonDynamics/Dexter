@@ -2291,7 +2291,8 @@ void *RealtimeMonitor(void *arg)
 
 void SetGripperRoll(int Possition)
 {
-   SendGoalSetPacket(Possition, 3);
+	SendGoalSetPacket(Possition, 3);
+   	//printf("Moving Servo 3 to %u\n",Possition);
 
 	/*int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
 	mapped[END_EFFECTOR_IO]=80;
@@ -2304,6 +2305,7 @@ void SetGripperSpan(int Possition)
 {
 	//SendReadPacket(3,30,21);       
 	SendGoalSetPacket(Possition, 1);
+	//printf("Moving Servo 1 to %u\n",Possition);
 
 /*	int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
 	mapped[END_EFFECTOR_IO]=80;
@@ -4568,6 +4570,9 @@ int ParseInput(char *iString)
 					p5=strtok (NULL, delimiters);
 					
 					p6=strtok (NULL, delimiters);
+					if (p6) SetGripperRoll(atoi(p6));
+					p7=strtok (NULL, delimiters);
+					if (p7) SetGripperSpan(atoi(p7));
 					// if(p6 != NULL){
 					// 	printf("p6 exists");
 					// }else{
