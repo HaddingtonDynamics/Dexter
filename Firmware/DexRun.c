@@ -4250,6 +4250,8 @@ int ParseInput(char *iString)
 {
 	//char iString[255];
 	const char delimiters[] = " ,";
+	const char ctrldelims[] = ":[] ,";
+	
 	char *token,*p1,*p2,*p3,*p4,*p5,*p6,*p7,*p8,*p9,*p10,*p11,*p12,*p13,*p14,*p15,*p16,*p17,*p18,*p19;
 	int BDH,BDL;
 
@@ -4341,38 +4343,54 @@ int ParseInput(char *iString)
 					p1=strtok (NULL, delimiters);
 					
 					if (!strcmp("Ctrl",p1)) {
-						while ((p1 = strtok(NULL,delimiters))) {
+						while ((p1 = strtok(NULL,ctrldelims))) {
 							printf("key %s\n",p1);
 							if (!strcmp("Diff",p1)) {
-								d3 = atoi(strtok(NULL, delimiters));
+								d3 = atoi(strtok(NULL, ctrldelims));
 								printf("Angle / Rot: %d\n",d3);
 								mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=d3;
 								mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=d3;
 							}
 							else if(!strcmp("FMul",p1)) {
-								d3 = atoi(strtok(NULL, delimiters));
+								d3 = atoi(strtok(NULL, ctrldelims));
 								printf("SPEED_FACTORA: %d\n",d3);
 								mapped[SPEED_FACTORA]=d3;
 							}
 							else if(!strcmp("PIDP",p1)) {
-								d3 = atoi(strtok(NULL, delimiters));
+								d3 = atoi(strtok(NULL, ctrldelims));
 								printf("Base: %d\n",d3);
 								mapped[PID_ADDRESS]=0;
 								mapped[PID_P]=d3;
-								d3 = atoi(strtok(NULL, delimiters));
+								d3 = atoi(strtok(NULL, ctrldelims));
 								printf("End / Pivot: %d\n",d3);
 								mapped[PID_ADDRESS]=1;
 								mapped[PID_P]=d3;
 								mapped[PID_ADDRESS]=2;
-								d3 = atoi(strtok(NULL, delimiters));
+								d3 = atoi(strtok(NULL, ctrldelims));
 								printf("Angle / Rot: %d\n",d3);
 								mapped[PID_ADDRESS]=3;
 								mapped[PID_P]=d3;
 								mapped[PID_ADDRESS]=4;
 							}
+/* Needs PID_I and PID_D added back to the mapped register from the FPGA
+							else if(!strcmp("PID",p1)) {
+								d3 = atoi(strtok(NULL, ctrldelims));
+								mapped[PID_ADDRESS]=i;
+								printf(" J%d:\n",d3);
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf(" P:%d\n",d3);
+								mapped[PID_P]=d3;
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf(" I:%d\n",d3);
+								mapped[PID_I]=d3;
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf(" D:%d\n",d3);
+								mapped[PID_D]=d3;
+							}
+*/
 							else if(!strcmp("Frict",p1)) {
 								for ( i = 0; i<5; i++) {
-									f1 = atof(strtok(NULL, delimiters));
+									f1 = atof(strtok(NULL, ctrldelims));
 									d3=(int)f1;
 									d4=(d3<<8)+(f1-d3)*256;
 									Friction[i]=d4;
@@ -4381,7 +4399,7 @@ int ParseInput(char *iString)
 								KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
 							}
 							else if (!strcmp("Decay",p1)) {
-								d3 = atoi(strtok(NULL, delimiters));
+								d3 = atoi(strtok(NULL, ctrldelims));
 								printf("All: %d\n",d3);
 								mapped[BASE_FORCE_DECAY]=d3;
 								mapped[END_FORCE_DECAY]=d3;
@@ -4390,7 +4408,7 @@ int ParseInput(char *iString)
 								mapped[ROTATE_FORCE_DECAY]=d3;
 							}
 							else if (!strcmp("Cmd",p1)) {
-								d3 = atoi(strtok(NULL, delimiters));
+								d3 = atoi(strtok(NULL, ctrldelims));
 								CmdVal = d3;
 								mapped[COMMAND_REG] = CmdVal;
 								for (;d3;d3 >>= 1) printf("%d", d3 & 1);
