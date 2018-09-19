@@ -4570,14 +4570,13 @@ int ParseInput(char *iString)
 					p5=strtok (NULL, delimiters);
 					
 					p6=strtok (NULL, delimiters);
-					if (p6) SetGripperRoll(atoi(p6));
+					if (p6 && 'x'!=p6[0]) SetGripperRoll(atoi(p6));
+					//if(p6 != NULL){ printf("p6 %s\n",p6); }
+					//else{ printf("p6 doesn't exist\n"); }
 					p7=strtok (NULL, delimiters);
-					if (p7) SetGripperSpan(atoi(p7));
-					// if(p6 != NULL){
-					// 	printf("p6 exists");
-					// }else{
-					// 	printf("p6 doesn't exists");
-					// }
+					if (p7 && 'x'!=p7[0]) SetGripperSpan(atoi(p7));
+					//if(p7 != NULL){ printf("p7 %s\n",p7); }
+					//else{ printf("p7 doesn't exist\n"); }
 					
 					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)						
 						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
