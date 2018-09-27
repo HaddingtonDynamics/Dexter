@@ -442,6 +442,8 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define PI (3.141592653589793)
 //double L[5] = { 0.1651, 0.320675, 0.3302, 0.0508, 0.08255 }; // (meters)
 double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
+double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
+
 struct Vector {
 	double x, y, z;
 };
@@ -1114,18 +1116,18 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 	V3 = normalize(subtract(U4, U3));
 
 	if (xyz.config.right_arm) {
-		J.J1 = signed_angle(P1, P0, V0);
-		J.J2 = signed_angle(V1, V0, P1);
-		J.J3 = signed_angle(V2, V1, P1);
-		J.J4 = signed_angle(V3, V2, P1);
-		J.J5 = signed_angle(P2, P1, V3);
+		J.J1 = signed_angle(P1, P0, V0) - SP[0];
+		J.J2 = signed_angle(V1, V0, P1) - SP[1];
+		J.J3 = signed_angle(V2, V1, P1) - SP[2];
+		J.J4 = signed_angle(V3, V2, P1) - SP[3];
+		J.J5 = signed_angle(P2, P1, V3) - SP[4];
 	}
 	else {
-		J.J1 = signed_angle(P1, P0, V0) + 180;
-		J.J2 = -signed_angle(V1, V0, P1);
-		J.J3 = -signed_angle(V2, V1, P1);
-		J.J4 = -signed_angle(V3, V2, P1);
-		J.J5 = -signed_angle(P2, P1, V3);
+		J.J1 = signed_angle(P1, P0, V0) + 180*3600 - SP[0];
+		J.J2 = -signed_angle(V1, V0, P1) - SP[1];
+		J.J3 = -signed_angle(V2, V1, P1) - SP[2];
+		J.J4 = -signed_angle(V3, V2, P1) - SP[3];
+		J.J5 = -signed_angle(P2, P1, V3) - SP[4];
 	}
 
 	
@@ -1264,11 +1266,11 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 	printf("Pre-allocation complete\n");
 	
 	//FK:
-	P1 = rotate(P0, V0, -(angles.J1 - 180*3600)); 	// Links 2, 3 and 4 lie in P1
-	V1 = rotate(V0, P1, angles.J2);		   			// Vector for Link 2
-	V2 = rotate(V1, P1, angles.J3);		   			// Vector for Link 3
-	V3 = rotate(V2, P1, angles.J4);		  			// Vector for Link 4
-	P2 = rotate(P1, V3, -(angles.J5 - 180*3600));	// Link 4 and 5 lie in P2
+	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
+	V1 = rotate(V0, P1, angles.J2 + SP[1]);		   			// Vector for Link 2
+	V2 = rotate(V1, P1, angles.J3 + SP[2]);		   			// Vector for Link 3
+	V3 = rotate(V2, P1, angles.J4 + SP[3]);		  			// Vector for Link 4
+	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
 	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
 	
 	printf("Vector rotations complete\n");
@@ -2291,7 +2293,8 @@ void *RealtimeMonitor(void *arg)
 
 void SetGripperRoll(int Possition)
 {
-   SendGoalSetPacket(Possition, 3);
+	SendGoalSetPacket(Possition, 3);
+   	//printf("Moving Servo 3 to %u\n",Possition);
 
 	/*int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
 	mapped[END_EFFECTOR_IO]=80;
@@ -2304,6 +2307,7 @@ void SetGripperSpan(int Possition)
 {
 	//SendReadPacket(3,30,21);       
 	SendGoalSetPacket(Possition, 1);
+	//printf("Moving Servo 1 to %u\n",Possition);
 
 /*	int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
 	mapped[END_EFFECTOR_IO]=80;
@@ -4568,11 +4572,13 @@ int ParseInput(char *iString)
 					p5=strtok (NULL, delimiters);
 					
 					p6=strtok (NULL, delimiters);
-					// if(p6 != NULL){
-					// 	printf("p6 exists");
-					// }else{
-					// 	printf("p6 doesn't exists");
-					// }
+					if (p6 && 'x'!=p6[0]) SetGripperRoll(atoi(p6));
+					//if(p6 != NULL){ printf("p6 %s\n",p6); }
+					//else{ printf("p6 doesn't exist\n"); }
+					p7=strtok (NULL, delimiters);
+					if (p7 && 'x'!=p7[0]) SetGripperSpan(atoi(p7));
+					//if(p7 != NULL){ printf("p7 %s\n",p7); }
+					//else{ printf("p7 doesn't exist\n"); }
 					
 					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)						
 						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
@@ -4924,13 +4930,23 @@ int main(int argc, char *argv[]) {
   }
   CalTables = map_addrCt;
 
-// TODO: load LinkLinks.txt file into L array
+// Load LinkLengths.txt file into L array
 	wfp = fopen("/srv/samba/share/LinkLengths.txt", "r");
 	if (wfp) {
 		printf("Link Lengths: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &L[0], &L[1], &L[2], &L[3], &L[4]));
 		printf(" %lf, %lf, %lf, %lf, %lf \n", L[0], L[1], L[2], L[3], L[4]);
+
 		}
-	else { printf("Error %d\n", errno); }
+	else { printf("Failed to load LinkLengths.txt Error # %d\n", errno); }
+
+// Load StartPosition.txt file into SP array
+	wfp = fopen("/srv/samba/share/StartPosition.txt", "r");
+	if (wfp) {
+		printf("Start Positions: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &SP[0], &SP[1], &SP[2], &SP[3], &SP[4]));
+		printf(" %lf, %lf, %lf, %lf, %lf \n", SP[0], SP[1], SP[2], SP[3], SP[4]);
+
+		}
+	else { printf("Failed to load StartPosition.txt Error # %d\n", errno); }
 
 
 //  Addr= = atoi(argv[3]);
