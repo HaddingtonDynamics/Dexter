@@ -96,7 +96,7 @@ date -s "5mar18 21:30"			(change to current date)
 
 **Compile** And now you can compile DexRun.c
 ````
-./pg DexRun.c 2>&1 | grep "error"		(if ./pg has an error I screwed up and gave you uncomplible code)
+./pg 2>&1 | grep "error"		(if ./pg has an error I screwed up and gave you uncomplible code)
 ````
 
 **Kill the currently running program** <sup><a href="https://stackoverflow.com/questions/160924/how-can-i-kill-a-process-by-name-instead-of-pid">1</a></sup>
