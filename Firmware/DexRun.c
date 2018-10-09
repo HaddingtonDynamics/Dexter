@@ -676,19 +676,19 @@ double angle(struct Vector v1, struct Vector v2) {
 double signed_angle(struct Vector v1, struct Vector v2, struct Vector plane) {
 	double guess_angle = angle(v1, v2);
 	long double epsilon = 0.0000000001; // 1e-10
-	if (abs(guess_angle) <  epsilon || abs(abs(guess_angle) - 180) < epsilon) {
+	if (abs(guess_angle) <  epsilon || abs(abs(guess_angle) - 648000) < epsilon) {
 		return round(guess_angle); // Will rounding increase or decrease error? 
 	}
 
 	struct Vector c_prod = normalize(cross(v1, v2));
-	if (is_equal(c_prod, plane, 10)) {
+	if (is_equal(c_prod, normalize(plane), 10)) {
 		return guess_angle;
 	}
-	else if (is_equal(negate(c_prod), plane, 10)){
+	else if (is_equal(negate(c_prod), normalize(plane), 10)){
 		return -guess_angle;
 	}
 	else {
-		printf("\nError: singled_angle wants to return NaN:");
+		printf("\nError: signed_angle wants to return NaN:");
 		printf("\nguessangle: %f", guess_angle);
 		printf("\nc_prod: ");
 		print_vector(c_prod);
@@ -762,7 +762,7 @@ void print_config(struct Config a) {
 		printf("Out]");
 	}
 	else {
-		printf("Int]");
+		printf("In]");
 	}
 	//return
 }
@@ -826,60 +826,50 @@ struct XYZ new_XYZ(struct Vector position, struct Vector direction, struct Confi
 }
 
 void print_XYZ(struct XYZ a) {
-	printf("{ ");
+	printf("{");
 	print_vector(a.position);
 	printf(", ");
 	print_vector(a.direction);
 	printf(", ");
 	print_config(a.config);
-	printf(" }");
+	printf("}");
 }
 
 
 // Forward Kinematics:
-struct XYZ J_angles_to_xyz(struct J_angles angles) {
-
-	/*
-	// Pre allocation:
-	struct Vector U[6] = { {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0} };
-	struct Vector V[5] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 },{ 0, 0, 0 }};
-	struct Vector P[3] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }};
-
-	P[0][0] = 1; // Datam Plane = [1 0 0]
-	V[0][2] = 1; // Vector for Link 1 (base)
-
-	P[1] = rotate(P[0], V[0], -(angles.J1 - 180*3600)); // Links 2, 3 and 4 lie in P1
-	V[1] = rotate(V[0], P[1], angles.J2);		   // Vector for Link 2
-	V[2] = rotate(V[1], P[1], angles.J3);		   // Vector for Link 3
-	V[3] = rotate(V[2], P[1], angles.J4);		   // Vector for Link 4
-	P[2] = rotate(P[1], V[3], -(angles.J5 - 180*3600));	   // Link 4 and 5 lie in P2
-	V[4] = rotate(V[3], P[2], -90*3600);				   // Vector for Link 5 (90 degree bend)
-
-
-												   // Next point = current point + Link length * vector direction
-	int i;
-	for (i = 0; i < 5; i++) {
-		U[i + 1] = add(U[i], scalar_mult(L[i], V[i]));
-	}
-	*/
+struct XYZ J_angles_to_XYZ(struct J_angles angles) {
 	
+	//Pre-allocation:
 	struct Vector U0 = {0, 0, 0};
 	struct Vector U1 = {0, 0, 0};
 	struct Vector U2 = {0, 0, 0};
 	struct Vector U3 = {0, 0, 0};
 	struct Vector U4 = {0, 0, 0};
 	struct Vector U5 = {0, 0, 0};
-	
+
 	struct Vector V0 = {0, 0, 1};
 	struct Vector V1 = {0, 0, 0};
 	struct Vector V2 = {0, 0, 0};
 	struct Vector V3 = {0, 0, 0};
 	struct Vector V4 = {0, 0, 0};
-	
+
 	struct Vector P0 = {1, 0, 0};
 	struct Vector P1 = {0, 0, 0};
-	//struct Vector P2 = {0, 0, 0};
+	struct Vector P2 = {0, 0, 0};
 	
+	//FK:
+	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
+	V1 = rotate(V0, P1, angles.J2 + SP[1]);		   			// Vector for Link 2
+	V2 = rotate(V1, P1, angles.J3 + SP[2]);		   			// Vector for Link 3
+	V3 = rotate(V2, P1, angles.J4 + SP[3]);		  			// Vector for Link 4
+	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
+	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
+	
+	U1 = add(U0, scalar_mult(L[0], V0));
+	U2 = add(U1, scalar_mult(L[1], V1));
+	U3 = add(U2, scalar_mult(L[2], V2));
+	U4 = add(U3, scalar_mult(L[3], V3));
+	U5 = add(U4, scalar_mult(L[4], V4));
 
 	// Forward Kinematic solved, now to determine configuration:
 
@@ -894,7 +884,7 @@ struct XYZ J_angles_to_xyz(struct J_angles angles) {
 
 							   // Determine wrist state, in or out
 	if (is_equal(U3, U3_a, 10)) {  // Negative or positive rotation of Link 4?
-		if (dist_a < dist_b) {
+		if (dist_a > dist_b) {
 			my_config.wrist_out = 1; // Wrist out
 		}
 		else {
@@ -902,13 +892,15 @@ struct XYZ J_angles_to_xyz(struct J_angles angles) {
 		}
 	}
 	else {
-		if (dist_a < dist_b) {
+		if (dist_a > dist_b) {
 			my_config.wrist_out = 0; // Wrist in
 		}
 		else {
 			my_config.wrist_out = 1; // Wrist out
 		}
 	}
+
+
 
 	// Determine arm state, right or left 
 	struct Vector U50 = subtract(U5, U0);
@@ -919,8 +911,7 @@ struct XYZ J_angles_to_xyz(struct J_angles angles) {
 	else {
 		my_config.right_arm = 1;					// Right arm
 	}
-
-	// Determine elbow state, up or down
+ 	// Determine elbow state, up or down
 	if (my_config.right_arm) {						// If right arm
 		if (dot(cross(V1, V2), P1) > 0) {		// Is Joint 3 angle positive or negative?
 			my_config.elbow_up = 1;					// Elbow down
@@ -939,43 +930,13 @@ struct XYZ J_angles_to_xyz(struct J_angles angles) {
 	}
 
 
+
+
 	// Calculating the end effector direction
 	struct Vector my_dir = normalize(subtract(U5, U4));
-
-
-	
-	//debugging:
-	/*
-	printf("\nU:\n");
-	struct Vector temp_vector;
-	for (int i = 0; i < sizeof(U) / 24; i++) {
-		printf("i:%d = ", i);
-		temp_vector = U[i];
-		print_vector(temp_vector);
-		printf("\n");
-	}
-	printf("\nV:\n");
-	for (int i = 0; i < sizeof(V) / 24; i++) {
-		printf("i:%d = ", i);
-		temp_vector = V[i];
-		print_vector(temp_vector);
-		printf("\n");
-	}
-	printf("\nP:\n");
-	for (int i = 0; i < sizeof(P) / 24; i++) {
-		printf("i:%d = ", i);
-		temp_vector = P[i];
-		print_vector(temp_vector);
-		printf("\n");
-	}
-	*/
-	
-
-
-	struct XYZ result = new_XYZ(U5, my_dir, my_config);
-	return result;
+	struct XYZ solution = new_XYZ(U5, my_dir, my_config);
+	return solution;
 }
-
 
 // Inverse Kinematics:
 struct J_angles xyz_to_J_angles(struct XYZ xyz) {
@@ -1070,7 +1031,6 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 		printf("\n\nUnkown Singularity found at: ");
 		print_XYZ(xyz);
 		printf("\nPlease report this message as a bug.\n\n");
-		
 	}
 
 	// Checking if in range
@@ -1172,11 +1132,11 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 }
 
 int k_tip_speed_to_angle_speed(struct J_angles J_angles_old, struct J_angles J_angles_new, double cart_speed){
-	struct Vector EE_point_1 = J_angles_to_xyz(J_angles_old).position;
-	struct Vector EE_point_2 = J_angles_to_xyz(J_angles_old).position;
+	struct Vector EE_point_1 = J_angles_to_XYZ(J_angles_old).position;
+	struct Vector EE_point_2 = J_angles_to_XYZ(J_angles_new).position;
 	double dist_EE = dist_point_to_point(EE_point_1, EE_point_2);
 	if(dist_EE == 0){
-		return 3877; //30 (deg/s)
+		return 3877.0; //30 (deg/s)
 	}
 	double max_theta = J_angles_max_diff(J_angles_old, J_angles_new);
 	
@@ -1546,7 +1506,7 @@ void matrix_inverse(int rows, int cols, double mat_in[rows][cols], double mat_ou
 	}else if(4 == rows && 4 == cols){
 		// Source: http://www.cg.info.hiroshima-cu.ac.jp/~miyazaki/knowledge/teche23.html
 		double a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41, a42, a43, a44;
-		double b11, b12, b13, b14, b21, b22, b23, b24, b31, b32, b33, b34, b41, b42, b43, b44;
+		//double b11, b12, b13, b14, b21, b22, b23, b24, b31, b32, b33, b34, b41, b42, b43, b44;
 		a11 = mat_in[0][0];
 		a12 = mat_in[0][1];
 		a13 = mat_in[0][2];
@@ -1607,7 +1567,7 @@ void matrix_inverse(int rows, int cols, double mat_in[rows][cols], double mat_ou
 		int ii = 0;
 		int j = 0;
 		double e = 0;
-		double t = 0;
+		//double t = 0;
     	double mat_out[rows][cols];
 		double C[rows][cols];
     	for(i = 0; i < rows; i++){
@@ -2077,7 +2037,7 @@ void UnloadUART(unsigned char* RxBuffer,int length)
 
 void SendGoalSetPacket(int newPos, unsigned char servo)
 {
- 	int i;
+ 	//int i;
   	unsigned char RxBuf[20];
   	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x03, 30, 0, newPos & 0x00ff, (newPos >> 8) & 0x00ff, 0, 0};
   	unsigned short crcVal;
@@ -3460,7 +3420,8 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	KeyHoleArray[4] = a5;
 
 
-	//while((mapped[CMD_FIFO_STATE] & 0x01) != 0);
+	while((mapped[CMD_FIFO_STATE] & 0x01) != 0); //This was commented out for some reason in commit: https://github.com/HaddingtonDynamics/Dexter/commit/1ca9251b47468d9841713ec89b62e91050125188
+
 	
 	mapped[COMMAND_REG]=CMD_MOVEEN | CmdVal;
 	KeyholeSend(KeyHoleArray, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
@@ -3490,20 +3451,123 @@ void KeyholeSend(int *DataArray, int controlOffset, int size, int entryOffset )
 	}
 }
 
-int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
+int MoveRobotStraight(struct XYZ xyz_2)
 {
+
+	//File IO
+	double cart_speed;
+	double cart_accel;
+	double cart_step_size;
+	double rot_step_size;
+	wfp = fopen("/srv/samba/share/Cartesian_Settings/Speed.txt", "r");
+	if (wfp) {
+		fscanf(wfp, "%lf", &cart_speed);
+	}else {
+		printf("Failed to load /Cartesian_Settings/Speed.txt Error # %d\n", errno);
+		cart_speed = 100000.0;
+	}
+	wfp = fopen("/srv/samba/share/Cartesian_Settings/Acceleration.txt", "r");
+	if (wfp) {
+		fscanf(wfp, "%lf", &cart_accel);
+	}else {
+		printf("Failed to load /Cartesian_Settings/Acceleration.txt Error # %d\n", errno);
+		cart_accel = 100.0;
+	}
+	wfp = fopen("/srv/samba/share/Cartesian_Settings/Step_Size.txt", "r");
+	if (wfp) {
+		fscanf(wfp, "%lf", &cart_step_size);
+	}else {
+		printf("Failed to load /Cartesian_Settings/Step_Size.txt Error # %d\n", errno);
+		cart_step_size = 50.0;
+	}
+	wfp = fopen("/srv/samba/share/Cartesian_Settings/Rotational_Step_Size.txt", "r");
+	if (wfp) {
+		fscanf(wfp, "%lf", &rot_step_size);
+	}else {
+		printf("Failed to load /Cartesian_Settings/Rotational_Step_Size.txt Error # %d\n", errno);
+		cart_step_size = 50.0;
+	}
+
+
+
+	//Reading Last Commaned Joint Angles
+	struct J_angles LastGoal_J_angles = new_J_angles(
+		(double)LastGoal[0],
+		(double)LastGoal[1],
+		(double)LastGoal[2],
+		(double)LastGoal[3],
+		(double)LastGoal[4]
+	);
 	
-	double max_step_size = 1; //microns
+	//Converting Last Commaned Joint Angles to XYZ. Special Case Home.
+	struct XYZ xyz_1 = new_XYZ(xyz_2.position, xyz_2.direction, xyz_2.config);
+	if(LastGoal_J_angles.J1 == 0.0 && LastGoal_J_angles.J2 == 0.0 && LastGoal_J_angles.J3 == 0.0 && LastGoal_J_angles.J4 == 0.0 && LastGoal_J_angles.J5 == 0.0){
+		xyz_1.position = new_vector(0, L[4], L[0]+L[1]+L[2]+L[3]);
+		xyz_1.direction = new_vector(0, 1, 0);
+		xyz_1.config = new_config(xyz_2.config.right_arm, xyz_2.config.elbow_up,  xyz_2.config.wrist_out);
+
+		/*
+		struct Vector home_position = new_vector(0, L[4], L[0]+L[1]+L[2]+L[3]);
+		struct Vector home_dir = new_vector(0, 1, 0);
+		struct Config home_config = new_config(xyz_2.config.right_arm, xyz_2.config.elbow_up,  xyz_2.config.wrist_out);
+		 = new_XYZ(home_position, home_dir, home_config);
+		 */
+
+	}else{
+		xyz_1 = J_angles_to_XYZ(LastGoal_J_angles);
+	}
+
+	
+	printf("\nLastGoal_J_angles: ");
+	print_J_angles(LastGoal_J_angles);
+	
+	printf("\nxyz_1: ");
+	print_XYZ(xyz_1);
+	printf("\nxyz_2: ");
+	print_XYZ(xyz_2);
+
+	//Prevent Config changes during straight line move
+	if(xyz_1.config.right_arm != xyz_2.config.right_arm || xyz_1.config.elbow_up != xyz_2.config.elbow_up || xyz_1.config.wrist_out != xyz_2.config.wrist_out){
+		printf("\nError: Configurations cannot change during straight line move.");
+		printf("\nCurrent Configuration:\n");
+		print_config(xyz_1.config);
+		printf("\nDestination Configuration:\n");
+		print_config(xyz_2.config);
+
+		return 0;
+	}
+
+	
+
+	printf("\ncart_speed: %f", cart_speed);
+	
 	struct Vector U1 = xyz_1.position;
 	struct Vector U2 = xyz_2.position;
 	struct Vector U21 = subtract(U2, U1);
 	struct Vector v21 = normalize(U21);
 	double U21_mag = magnitude(U21);
-	int num_div = (int)ceil(U21_mag/max_step_size);
-	double step = U21_mag / num_div;
+	int num_div = (int)ceil(U21_mag/cart_step_size);
+	/*
+	int max_num_div =  50000;
+	if(num_div > max_num_div){
+		num_div = max_num_div;
+	}
+	*/
 	
-	int angular_velocity;
-	struct Vector Ui;
+	double step = U21_mag / num_div;
+	//int num_div = 10;
+	
+	printf("\nnum_div: %i", num_div);
+	
+	
+	//Smooth Acceleration Math:
+	double dx = cart_speed*cart_speed / (2*cart_accel);
+	if(2*dx >= U21_mag){
+		printf("\nAcceleration too low.\ndx = %f\nU21_mag = %f", dx, U21_mag);
+		dx = floor(U21_mag/2);
+		cart_speed = sqrt(2*cart_accel*dx); //2*a*dx == 2*a*U21_mag/2
+	}
+
 	
 	
 	struct Vector cur_pos = xyz_1.position;
@@ -3511,19 +3575,35 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 	struct Config cur_config = xyz_1.config;
 	struct XYZ cur_xyz = new_XYZ(cur_pos, cur_dir, cur_config);
 	
-	struct J_angles J_angles_list[num_div];
-	double speeds_list[num_div];
+	struct Vector rot_cross_p = cross(xyz_1.direction, xyz_2.direction);
+	double dir_angle = 0.0;
+	bool diff_normal = false;
+	if(magnitude(rot_cross_p) != 0.0){
+		printf("\nNormals are different.");
+		
+		dir_angle = signed_angle(xyz_1.direction, xyz_2.direction, rot_cross_p);
+		printf("\ndir_angle: %f", dir_angle);
+		diff_normal = true;
+		if(dir_angle / ((float)num_div) > rot_step_size){
+			num_div = (int)ceil(dir_angle/rot_step_size);
+			printf("\num_div: %f", num_div);
+			
+		}
+		rot_step_size = dir_angle / ((float)num_div);
+		printf("\nrot_step_size: %f", rot_step_size);
+	}
+	
+	
+	
+	
+	
+	//struct J_angles J_angles_list[num_div];
+	//double speeds_list[num_div];
 	struct J_angles J_angles_new;
 	struct J_angles J_angles_old = xyz_to_J_angles(cur_xyz);
 	
 	
-	printf("\n\nStarting pre-calculation for MoveRobotStraight:");
 	
-	printf("\nxyz_1: ");
-	print_XYZ(xyz_1);
-	printf("\nxyz_2: ");
-	print_XYZ(xyz_2);
-	printf("\ncart_speed: %f", cart_speed);
 	
 	printf("\nU21:");
 	print_vector(U21);
@@ -3532,57 +3612,81 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 	printf("\nU21_mag: %f", U21_mag);
 	printf("\nnum_div: %i", num_div);
 	printf("\nstep: %f", step);
+	printf("\ndx: %f\n", dx);
 	
 	
 	int i;
 	int cal_max_angular_velocity = 0;
-	for(i=0;i<=num_div;i++){
-		Ui = add(U1, scalar_mult(((float)i)*step, v21));
+	int angular_velocity;
+	struct Vector Ui;
+	double cur_speed;
+	double dist = 0.0;
+	for(i=1;i<=num_div;i++){
+		//Cartesian Interpolation
+		dist = ((float)i)*step;
+		Ui = add(U1, scalar_mult(dist, v21));
 		cur_xyz.position = Ui;
+		if(diff_normal){
+			cur_xyz.direction = rotate(xyz_1.direction, rot_cross_p, ((float)i)*rot_step_size);
+			//printf("\ni: %i  Direction: ", i);
+			//print_vector(rotate(xyz_1.direction, rot_cross_p, ((float)i)*rot_step_size));
+		}
 		J_angles_new = xyz_to_J_angles(cur_xyz);
+		
+		//Smooth Acceleration Speed Calc:
+		if(dist <= dx){
+			cur_speed = 0.5*cart_speed*(-cos(dist*PI/dx) + 1);
+		}else if(dist >= U21_mag - dx){
+			cur_speed = 0.5*cart_speed*(cos((dist - U21_mag + dx)*PI/dx) + 1);
+			//printf("Decell speed: %f   dist: %f\n", cur_speed, dist);
+		}else{
+			cur_speed = cart_speed;
+		}
 		angular_velocity = k_tip_speed_to_angle_speed(J_angles_old, J_angles_new, cart_speed);
-		
-		J_angles_list[i] = J_angles_new;
-		speeds_list[i] = angular_velocity;
-		
-		
+
+
+		//Actual Speed change and Movement
+		mapped[START_SPEED]= 1 ^ angular_velocity;
+		maxSpeed=angular_velocity & 0b00000000000011111111111111111111;
+		mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
+		MoveRobot(J_angles_new.J1, J_angles_new.J2, J_angles_new.J3, J_angles_new.J4, J_angles_new.J5, BLOCKING_MOVE);
+
+
 		//printf("\nang_vel: %d  J: ");
 		//print_J_angles(J_angles_new);
-		if(angular_velocity > cal_max_angular_velocity){
-			cal_max_angular_velocity = angular_velocity;
-		}
+		// if(angular_velocity > cal_max_angular_velocity){
+			// cal_max_angular_velocity = angular_velocity;
+		// }
 		//printf("%i: %i", i, angular_velocity);
 		
 	}
 	
-	printf("\nDone pre-calculating MoveRobotStraight");
-	printf("cal_max_angular_velocity = %i", cal_max_angular_velocity);
-	printf("\nStarting MoveRobotStraight movement");
-	printf("\n");
+	//printf("cal_max_angular_velocity = %i", cal_max_angular_velocity);
+	printf("\nMoveRobotStraight movement complete\n");
+	
 	
 	
 	/*
-	int cur_angular_velocity = 38773; //5 (deg/s)
 	for(i=0;i<=num_div;i++){
-		//cur_angular_velocity = speeds_list[i];
+		cur_angular_velocity = speeds_list[i];
 		
 		
 		//Startspeed
-		printf("mapped startspeed: %i", 1 ^ cur_angular_velocity);
+		//printf("cur_angular_velocity: %i\n", cur_angular_velocity);
 		mapped[START_SPEED]=1 ^ cur_angular_velocity;
 		
 		
 		//Maxspeed
 		maxSpeed=cur_angular_velocity & 0b00000000000011111111111111111111;
-		printf("maxSpeed: %i", cur_angular_velocity & 0b00000000000011111111111111111111);
+		//printf("maxSpeed: %i", cur_angular_velocity & 0b00000000000011111111111111111111);
 		mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
-		printf("mapped startspeed: %i", maxSpeed + (coupledAcceleration << 20));
+		//printf("mapped startspeed: %i", maxSpeed + (coupledAcceleration << 20));
 		
-		printf("i = %i, J1 = %f", i, J_angles_list[i].J1);
-		//MoveRobot(J_angles_list[i].J1, J_angles_list[i].J2, J_angles_list[i].J3, J_angles_list[i].J4, J_angles_list[i].J5, BLOCKING_MOVE);
+		//printf("i = %i, J1 = %f", i, J_angles_list[i].J1);
+		MoveRobot(J_angles_list[i].J1, J_angles_list[i].J2, J_angles_list[i].J3, J_angles_list[i].J4, J_angles_list[i].J5, BLOCKING_MOVE);
 	}
 	*/
-	printf("\n MoveRobotStraight movement");
+	
 	
 	return 0;
 }
@@ -3818,6 +3922,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 	return 0;
 
 }
+
 int MoveRobotRelative(int a1,int a2,int a3,int a4,int a5, int mode)
 {
 	int b1,b2,b3,b4,b5;
@@ -4287,7 +4392,7 @@ int ParseInput(char *iString)
 						p2=strtok(NULL, delimiters);//filename
 						if(wfp) fclose(wfp);
 						wfp = fopen(p2, "w");
-                        printf("Writing file to %s as handle %d...\n",p2,fileno(wfp));
+                        printf("\nWriting file to %s as handle %d...\n",p2,fileno(wfp));
 						break;
 					    case 's': //start
 					    case 'm': //middle
@@ -4627,11 +4732,8 @@ int ParseInput(char *iString)
 				break;
 				
 				case MOVETOSTRAIGHT_CMD:
-					printf("\n\nStarting MoveToStraight\n");
-					
-					//printf("\niString: \n%s", iString);
-					
-				
+					//printf("\n\nStarting MoveToStraight3\n");
+
 					p1 = strtok(NULL, delimiters);
 					p2 = strtok(NULL, delimiters);
 					p3 = strtok(NULL, delimiters);
@@ -4641,38 +4743,7 @@ int ParseInput(char *iString)
 					p7 = strtok(NULL, delimiters);
 					p8 = strtok(NULL, delimiters);
 					p9 = strtok(NULL, delimiters);
-					p10 = strtok(NULL, delimiters);
 					
-					/*
-					if(!p10){
-						printf("\nNot p10");
-					}else{
-						printf("\n%u", p9);
-						printf("\n%u", p10);
-						printf("\n%s", p10);
-						
-						printf("\n%u", p11);
-						printf("\n%s", p11);
-					}
-					*/
-					
-					p11 = strtok(NULL, delimiters);
-					p12 = strtok(NULL, delimiters);
-					p13 = strtok(NULL, delimiters);
-					p14 = strtok(NULL, delimiters);
-					p15 = strtok(NULL, delimiters);
-					p16 = strtok(NULL, delimiters);
-					p17 = strtok(NULL, delimiters);
-					p18 = strtok(NULL, delimiters);
-					p19 = strtok(NULL, delimiters);
-					
-					//printf("\nParsing Complete\n");
-					//printf("\n1: %d, \n2: %d, \n3: %d, \n4: %d, \n5: %d, \n6: %d, \n7: %d, \n8: %d, \n9: %d, \n10: %d, \n11: %d, \n12: %d, \n13: %d, \n14: %d, \n15: %d, \n16: %d, \n17: %d, \n18: %d, \n19: %d", (float)atoi(p1), (float)atoi(p2), (float)atoi(p3), (float)atoi(p4), (float)atoi(p5), (float)atoi(p6), (float)atoi(p7), (float)atoi(p8), (float)atoi(p9), (float)atoi(p10), (float)atoi(p11), (float)atoi(p12), (float)atoi(p13), (float)atoi(p14), (float)atoi(p15), (float)atoi(p16), (float)atoi(p17), (float)atoi(p18), (float)atoi(p19));
-					//printf("\nSpeed: %d", )
-					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f, p10f);
-					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p11f, p12f, p13f, p14f, p15f, p16f, p17f, p18f, p19f);
-					
-					/*
 					printf("\np1: %f", (float)atoi(p1));
 					printf("\np2: %f", (float)atoi(p2));
 					printf("\np3: %f", (float)atoi(p3));
@@ -4683,80 +4754,38 @@ int ParseInput(char *iString)
 					printf("\np8: %f", (float)atoi(p8));
 					printf("\np9: %f", (float)atoi(p9));
 					
-					
-					//printf("\np10: %f", (float)atoi(p10));
-					printf("\np11: %f", (float)atoi(p11));
-					printf("\np12: %f", (float)atoi(p12));
-					printf("\np13: %f", (float)atoi(p13));
-					printf("\np14: %f", (float)atoi(p14));
-					printf("\np15: %f", (float)atoi(p15));
-					printf("\np16: %f", (float)atoi(p16));
-					printf("\np17: %f", (float)atoi(p7));
-					printf("\np18: %f", (float)atoi(p18));
-					printf("\np19: %f", (float)atoi(p19));
-					
-					*/
-					
-					
-					double cart_speed = (float)atoi(p1);
-					//printf("\n1");
-					
-					struct Vector my_point_start = new_vector((float)atoi(p2), (float)atoi(p3), (float)atoi(p4));
-					//printf("\n2");
-					struct Vector my_dir_start = new_vector((float)atoi(p5), (float)atoi(p6), (float)atoi(p7));
-					//printf("\n3");
-					struct Config my_config_start = new_config((bool)atoi(p8), (bool)atoi(p9), (bool)atoi(p10));
-					//printf("\n4");
-					
 					/*
-					printf("\ncart_speed: %f (microns/sec)\n", cart_speed);
-					printf("\nmy_point_start: ");
-					print_vector(my_point_start);
-					printf("\nmy_dir_start: ");
-					print_vector(my_dir_start);
-					printf("\nBool input: %d, %d, %d\n", atoi(p17), atoi(p18), atoi(p19));
-					printf("\nmy_config_start:" );
-					print_config(my_config_start);
-					*/
-					struct XYZ xyz_start = new_XYZ(my_point_start, my_dir_start, my_config_start);
+					struct J_angles measured_angles = new_J_angles(
+							(float)(getNormalizedInput(BASE_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(PIVOT_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(END_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(ANGLE_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(ROT_MEASURED_ANGLE))
+						);
 					
 					
-					//printf("\n5");
-					struct Vector my_point_end = new_vector((float)atoi(p11), (float)atoi(p12), (float)atoi(p13));
-					//printf("\n6");
-					struct Vector my_dir_end = new_vector((float)atoi(p14), (float)atoi(p15), (float)atoi(p16));
-					//printf("\n7");
-					struct Config my_config_end = new_config((bool)atoi(p17), (bool)atoi(p18), (bool)atoi(p19));
-					//printf("\n8");
-					struct XYZ xyz_end = new_XYZ(my_point_end, my_dir_end, my_config_end);
-					//printf("\n9");
-					
-					//printf("\nJangles: \n");
-					//printf("[%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
-					//printf("\n");
-					
-					//printf("\n\nStarting MOVETOSTRAIGHT:");
-					
-					//print_config(my_config_start);
-					/*
-					printf("\nxyz_start: ");
+					struct XYZ xyz_start = J_angles_to_XYZ(measured_angles);
+					printf("\nxyz_start:\n");
 					print_XYZ(xyz_start);
+					*/
 					
-					printf("\n\nmy_point_end: ");
-					print_vector(my_point_end);
-					printf("\nmy_dir_end: ");
-					print_vector(my_dir_end);
-					printf("\nmy_config_end");
-					print_config(my_config_end);
-					printf("\nxyz_end: ");
-					print_XYZ(xyz_end);
-					printf("\n");
-					*/					
+					// struct Vector my_point_start = new_vector(-100000.0, 500000.0, 100000.0);
+					// struct Vector my_dir_start = new_vector(0.0, 0.0, -1.0);
+					// struct Config my_config_start = new_config(1, 1, 1);
+					// struct XYZ xyz_start = new_XYZ(my_point_start, my_dir_start, my_config_start);
 
+
+					struct Vector my_point_end = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
+					struct Vector my_dir_end = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					struct Config my_config_end = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
+					struct XYZ xyz_end = new_XYZ(my_point_end, my_dir_end, my_config_end);
+					printf("\nxyz_end:\n");
+					print_XYZ(xyz_end);
+					
 					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL){
-						
 						//printf("\n\nStarting MoveRobotStraight:\n");
-						MoveRobotStraight(xyz_start, xyz_end, cart_speed);
+						
+						MoveRobotStraight(xyz_end);
 						//MoveRobot(J1, J2, J3, J4, J5, BLOCKING_MOVE);
 					}
 					
