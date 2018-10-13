@@ -1918,6 +1918,11 @@ const char* Params[] = {
 	"ServoSet",
 	"RebootServo",
 	"Ctrl", //not actually detected from this list.
+	"J1_PID_P",
+	"J2_PID_P",
+	"J3_PID_P",
+	"J4_PID_P",
+	"J5_PID_P",
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
@@ -2651,13 +2656,13 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		}else{	
 			wfp = fopen(token, "r");
 			if (wfp) {
-				printf("Opened as handle %d.\n ",fileno(wfp));
+				//printf("Opened as handle %d.\n ",fileno(wfp));
 				i *= MAX_CONTENT_CHARS; //starting byte in the file
-				printf("read from byte %d\n",i);
+				//printf("read from byte %d\n",i);
 				fseek(wfp, i, SEEK_SET);
 				sendBuffReTyped[6] = fread ( sendBuff + sizeof(sendBuffReTyped[0])*7, 1, MAX_CONTENT_CHARS, wfp );
-				printf("Read %d bytes\n",sendBuffReTyped[6]);
-				printf("\n%s",sendBuff + sizeof(sendBuffReTyped[0])*6);
+				//printf("Read %d bytes\n",sendBuffReTyped[6]);
+				//printf("\n%s",sendBuff + sizeof(sendBuffReTyped[0])*6);
 				fclose(wfp);
 			}
 			else {
@@ -3586,7 +3591,7 @@ int MoveRobotStraight(struct XYZ xyz_2)
 		diff_normal = true;
 		if(dir_angle / ((float)num_div) > rot_step_size){
 			num_div = (int)ceil(dir_angle/rot_step_size);
-			printf("\num_div: %f", num_div);
+			printf("\num_div: %i", num_div);
 			
 		}
 		rot_step_size = dir_angle / ((float)num_div);
@@ -3756,6 +3761,9 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 	int i,BDH,BDL,Axis;
 	int a2=(int)fa2;
 	int fxa2=(a2<<8)+(fa2-a2)*256;
+	unsigned int *uia2 = *(unsigned int*)&fa2;
+
+
 	
 	////printf("%s %s %d %d \n",Params[i],a1,a2,i);
 
@@ -3912,6 +3920,45 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							//printf("Servo Reboot %d",a2);
 							RebootServo(a2); 
 						break;
+						case 30:     // Ctrl
+							//This is implimented at a higher level because of the atof on the second argument 
+						break;
+						case 31:     // J1_PID_P							
+							mapped[PID_ADDRESS]=0;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J1_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+						case 32:     // J2_PID_P
+							mapped[PID_ADDRESS]=2;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J2_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+						case 33:     // J3_PID_P
+							mapped[PID_ADDRESS]=1;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J3_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+						case 34:     // J4_PID_P
+							mapped[PID_ADDRESS]=3;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J4_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+						case 35:     // J5_PID_P
+							mapped[PID_ADDRESS]=4;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J5_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+
 
 						default:
 						break;
@@ -4321,9 +4368,11 @@ void ReplayMovement(char *FileName)
 	mapped[FINE_ADJUST_ROT]=fa4;*/
 	mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
 }
+#define ISTRING_LEN 255 //should be less or equal to socket buffer size. 
+char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc...)
+
 int getInput(void)
 {
-	char iString[510];
 	if(gets(iString)!=NULL)
 	{
 		return ParseInput(iString);
@@ -4360,7 +4409,7 @@ int ParseInput(char *iString)
 	//char iString[255];
 	const char delimiters[] = " ,";
 	const char ctrldelims[] = ":[] ,";
-	
+	FILE *fp;
 	char *token,*p1,*p2,*p3,*p4,*p5,*p6,*p7,*p8,*p9,*p10,*p11,*p12,*p13,*p14,*p15,*p16,*p17,*p18,*p19;
 	int BDH,BDL;
 
@@ -4411,7 +4460,7 @@ int ParseInput(char *iString)
 						if('e'==Add && wfp) {
                                         fclose(wfp);
                                         wfp = 0;
-                                        printf("\nFinished writing.\n");
+                                        printf("...Finished writing.\n");
 						// TODO: re load LinkLinks.txt file into L array ?
 
                                         }
@@ -4451,7 +4500,31 @@ int ParseInput(char *iString)
 				case SET_PARAM :
 					p1=strtok (NULL, delimiters);
 					
-					if (!strcmp("Ctrl",p1)) {
+					if (!strcmp("RunFile",p1)) {
+						p2 = strtok (NULL, delimiters);
+						fp = fopen(p2, "r");
+						if (fp) {
+							printf("Opened %s as handle %d\n", p2, fileno(fp));
+							do {
+								p3 = fgets(iString, ISTRING_LEN, fp);
+								if (p3) { //not EOF
+									p4 = strchr(iString,';');//,ISTRING_LEN); //Check that there is a ';' in there.
+									if (p4) { //found a ;
+										*p4=0; //terminate at the ;
+										//printf(" read: \"%s\"\n", iString);
+										ParseInput(iString); //recursivly execute
+										} 
+									}
+								} while (p3);
+							fclose(fp);
+							printf("Done\n");
+							}
+						else { 
+							printf("Failed to load %s Error # %d %s\n", p2, errno, strerror(errno)); 
+							return errno;
+							}
+						}
+					else if (!strcmp("Ctrl",p1)) {
 						while ((p1 = strtok(NULL,ctrldelims))) {
 							printf("key %s\n",p1);
 							if (!strcmp("Diff",p1)) {
@@ -4982,6 +5055,9 @@ int main(int argc, char *argv[]) {
 //  Dta= = atoi(argv[4]);
 //  mapped[Addr] = Dta;
 	setDefaults(DefaultMode);
+	strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
+	printf("Starting %s returned %d\n",iString, ParseInput(iString));
+	;
 //	if(DefaultMode ==2 )
 	if(ServerMode==1)
 	{
@@ -5078,7 +5154,7 @@ int main(int argc, char *argv[]) {
 	
     if(ServerMode==3)
 	{
-		while(1){} //loop forever
+		while(1){} //loop forever TODO: Add a sleep in this loop
 	}
 	while(getInput()==0);
 	ThreadsExit=0;
