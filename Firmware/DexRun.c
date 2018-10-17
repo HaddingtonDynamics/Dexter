@@ -122,7 +122,8 @@ int CalcUartTimeout(int size);
 #define CMD_ANGLE_ENABLE 4096
 #define CMD_ROT_ENABLE 8196
 
-
+#define ISTRING_LEN 255 //should be less or equal to socket buffer size. 
+char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc...)
 
 
 
@@ -3171,9 +3172,15 @@ void setDefaults(int State)
 	
 		if(RestoreCalTables("/srv/samba/share/HiMem.dta")==0)
 		{
+			/*
 			#ifndef NO_BOOT_DANCE
 			MoveRobot(20000,20000,20000,20000,20000,BLOCKING_MOVE);
 			MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+			#endif
+			*/
+			#ifndef NO_BOOT_DANCE
+			strlcpy(iString, "S RunFile BootDance_setDefaults==1.make_ins ;\0", ISTRING_LEN);
+			printf("Starting %s returned %d\n",iString, ParseInput(iString));
 			#endif
 		}
 	printf("CalTables set\n");
@@ -4092,8 +4099,14 @@ int RestoreCalTables(char *FileName)
 
 			//printf(" size good %d %d",readSize ,Length);
 			#ifndef NO_BOOT_DANCE
+
+			/*
 			MoveRobot(50000,50000,50000,5000,5000,BLOCKING_MOVE);
 			MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+			*/
+			strlcpy(iString, "S RunFile BootDance_RestoreCalTable_Succesful.make_ins ;\0", ISTRING_LEN);
+			printf("Starting %s returned %d\n",iString, ParseInput(iString));
+
 			#endif
 		}
 		else
@@ -4368,8 +4381,7 @@ void ReplayMovement(char *FileName)
 	mapped[FINE_ADJUST_ROT]=fa4;*/
 	mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
 }
-#define ISTRING_LEN 255 //should be less or equal to socket buffer size. 
-char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc...)
+
 
 int getInput(void)
 {
@@ -4605,6 +4617,24 @@ int ParseInput(char *iString)
 						// 		| CMD_ANGLE_ENABLE 
 						// 		| CMD_ROT_ENABLE
 						// 		;
+					}else if(!strcmp("LinkLengths",p1)){
+						p2=strtok (NULL, delimiters);
+						p3=strtok (NULL, delimiters);
+						p4=strtok (NULL, delimiters);
+						p5=strtok (NULL, delimiters);
+						p6=strtok (NULL, delimiters);
+						fp=fopen("LinkLengths.txt", "w");
+						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
+						fclose (fp);
+					}else if(!strcmp("StartPosition",p1)){
+						p2=strtok (NULL, delimiters);
+						p3=strtok (NULL, delimiters);
+						p4=strtok (NULL, delimiters);
+						p5=strtok (NULL, delimiters);
+						p6=strtok (NULL, delimiters);
+						fp=fopen("StartPosition.txt", "w");
+						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
+						fclose (fp);
 					}
 					else {
 						p2=strtok (NULL, delimiters);
@@ -4926,7 +4956,7 @@ int ParseInput(char *iString)
 						
 					}
 				break; 
-				case SET_ALL_BOUNDRY  :
+				case SET_ALL_BOUNDRY :
 					p1=strtok (NULL, delimiters);
 					p2=strtok (NULL, delimiters);
 					p3=strtok (NULL, delimiters);
@@ -4972,8 +5002,9 @@ int ParseInput(char *iString)
 			}
 			return 0;
 		}
-		else
+		else{
 			return 1;
+		}
 	}
 	return 1;
 }
@@ -5055,9 +5086,9 @@ int main(int argc, char *argv[]) {
 //  Dta= = atoi(argv[4]);
 //  mapped[Addr] = Dta;
 	setDefaults(DefaultMode);
-	strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
-	printf("Starting %s returned %d\n",iString, ParseInput(iString));
-	;
+	//strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
+	//printf("Starting %s returned %d\n",iString, ParseInput(iString));
+	
 //	if(DefaultMode ==2 )
 	if(ServerMode==1)
 	{
@@ -5116,6 +5147,7 @@ int main(int argc, char *argv[]) {
 		//Wigglesworth Code End
 		*/
 
+		/*
 		MoveRobot(0,0,0,50000,50000,BLOCKING_MOVE);
 	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
 	    MoveRobot(0,0,0,50000,-50000,BLOCKING_MOVE);
@@ -5124,6 +5156,11 @@ int main(int argc, char *argv[]) {
 	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
 	    MoveRobot(0,0,0,50000,-50000,BLOCKING_MOVE);
 	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+		*/
+
+		strlcpy(iString, "S RunFile BootDance_ServerMode==3.make_ins ;\0", ISTRING_LEN);
+		printf("Starting %s returned %d\n",iString, ParseInput(iString));
+
 	    #endif	
 		err = pthread_create(&(tid[0]), NULL, &StartServerSocketDDE,  (void*)&ThreadsExit);
 		if (err != 0)
@@ -5133,6 +5170,8 @@ int main(int argc, char *argv[]) {
 		}
 		else
 		{
+			//strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
+			//printf("Starting %s returned %d\n",iString, ParseInput(iString));
 			//printf("\n Begin Socket Server Thread For DDE\n");
 		}
 	}
@@ -5154,7 +5193,7 @@ int main(int argc, char *argv[]) {
 	
     if(ServerMode==3)
 	{
-		while(1){} //loop forever TODO: Add a sleep in this loop
+		while(1){sleep(1);} //loop forever TODO: Add a sleep in this loop
 	}
 	while(getInput()==0);
 	ThreadsExit=0;
@@ -5163,12 +5202,14 @@ int main(int argc, char *argv[]) {
 
 	//printf("\nExiting \n");
 
-  munmap(map_addr, size);
-  munmap(map_addrCt, CalTblSize);
-  
+    munmap(map_addr, size);
+    munmap(map_addrCt, CalTblSize);
 
-  close(fd);
-   close(mfd);
-   printf("End of main()\n");
-  return 0;
+    strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
+    printf("Starting %s returned %d\n",iString, ParseInput(iString));
+
+    close(fd);
+    close(mfd);
+    printf("End of main()\n");
+	return 0;
 }
