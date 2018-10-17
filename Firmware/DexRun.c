@@ -1,4 +1,7 @@
 //#define NO_BOOT_DANCE
+//#define DEBUG_API
+//#define DEBUG_XL320_UART
+// this is the TinyDuinoIntegration
 
 
 #include <stddef.h>
@@ -16,12 +19,31 @@
 #include <pthread.h>
 #include <termios.h>
 #include <inttypes.h>
-
+//#include "test.h" //TODO: Make that work
 
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
 
+
+//prototypes
+int getNormalizedInput(int);
+int RestoreCalTables(char *filename);
+void ProcessServerReceiveData(char *recBuff);
+bool ProcessServerReceiveDataDDE(char *recBuff);
+bool ProcessServerSendData(char *recBuff);
+bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff);
+int ParseInput(char *iString);
+int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode);
+int ReadDMA(int p1,int p2,char *p3);
+int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5);
+void SendPacket(unsigned char *TxPkt, int length, int TxRxTimeDelay, unsigned char *RxPkt, int ReadLength);
+void KeyholeSend(int *DataArray, int controlOffset, int size, int entryOffset );
+int CalcUartTimeout(int size);
+
+#define MAX_CONTENT_CHARS 62
+//maybe could be 112, 4 * 32 bit integers and then 128 bytes in the socket
 
 #define L1_TABLE 0x600000
 #define L1_TABLE_LENGTH 0xa8000
@@ -40,67 +62,51 @@
 
 
 
-
-#define INPUT_OFFSET 11
+#define INPUT_OFFSET 12
 
    // Motor position index
-#define BASE_POSITION 0
-#define END_POSITON 1
-#define PIVOT_POSITON 2
-#define ANGLE_POSITON 3
-#define ROT_POSITON 4
+#define CMD_POSITION_KEYHOLE 0
+#define CMD_POSITION_KEYHOLE_CMD 19 // s19 datatype
+#define CMD_POSITION_KEYHOLE_SIZE 5
 
-#define ACCELERATION_MAXSPEED 5
+#define ACCELERATION_MAXSPEED 1  // made acceleration 12 bits
 
-// DC bias paramaters
-#define BASE_SIN_CENTER 6
-#define BASE_COS_CENTER 7
-#define END_SIN_CENTER 8
-#define END_COS_CENTER 9
-#define PIVOT_SIN_CENTER 10
-#define PIVOT_COS_CENTER 11
-#define ANGLE_SIN_CENTER 12
-#define ANGLE_COS_CENTER 13
-#define ROT_SIN_CENTER 14
-#define ROT_COS_CENTER 15
+#define ADC_CENTERS_KEYHOLE 2
+#define ADC_CENTERS_KEYHOLE_CMD 29 // fixedpoint 13.16 datatype
+#define ADC_CENTERS_KEYHOLE_SIZE 10  // sin/cos 5 axis
 
-//PID VALUES
-#define PID_DELTATNOT 16
-#define PID_DELTAT 17
-#define PID_D 18
-#define PID_I 19
-#define PID_P 20
-#define PID_ADDRESS 21
+
+#define PID_P 3
+#define PID_ADDRESS 4
+
 
 //FORCE PARAMATERS
-#define BOUNDRY_BASE 22
-#define BOUNDRY_END 23
-#define BOUNDRY_PIVOT 24
+#define BOUNDRY_KEYHOLE 5
+#define BOUNDRY_KEYHOLE_CMD 19 // S19 DATATYPE
+#define BOUNDRY_KEYHOLE_SIZE 10 
 
-#define BOUNDRY_ANGLE 25
-#define BOUNDRY_ROT 26
 
-#define SPEED_FACTORA 27
-#define SPEED_FACTORB 28
+#define SPEED_FACTORA 6
 
-#define FRICTION_BASE 29
-#define FRICTION_END 30
-#define FRICTION_PIVOT 31
-#define FRICTION_ANGLE 32
-#define FRICTION_ROT 33
 
-#define MOVE_TRHESHOLD 34
-#define F_FACTOR 35
-#define MAX_ERROR 36
+#define BETA_XYZ 7  // FIXED 16
 
-#define FORCE_BIAS_BASE 37
-#define FORCE_BIAS_END 38
-#define FORCE_BIAS_PIVOT 39
-#define FORCE_BIAS_ANGLE 40
-#define FORCE_BIAS_ROT 41
+#define FRICTION_KEYHOLE 8
+#define FRICTION_KEYHOLE_CMD 16 // FIXED 16 DATATYPE
+#define FRICTION_KEYHOLE_SIZE 5
+
+
+#define MOVE_TRHESHOLD 9
+#define F_FACTOR 10
+#define MAX_ERROR 11
+
+#define FORCE_BIAS_KEYHOLE 12
+#define FORCE_BIAS_KEYHOLE_CMD 19 // S19 DATATYPE
+#define FORCE_BIAS_KEYHOLE_SIZE 5
+
 
 // control state register
-#define COMMAND_REG 42
+#define COMMAND_REG 13
 #define CMD_CAPCAL_BASE 1
 #define CMD_CAPCAL_END 2
 #define CMD_CAPCAL_PIVOT 4
@@ -116,19 +122,20 @@
 #define CMD_ANGLE_ENABLE 4096
 #define CMD_ROT_ENABLE 8196
 
-
+#define ISTRING_LEN 255 //should be less or equal to socket buffer size. 
+char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc...)
 
 
 
 
 
 //DMA 
-#define DMA_READ_ADDRESS 48
-#define DMA_READ_PARAMS 47
-#define DMA_WRITE_ADDRESS 46
-#define DMA_WRITE_PARAMS 45
-#define DMA_WRITE_DATA 44
-#define DMA_CONTROL 43
+#define DMA_CONTROL 14
+#define DMA_WRITE_DATA 15
+#define DMA_WRITE_PARAMS 16
+#define DMA_WRITE_ADDRESS 17
+#define DMA_READ_PARAMS 18
+#define DMA_READ_ADDRESS 19
 
 // DMA control bits breakdown
 
@@ -138,51 +145,68 @@
 #define DMA_READ_BLOCK 8
 #define DMA_RESET_ALL 16
 
-#define REC_PLAY_CMD 49
+
+// RECORD AND PLAYPACK
+#define REC_PLAY_CMD 20
+
 #define CMD_RESET_RECORD 1
 #define CMD_RECORD 2
 #define CMD_RESET_PLAY 4
 #define CMD_PLAYBACK 8
 #define CMD_RESET_PLAY_POSITION 16
 
+#define REC_PLAY_TIMEBASE 21
 
 
-#define REC_PLAY_TIMEBASE 50
-#define DIFF_FORCE_TIMEBASE 51
-#define DIFF_FORCE_BETA 52
-#define DIFF_FORCE_MOVE_THRESHOLD 53
-#define DIFF_FORCE_MAX_SPEED 54
-#define DIFF_FORCE_SPEED_FACTOR_ANGLE 55
-#define DIFF_FORCE_SPEED_FACTOR_ROT 56
-#define DIFF_FORCE_ANGLE_COMPENSATE 57
+#define MAXSPEED_XYZ 22
 
-#define FINE_ADJUST_BASE 58
-#define FINE_ADJUST_END 59
-#define FINE_ADJUST_PIVOT 60
-#define FINE_ADJUST_ANGLE 61
-#define FINE_ADJUST_ROT 62
+#define DIFF_FORCE_BETA 23
+#define DIFF_FORCE_MOVE_THRESHOLD 24
+#define DIFF_FORCE_MAX_SPEED 25
+#define DIFF_FORCE_SPEED_FACTOR_ANGLE 26
+#define DIFF_FORCE_SPEED_FACTOR_ROT 27
+#define EXTRUDER_CONTROL 28 
 
-#define RECORD_LENGTH 63
+#define FINE_ADJUST_KEYHOLE 29  // PID MOVE OFFSET
+#define FINE_ADJUST_KEYHOLE_CMD 19 //  S19 DATATYPE
+#define FINE_ADJUST_KEYHOLE_SIZE 5
 
 
+#define RECORD_LENGTH 30
 
-#define END_EFFECTOR_IO 64
-#define SERVO_SETPOINT_A 65
-#define SERVO_SETPOINT_B 66
 
-#define BASE_FORCE_DECAY 67
-#define END_FORCE_DECAY 68
-#define PIVOT_FORCE_DECAY 69
-#define ANGLE_FORCE_DECAY 70
-#define ROTATE_FORCE_DECAY 71
 
-#define PID_SCHEDULE_INDEX 72
+#define END_EFFECTOR_IO 31
+#define SERVO_SETPOINT_A 32
+#define SERVO_SETPOINT_B 33
 
-#define GRIPPER_MOTOR_CONTROL 73
-#define GRIPPER_MOTOR_ON_WIDTH 75
-#define GRIPPER_MOTOR_OFF_WIDTH 74
-#define START_SPEED 76
-#define ANGLE_END_RATIO 77
+#define UART1_XMIT_CNT 34 // SELT,LOADQ,FORCE TRANSMIT,RESET 
+#define UART1_XMIT_DATA 35 // 8BIT
+#define UART1_XMIT_TIMEBASE 36
+
+#define BASE_FORCE_DECAY 37
+#define END_FORCE_DECAY 38
+#define PIVOT_FORCE_DECAY 39
+#define ANGLE_FORCE_DECAY 40
+#define ROTATE_FORCE_DECAY 41
+
+#define PID_SCHEDULE_INDEX 42
+
+#define GRIPPER_MOTOR_CONTROL 43
+#define GRIPPER_MOTOR_ON_WIDTH 44
+#define GRIPPER_MOTOR_OFF_WIDTH 45
+
+#define START_SPEED 46
+#define ANGLE_END_RATIO 47
+
+#define RESET_PID_AND_FLUSH_QUEUE 48 // BIT ZERO = RESET PID ACCUMULATOR, BIT 1 = FLUSH QUEUE
+
+
+#define XYZ_FORCE_TIMEBASE 49
+#define DIFFERENTIAL_FORCE_TIMEBASE 50
+#define PID_TIMEBASE 51
+ 
+
 
 
 
@@ -191,6 +215,7 @@
 // DMA DATA IN
 
 #define DMA_READ_DATA 30 + INPUT_OFFSET
+
 
 
 
@@ -270,12 +295,21 @@
 #define SLOPE_ANGLE_POSITION 47 + INPUT_OFFSET
 #define SLOPE_ROT_POSITION 48 + INPUT_OFFSET
 #define CMD_FIFO_STATE 49 + INPUT_OFFSET
+#define UART_DATA_IN 50 + INPUT_OFFSET
+
+//Wiggles code:
+#define BASE_MEASURED_ANGLE 51 + INPUT_OFFSET
+#define END_MEASURED_ANGLE 52 + INPUT_OFFSET
+#define PIVOT_MEASURED_ANGLE 53 + INPUT_OFFSET
+#define ANGLE_MEASURED_ANGLE 54 + INPUT_OFFSET
+#define ROT_MEASURED_ANGLE 55 + INPUT_OFFSET
 
 
 
 
-
-
+int OldMemMapInderection[90]={0,0,0,0,0,ACCELERATION_MAXSPEED,0,0,0,0,0,0,0,0,0,0,0,0,0,0,PID_P,PID_ADDRESS,0,0,0,0,0,SPEED_FACTORA,BETA_XYZ,0,0,0,0,0,MOVE_TRHESHOLD,F_FACTOR,MAX_ERROR,0,0,0,0,0,COMMAND_REG,
+	DMA_CONTROL,DMA_WRITE_DATA,DMA_WRITE_PARAMS,DMA_WRITE_ADDRESS,DMA_READ_PARAMS,DMA_READ_ADDRESS,REC_PLAY_CMD,REC_PLAY_TIMEBASE,MAXSPEED_XYZ,DIFF_FORCE_BETA,DIFF_FORCE_MOVE_THRESHOLD,
+	DIFF_FORCE_MAX_SPEED,DIFF_FORCE_SPEED_FACTOR_ANGLE,DIFF_FORCE_SPEED_FACTOR_ROT, EXTRUDER_CONTROL,0,0,0,0,0,0,0,0,0,    BASE_FORCE_DECAY,END_FORCE_DECAY,PIVOT_FORCE_DECAY,ANGLE_FORCE_DECAY,ROTATE_FORCE_DECAY  ,0,0,0,0,0,0,RESET_PID_AND_FLUSH_QUEUE,XYZ_FORCE_TIMEBASE,DIFFERENTIAL_FORCE_TIMEBASE,PID_TIMEBASE,0,0,0,0};
 
 
 int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
@@ -376,9 +410,6 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define SERVO_HI_BOUND 1355000
 
 
-#define bool int
-#define TRUE 1
-#define FALSE 0
 
 
 
@@ -412,9 +443,27 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define PI (3.141592653589793)
 //double L[5] = { 0.1651, 0.320675, 0.3302, 0.0508, 0.08255 }; // (meters)
 double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
+double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
+
 struct Vector {
 	double x, y, z;
 };
+
+double max(double a, double b){
+	if(a > b){
+		return a;
+	}else{
+		return b;
+	}
+}
+
+double min(double a, double b){
+	if(a < b){
+		return a;
+	}else{
+		return b;
+	}
+}
 
 
 struct Vector new_vector(double x, double y, double z) {
@@ -628,19 +677,19 @@ double angle(struct Vector v1, struct Vector v2) {
 double signed_angle(struct Vector v1, struct Vector v2, struct Vector plane) {
 	double guess_angle = angle(v1, v2);
 	long double epsilon = 0.0000000001; // 1e-10
-	if (abs(guess_angle) <  epsilon || abs(abs(guess_angle) - 180) < epsilon) {
+	if (abs(guess_angle) <  epsilon || abs(abs(guess_angle) - 648000) < epsilon) {
 		return round(guess_angle); // Will rounding increase or decrease error? 
 	}
 
 	struct Vector c_prod = normalize(cross(v1, v2));
-	if (is_equal(c_prod, plane, 10)) {
+	if (is_equal(c_prod, normalize(plane), 10)) {
 		return guess_angle;
 	}
-	else if (is_equal(negate(c_prod), plane, 10)){
+	else if (is_equal(negate(c_prod), normalize(plane), 10)){
 		return -guess_angle;
 	}
 	else {
-		printf("\nError: singled_angle wants to return NaN:");
+		printf("\nError: signed_angle wants to return NaN:");
 		printf("\nguessangle: %f", guess_angle);
 		printf("\nc_prod: ");
 		print_vector(c_prod);
@@ -714,7 +763,7 @@ void print_config(struct Config a) {
 		printf("Out]");
 	}
 	else {
-		printf("Int]");
+		printf("In]");
 	}
 	//return
 }
@@ -778,60 +827,50 @@ struct XYZ new_XYZ(struct Vector position, struct Vector direction, struct Confi
 }
 
 void print_XYZ(struct XYZ a) {
-	printf("{ ");
+	printf("{");
 	print_vector(a.position);
 	printf(", ");
 	print_vector(a.direction);
 	printf(", ");
 	print_config(a.config);
-	printf(" }");
+	printf("}");
 }
 
 
 // Forward Kinematics:
-struct XYZ J_angles_to_xyz(struct J_angles angles) {
-
-	/*
-	// Pre allocation:
-	struct Vector U[6] = { {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0} };
-	struct Vector V[5] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 },{ 0, 0, 0 }};
-	struct Vector P[3] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }};
-
-	P[0][0] = 1; // Datam Plane = [1 0 0]
-	V[0][2] = 1; // Vector for Link 1 (base)
-
-	P[1] = rotate(P[0], V[0], -(angles.J1 - 180*3600)); // Links 2, 3 and 4 lie in P1
-	V[1] = rotate(V[0], P[1], angles.J2);		   // Vector for Link 2
-	V[2] = rotate(V[1], P[1], angles.J3);		   // Vector for Link 3
-	V[3] = rotate(V[2], P[1], angles.J4);		   // Vector for Link 4
-	P[2] = rotate(P[1], V[3], -(angles.J5 - 180*3600));	   // Link 4 and 5 lie in P2
-	V[4] = rotate(V[3], P[2], -90*3600);				   // Vector for Link 5 (90 degree bend)
-
-
-												   // Next point = current point + Link length * vector direction
-	int i;
-	for (i = 0; i < 5; i++) {
-		U[i + 1] = add(U[i], scalar_mult(L[i], V[i]));
-	}
-	*/
+struct XYZ J_angles_to_XYZ(struct J_angles angles) {
 	
+	//Pre-allocation:
 	struct Vector U0 = {0, 0, 0};
 	struct Vector U1 = {0, 0, 0};
 	struct Vector U2 = {0, 0, 0};
 	struct Vector U3 = {0, 0, 0};
 	struct Vector U4 = {0, 0, 0};
 	struct Vector U5 = {0, 0, 0};
-	
+
 	struct Vector V0 = {0, 0, 1};
 	struct Vector V1 = {0, 0, 0};
 	struct Vector V2 = {0, 0, 0};
 	struct Vector V3 = {0, 0, 0};
 	struct Vector V4 = {0, 0, 0};
-	
+
 	struct Vector P0 = {1, 0, 0};
 	struct Vector P1 = {0, 0, 0};
-	//struct Vector P2 = {0, 0, 0};
+	struct Vector P2 = {0, 0, 0};
 	
+	//FK:
+	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
+	V1 = rotate(V0, P1, angles.J2 + SP[1]);		   			// Vector for Link 2
+	V2 = rotate(V1, P1, angles.J3 + SP[2]);		   			// Vector for Link 3
+	V3 = rotate(V2, P1, angles.J4 + SP[3]);		  			// Vector for Link 4
+	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
+	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
+	
+	U1 = add(U0, scalar_mult(L[0], V0));
+	U2 = add(U1, scalar_mult(L[1], V1));
+	U3 = add(U2, scalar_mult(L[2], V2));
+	U4 = add(U3, scalar_mult(L[3], V3));
+	U5 = add(U4, scalar_mult(L[4], V4));
 
 	// Forward Kinematic solved, now to determine configuration:
 
@@ -846,7 +885,7 @@ struct XYZ J_angles_to_xyz(struct J_angles angles) {
 
 							   // Determine wrist state, in or out
 	if (is_equal(U3, U3_a, 10)) {  // Negative or positive rotation of Link 4?
-		if (dist_a < dist_b) {
+		if (dist_a > dist_b) {
 			my_config.wrist_out = 1; // Wrist out
 		}
 		else {
@@ -854,13 +893,15 @@ struct XYZ J_angles_to_xyz(struct J_angles angles) {
 		}
 	}
 	else {
-		if (dist_a < dist_b) {
+		if (dist_a > dist_b) {
 			my_config.wrist_out = 0; // Wrist in
 		}
 		else {
 			my_config.wrist_out = 1; // Wrist out
 		}
 	}
+
+
 
 	// Determine arm state, right or left 
 	struct Vector U50 = subtract(U5, U0);
@@ -871,8 +912,7 @@ struct XYZ J_angles_to_xyz(struct J_angles angles) {
 	else {
 		my_config.right_arm = 1;					// Right arm
 	}
-
-	// Determine elbow state, up or down
+ 	// Determine elbow state, up or down
 	if (my_config.right_arm) {						// If right arm
 		if (dot(cross(V1, V2), P1) > 0) {		// Is Joint 3 angle positive or negative?
 			my_config.elbow_up = 1;					// Elbow down
@@ -891,43 +931,13 @@ struct XYZ J_angles_to_xyz(struct J_angles angles) {
 	}
 
 
+
+
 	// Calculating the end effector direction
 	struct Vector my_dir = normalize(subtract(U5, U4));
-
-
-	
-	//debugging:
-	/*
-	printf("\nU:\n");
-	struct Vector temp_vector;
-	for (int i = 0; i < sizeof(U) / 24; i++) {
-		printf("i:%d = ", i);
-		temp_vector = U[i];
-		print_vector(temp_vector);
-		printf("\n");
-	}
-	printf("\nV:\n");
-	for (int i = 0; i < sizeof(V) / 24; i++) {
-		printf("i:%d = ", i);
-		temp_vector = V[i];
-		print_vector(temp_vector);
-		printf("\n");
-	}
-	printf("\nP:\n");
-	for (int i = 0; i < sizeof(P) / 24; i++) {
-		printf("i:%d = ", i);
-		temp_vector = P[i];
-		print_vector(temp_vector);
-		printf("\n");
-	}
-	*/
-	
-
-
-	struct XYZ result = new_XYZ(U5, my_dir, my_config);
-	return result;
+	struct XYZ solution = new_XYZ(U5, my_dir, my_config);
+	return solution;
 }
-
 
 // Inverse Kinematics:
 struct J_angles xyz_to_J_angles(struct XYZ xyz) {
@@ -1022,7 +1032,6 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 		printf("\n\nUnkown Singularity found at: ");
 		print_XYZ(xyz);
 		printf("\nPlease report this message as a bug.\n\n");
-		
 	}
 
 	// Checking if in range
@@ -1068,18 +1077,18 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 	V3 = normalize(subtract(U4, U3));
 
 	if (xyz.config.right_arm) {
-		J.J1 = signed_angle(P1, P0, V0);
-		J.J2 = signed_angle(V1, V0, P1);
-		J.J3 = signed_angle(V2, V1, P1);
-		J.J4 = signed_angle(V3, V2, P1);
-		J.J5 = signed_angle(P2, P1, V3);
+		J.J1 = signed_angle(P1, P0, V0) - SP[0];
+		J.J2 = signed_angle(V1, V0, P1) - SP[1];
+		J.J3 = signed_angle(V2, V1, P1) - SP[2];
+		J.J4 = signed_angle(V3, V2, P1) - SP[3];
+		J.J5 = signed_angle(P2, P1, V3) - SP[4];
 	}
 	else {
-		J.J1 = signed_angle(P1, P0, V0) + 180;
-		J.J2 = -signed_angle(V1, V0, P1);
-		J.J3 = -signed_angle(V2, V1, P1);
-		J.J4 = -signed_angle(V3, V2, P1);
-		J.J5 = -signed_angle(P2, P1, V3);
+		J.J1 = signed_angle(P1, P0, V0) + 180*3600 - SP[0];
+		J.J2 = -signed_angle(V1, V0, P1) - SP[1];
+		J.J3 = -signed_angle(V2, V1, P1) - SP[2];
+		J.J4 = -signed_angle(V3, V2, P1) - SP[3];
+		J.J5 = -signed_angle(P2, P1, V3) - SP[4];
 	}
 
 	
@@ -1124,11 +1133,11 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 }
 
 int k_tip_speed_to_angle_speed(struct J_angles J_angles_old, struct J_angles J_angles_new, double cart_speed){
-	struct Vector EE_point_1 = J_angles_to_xyz(J_angles_old).position;
-	struct Vector EE_point_2 = J_angles_to_xyz(J_angles_old).position;
+	struct Vector EE_point_1 = J_angles_to_XYZ(J_angles_old).position;
+	struct Vector EE_point_2 = J_angles_to_XYZ(J_angles_new).position;
 	double dist_EE = dist_point_to_point(EE_point_1, EE_point_2);
 	if(dist_EE == 0){
-		return 3877; //30 (deg/s)
+		return 3877.0; //30 (deg/s)
 	}
 	double max_theta = J_angles_max_diff(J_angles_old, J_angles_new);
 	
@@ -1137,6 +1146,639 @@ int k_tip_speed_to_angle_speed(struct J_angles J_angles_old, struct J_angles J_a
 		
 
 
+
+/*
+void print_pos_ori_mat(struct pos_ori_mat a) {
+	printf("\n[\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f]\n]\n", a[0][0], a[0][1], a[0][2], a[0][3], a[1][0], a[1][1], a[1][2], a[1][3], a[2][0], a[2][1], a[2][2], a[2][3], a[3][0], a[3][1], a[3][2], a[3][3]);
+}
+*/
+
+/*
+char* pos_ori_mat_to_string(struct pos_ori_mat a) {
+	return prints("\n[\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f]\n]\n", a[0][0], a[0][1], a[0][2], a[0][3], a[1][0], a[1][1], a[1][2], a[1][3], a[2][0], a[2][1], a[2][2], a[2][3], a[3][0], a[3][1], a[3][2], a[3][3]);
+}
+*/
+
+//New Code:
+struct row_pos_ori_mat{
+	double c0, c1, c2, c3;
+};
+
+struct pos_ori_mat{
+	struct row_pos_ori_mat r0, r1, r2, r3;
+};
+
+void pos_ori_mat_to_string(struct pos_ori_mat A, char *result){
+	printf("pos_ori_mat_to_string started\n");
+	printf("\n[\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f]\n]\n", A.r0.c0, A.r0.c1, A.r0.c2, A.r0.c3, A.r1.c0, A.r1.c1, A.r1.c2, A.r1.c3, A.r2.c0, A.r2.c1, A.r2.c2, A.r2.c3, A.r3.c0, A.r3.c1, A.r3.c2, A.r3.c3);
+	
+	sprintf(result, "[[%f, %f, %f, %f],[%f, %f, %f, %f],[%f, %f, %f, %f],[%f, %f, %f, %f]]", A.r0.c0, A.r0.c1, A.r0.c2, A.r0.c3, A.r1.c0, A.r1.c1, A.r1.c2, A.r1.c3, A.r2.c0, A.r2.c1, A.r2.c2, A.r2.c3, A.r3.c0, A.r3.c1, A.r3.c2, A.r3.c3);
+	printf("done with pos_ori_mat_to_string\n");
+};
+
+struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
+	
+	
+	
+	//Code from Forward Kinematics:
+	
+	
+	//struct Vector U[6] = { {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0} };
+	//struct Vector V[5] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 },{ 0, 0, 0 }};
+	//struct Vector P[3] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }};
+
+	//P[0][0] = 1; // Datam Plane = [1 0 0]
+	//V[0][2] = 1; // Vector for Link 1 (base)
+
+	// P[1] = rotate(P[0], V[0], -(angles.J1 - 180*3600)); // Links 2, 3 and 4 lie in P1
+	// V[1] = rotate(V[0], P[1], angles.J2);		   // Vector for Link 2
+	// V[2] = rotate(V[1], P[1], angles.J3);		   // Vector for Link 3
+	// V[3] = rotate(V[2], P[1], angles.J4);		   // Vector for Link 4
+	// P[2] = rotate(P[1], V[3], -(angles.J5 - 180*3600));	   // Link 4 and 5 lie in P2
+	// V[4] = rotate(V[3], P[2], -90*3600);				   // Vector for Link 5 (90 degree bend)
+
+
+												   // Next point = current point + Link length * vector direction
+	// int i;
+	// for (i = 0; i < 5; i++) {
+		// U[i + 1] = add(U[i], scalar_mult(L[i], V[i]));
+	// }
+	
+	printf("\nStarting J_angles_to_pos_ori_mat()\n");
+	
+	//Pre-allocation:
+	struct Vector U0 = {0, 0, 0};
+	struct Vector U1 = {0, 0, 0};
+	struct Vector U2 = {0, 0, 0};
+	struct Vector U3 = {0, 0, 0};
+	struct Vector U4 = {0, 0, 0};
+	struct Vector U5 = {0, 0, 0};
+
+	struct Vector V0 = {0, 0, 1};
+	struct Vector V1 = {0, 0, 0};
+	struct Vector V2 = {0, 0, 0};
+	struct Vector V3 = {0, 0, 0};
+	struct Vector V4 = {0, 0, 0};
+
+	struct Vector P0 = {1, 0, 0};
+	struct Vector P1 = {0, 0, 0};
+	struct Vector P2 = {0, 0, 0};
+	
+	printf("Pre-allocation complete\n");
+	
+	//FK:
+	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
+	V1 = rotate(V0, P1, angles.J2 + SP[1]);		   			// Vector for Link 2
+	V2 = rotate(V1, P1, angles.J3 + SP[2]);		   			// Vector for Link 3
+	V3 = rotate(V2, P1, angles.J4 + SP[3]);		  			// Vector for Link 4
+	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
+	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
+	
+	printf("Vector rotations complete\n");
+	
+	U1 = add(U0, scalar_mult(L[0], V0));
+	U2 = add(U1, scalar_mult(L[1], V1));
+	U3 = add(U2, scalar_mult(L[2], V2));
+	U4 = add(U3, scalar_mult(L[3], V3));
+	U5 = add(U4, scalar_mult(L[4], V4));
+	
+	printf("Vector adds complete\n");
+	
+	//Calc pos_ori_mat:
+	struct Vector Vz = V3;
+	struct Vector Vy = V4;
+	struct Vector Vx = cross(Vy, Vz);
+	printf("\nVector cross complete\n");
+	struct pos_ori_mat result;
+	printf("\npos_ori_mat Struct def complete\n");
+	
+	
+	result.r0.c0 = Vx.x;
+	result.r1.c0 = Vx.y;
+	result.r2.c0 = Vx.z;
+	
+	printf("\nResult 0 complete\n");
+	
+	result.r0.c1 = Vy.x;
+	result.r1.c1 = Vy.y;
+	result.r2.c1 = Vy.z;
+	
+	printf("\nResult 1 complete\n");
+	
+	result.r0.c2 = Vz.x;
+	result.r1.c2 = Vz.y;
+	result.r2.c2 = Vz.z;
+	
+	printf("\nResult 2 complete\n");
+	
+	result.r0.c3 = U4.x;
+	result.r1.c3 = U4.y;
+	result.r2.c3 = U4.z;
+	
+	printf("\nResult 3 complete\n");
+	
+	result.r3.c0 = 0;
+	result.r3.c1 = 0;
+	result.r3.c2 = 0;
+	result.r3.c3 = 1;
+	
+	printf("\nResult 4 complete\n");
+	
+	//= {{Vx.x, Vy.x, Vz.x, U4.x}, {Vx.y, Vy.y, Vz.y, U4.y}, {Vx.z, Vy.z, Vz.z, U4.z}, {0, 0, 0, 1}};
+	
+	
+	
+	
+	// result[0][3] = U4[0];
+	// result[1][3] = U4[1];
+	// result[2][3] = U4[2];
+	
+	// result[0][0] = Vx[0];
+	// result[1][0] = Vx[1];
+	// result[2][0] = Vx[2];
+	// result[0][1] = Vy[0];
+	// result[1][1] = Vy[1];
+	// result[2][1] = Vy[2];
+	// result[0][2] = Vz[0];
+	// result[1][2] = Vz[1];
+	// result[2][2] = Vz[2];
+	// result[3][0] = 0;
+	// result[3][1] = 0;
+	// result[3][2] = 0;
+	// result[3][3] = 1;
+	
+	
+	
+	//result.orientation = {{Vx[0], Vy[0], Vz[0]}, {Vx[1], Vy[1], Vz[1]}, {Vx[2], Vy[2], Vz[2]}}
+	
+	return result;
+}
+
+
+
+
+
+
+//Safe verision of strncpy found by James Newton
+size_t strlcpy(char *dst, const char *src, size_t dstsize)
+{
+  size_t bl = 0;
+  size_t len = strlen(src);
+  if(dstsize) {
+    bl = (len < dstsize-1 ? len : dstsize-1);
+    ((char*)memcpy(dst, src, bl))[bl] = 0;
+  }
+  return bl;
+}
+
+
+struct ellipse{
+	double a, b, c, d, e, f;
+	double center_x, center_y;
+	double eccentricity;
+	double major_radius, minor_radius;
+	double quad_points_major_Ax, quad_points_major_Ay;
+	double quad_points_major_Bx, quad_points_major_By;
+	double quad_points_minor_Ax, quad_points_minor_Ay;
+	double quad_points_minor_Bx, quad_points_minor_By;
+	double rotation_angle;
+	double error_state;
+};
+
+struct eye_data{
+	double xs[128];
+	double ys[128];
+	double ts[128];
+};
+
+
+double matrix_determinant(int rows, int cols, double matrix[rows][cols]){
+	double result = 0;
+	if(2 == rows && 2 == cols){
+		result = matrix[0][0]*matrix[1][1] - matrix[0][1]*matrix[1][0];
+	}else if(3 == rows && 3 == cols){
+		//Source: https://en.wikipedia.org/wiki/Determinant#n_.C3.97_n_matrices
+		double a, b, c, d, e, f, g, h, i;
+		a = matrix[0][0];
+		b = matrix[0][1];
+		c = matrix[0][2];
+		d = matrix[1][0];
+		e = matrix[1][1];
+		f = matrix[1][2];
+		g = matrix[2][0];
+		h = matrix[2][1];
+		i = matrix[2][2];
+		result = a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);
+	}else if(rows == 4 && cols == 4){
+		// Source: http://www.cg.info.hiroshima-cu.ac.jp/~miyazaki/knowledge/teche23.html
+		double a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41, a42, a43, a44;
+		a11 = matrix[0][0];
+		a12 = matrix[0][1];
+		a13 = matrix[0][2];
+		a14 = matrix[0][3];
+		a21 = matrix[1][0];
+		a22 = matrix[1][1];
+		a23 = matrix[1][2];
+		a24 = matrix[1][3];
+		a31 = matrix[2][0];
+		a32 = matrix[2][1];
+		a33 = matrix[2][2];
+		a34 = matrix[2][3];
+		a41 = matrix[3][0];
+		a42 = matrix[3][1];
+		a43 = matrix[3][2];
+		a44 = matrix[3][3];
+		
+		result = a11*a22*a33*a44 + a11*a23*a34*a42 + a11*a24*a32*a43
+				+a12*a21*a34*a43 + a12*a23*a31*a44 + a12*a24*a33*a41
+				+a13*a21*a32*a44 + a13*a22*a34*a41 + a13*a24*a31*a42
+				+a14*a21*a33*a42 + a14*a22*a31*a43 + a14*a23*a32*a41
+				-a11*a22*a34*a43 - a11*a23*a32*a44 - a11*a24*a33*a42
+				-a12*a21*a33*a44 - a12*a23*a34*a41 - a12*a24*a31*a43
+				-a13*a21*a34*a42 - a13*a22*a31*a44 - a13*a24*a32*a41
+				-a14*a21*a32*a43 - a14*a22*a33*a41 - a14*a23*a31*a42;
+	}else{
+		printf("Error: matrix_determinant() was passed invalid rows and cols, [%d][%d]", rows, cols);
+	}
+	return result;
+}
+
+
+void matrix_inverse(int rows, int cols, double mat_in[rows][cols], double mat_out[rows][cols]){
+	if(2 == rows && 2 == cols){
+		//mat_out = {{mat_in[1][1], -mat_in[1][0]}, {-mat_in[0][1], mat_in[0][0]}};
+		mat_out[0][0] = mat_in[1][1];
+		mat_out[0][1] = -mat_in[1][0];
+		mat_out[1][0] = -mat_in[0][1];
+		mat_out[1][1] = mat_in[0][0];
+		
+	}else if(3 == rows && 3 == cols){
+		double a, b, c, d, e, f, g, h, i, A, B, C, D, E, F, G, H, I;
+		a = mat_in[0][0];
+		b = mat_in[0][1];
+		c = mat_in[0][2];
+		d = mat_in[1][0];
+		e = mat_in[1][1];
+		f = mat_in[1][2];
+		g = mat_in[2][0];
+		h = mat_in[2][1];
+		i = mat_in[2][2];
+		
+		double inv_det = 1.0/matrix_determinant(rows,cols,mat_in);
+		double temp[2][2];
+		
+		temp[0][0] = e;
+		temp[0][1] = f;
+		temp[1][0] = h;
+		temp[1][1] = i;
+		A = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = d;
+		temp[0][1] = f;
+		temp[1][0] = g;
+		temp[1][1] = i;
+		B = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = d;
+		temp[0][1] = e;
+		temp[1][0] = g;
+		temp[1][1] = h;
+		C = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = b;
+		temp[0][1] = c;
+		temp[1][0] = h;
+		temp[1][1] = i;
+		D = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = a;
+		temp[0][1] = c;
+		temp[1][0] = g;
+		temp[1][1] = i;
+		E = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = a;
+		temp[0][1] = b;
+		temp[1][0] = g;
+		temp[1][1] = h;
+		F = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = b;
+		temp[0][1] = c;
+		temp[1][0] = e;
+		temp[1][1] = f;
+		G = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = a;
+		temp[0][1] = c;
+		temp[1][0] = d;
+		temp[1][1] = f;
+		H = inv_det * matrix_determinant(2,2,temp);
+		
+		temp[0][0] = a;
+		temp[0][1] = b;
+		temp[1][0] = d;
+		temp[1][1] = e;
+		I = inv_det * matrix_determinant(2,2,temp);
+		
+		
+		// A =  inv_det * matrix_determinant(rows,cols,(double [rows]){(double[]){e, f}, (double[]){h, i}});
+		// B = -inv_det * matrix_determinant(rows,cols,(double [rows]){(double[cols]){d, f}, (double[]){g, i}});
+		// C =  inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){d, e}, (double[]){g, h}});
+		// D = -inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){b, c}, (double[]){h, i}});
+		// E =  inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){a, c}, (double[]){g, i}});
+		// F = -inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){a, b}, (double[]){g, h}});
+		// G =  inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){b, c}, (double[]){e, f}});
+		// H = -inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){a, c}, (double[]){d, f}});
+		// I =  inv_det * matrix_determinant(rows,cols,(double *[]){(double[]){a, b}, (double[]){d, e}});
+		
+		//mat_out = {{A, B, C}, {D, E, F}, {G, H, I}};
+		mat_out[0][0] = A;
+		mat_out[0][1] = B;
+		mat_out[0][2] = C;
+		mat_out[1][0] = D;
+		mat_out[1][1] = E;
+		mat_out[1][2] = F;
+		mat_out[2][0] = G;
+		mat_out[2][1] = H;
+		mat_out[2][2] = I;
+		
+		
+	}else if(4 == rows && 4 == cols){
+		// Source: http://www.cg.info.hiroshima-cu.ac.jp/~miyazaki/knowledge/teche23.html
+		double a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41, a42, a43, a44;
+		//double b11, b12, b13, b14, b21, b22, b23, b24, b31, b32, b33, b34, b41, b42, b43, b44;
+		a11 = mat_in[0][0];
+		a12 = mat_in[0][1];
+		a13 = mat_in[0][2];
+		a14 = mat_in[0][3];
+		a21 = mat_in[1][0];
+		a22 = mat_in[1][1];
+		a23 = mat_in[1][2];
+		a24 = mat_in[1][3];
+		a31 = mat_in[2][0];
+		a32 = mat_in[2][1];
+		a33 = mat_in[2][2];
+		a34 = mat_in[2][3];
+		a41 = mat_in[3][0];
+		a42 = mat_in[3][1];
+		a43 = mat_in[3][2];
+		a44 = mat_in[3][3];
+		
+		double inv_det = 1.0/matrix_determinant(rows,cols,mat_in);
+		mat_out[0][0] = inv_det * (a22*a33*a44 + a23*a34*a42 + a24*a32*a43 - a22*a34*a43 - a23*a32*a44 - a24*a33*a42);
+		mat_out[0][1] = inv_det * (a12*a34*a43 + a13*a32*a44 + a14*a33*a42 - a12*a33*a44 - a13*a34*a42 - a14*a32*a43);
+		mat_out[0][2] = inv_det * (a12*a23*a44 + a13*a24*a42 + a14*a22*a43 - a12*a24*a43 - a13*a22*a44 - a14*a23*a42);
+		mat_out[0][3] = inv_det * (a12*a24*a33 + a13*a22*a34 + a14*a23*a32 - a12*a23*a34 - a13*a24*a32 - a14*a22*a33);
+		
+		mat_out[1][0] = inv_det * (a21*a34*a43 + a23*a31*a44 + a24*a33*a41 - a21*a33*a44 - a23*a34*a41 - a24*a31*a43);
+		mat_out[1][1] = inv_det * (a11*a33*a44 + a13*a34*a41 + a14*a31*a43 - a11*a34*a43 - a13*a31*a44 - a14*a33*a41);
+		mat_out[1][2] = inv_det * (a11*a24*a43 + a13*a21*a44 + a14*a23*a41 - a11*a23*a44 - a13*a24*a41 - a14*a21*a43);
+		mat_out[1][3] = inv_det * (a11*a23*a34 + a13*a24*a31 + a14*a21*a33 - a11*a24*a33 - a13*a21*a34 - a14*a23*a31);
+		
+		mat_out[2][0] = inv_det * (a21*a32*a44 + a22*a34*a41 + a24*a31*a42 - a21*a34*a42 - a22*a31*a44 - a24*a32*a41);
+		mat_out[2][1] = inv_det * (a11*a34*a42 + a12*a31*a44 + a14*a32*a41 - a11*a32*a44 - a12*a34*a41 - a14*a31*a42);
+		mat_out[2][2] = inv_det * (a11*a22*a44 + a12*a24*a41 + a14*a21*a42 - a11*a24*a42 - a12*a21*a44 - a14*a22*a41);
+		mat_out[2][3] = inv_det * (a11*a24*a32 + a12*a21*a34 + a14*a22*a31 - a11*a22*a34 - a12*a24*a31 - a14*a21*a32);
+		
+		mat_out[3][0] = inv_det * (a21*a33*a42 + a22*a31*a43 + a23*a32*a41 - a21*a32*a43 - a22*a33*a41 - a23*a31*a42);
+		mat_out[3][1] = inv_det * (a11*a32*a43 + a12*a33*a41 + a13*a31*a42 - a11*a33*a42 - a12*a31*a43 - a13*a32*a41);
+		mat_out[3][2] = inv_det * (a11*a23*a42 + a12*a21*a43 + a13*a22*a41 - a11*a22*a43 - a12*a23*a41 - a13*a21*a42);
+		mat_out[3][3] = inv_det * (a11*a22*a33 + a12*a23*a31 + a13*a21*a32 - a11*a23*a32 - a12*a21*a33 - a13*a22*a31);
+		
+		//mat_out = {{b11, b12, b13, b14}, {b21, b22, b23, b24}, {b31, b32, b33, b34}, {b41, b42, b43, b44}};
+	}else if(rows == cols){
+		//Source: http://blog.acipo.com/matrix-inversion-in-javascript/
+		
+		//16 Nov 2013 by Andrew Ippoliti
+		// I use Guassian Elimination to calculate the inverse:
+    	// (1) 'augment' the matrix (left) by the identity (on the right)
+    	// (2) Turn the matrix on the left into the identity by elemetry row ops
+    	// (3) The matrix on the right is the inverse (was the identity matrix)
+    	// There are 3 elemtary row ops: (I combine b and c in my code)
+    	// (a) Swap 2 rows
+    	// (b) Multiply a row by a scalar
+    	// (c) Add 2 rows
+    
+    	//if the matrix isn't square: exit (error)
+    	// if(M.length !== M[0].length){return;}
+    
+    	//create the identity matrix (I), and a copy (C) of the original
+    	int i = 0;
+		int ii = 0;
+		int j = 0;
+		double e = 0;
+		//double t = 0;
+    	double mat_out[rows][cols];
+		double C[rows][cols];
+    	for(i = 0; i < rows; i++){
+        	for(j = 0; j < rows; j++){
+            	//if we're on the diagonal, put a 1 (for identity)
+            	if(i == j){ mat_out[i][j] = 1; }
+            	else{ mat_out[i][j] = 0; }
+            	// Also, make the copy of the original
+            	C[i][j] = mat_in[i][j];
+        	}
+    	}
+    
+    	// Perform elementary row operations
+    	for(i=0; i<rows; i+=1){
+        	// get the element e on the diagonal
+        	e = C[i][i];
+        
+        	// if we have a 0 on the diagonal (we'll need to swap with a lower row)
+        	if(e==0){
+            	//look through every row below the i'th row
+            	for(ii = i+1; ii < rows; ii++){
+                	//if the ii'th row has a non-0 in the i'th col
+                	if(C[ii][i] != 0){
+                    	//it would make the diagonal have a non-0 so swap it
+                    	for(j=0; j < rows; j++){
+                        	e = C[i][j];       //temp store i'th row
+                        	C[i][j] = C[ii][j];//replace i'th row by ii'th
+                        	C[ii][j] = e;      //repace ii'th by temp
+                        	e = mat_out[i][j];       //temp store i'th row
+                        	mat_out[i][j] = mat_out[ii][j];//replace i'th row by ii'th
+                        	mat_out[ii][j] = e;      //repace ii'th by temp
+                    	}
+                    	//don't bother checking other rows since we've swapped
+                    	break;
+                	}
+            	}
+            	//get the new diagonal
+            	e = C[i][i];
+            	//if it's still 0, not invertable (error)
+            	if(e==0){
+					return;
+				}
+        	}
+        
+        	// Scale this row down by e (so we have a 1 on the diagonal)
+        	for(j=0; j<rows; j++){
+            	C[i][j] = C[i][j]/e; //apply to original matrix
+            	mat_out[i][j] = mat_out[i][j]/e; //apply to identity
+        	}
+        
+        	// Subtract this row (scaled appropriately for each row) from ALL of
+        	// the other rows so that there will be 0's in this column in the
+        	// rows above and below this one
+        	for(ii=0; ii<rows; ii++){
+            	// Only apply to other rows (we want a 1 on the diagonal)
+            	if(ii != i){
+				
+					// We want to change this element to 0
+					e = C[ii][i];
+				
+					// Subtract (the row above(or below) scaled by e) from (the
+					// current row) but start at the i'th column and assume all the
+					// stuff left of diagonal is 0 (which it should be if we made this
+					// algorithm correctly)
+					for(j=0; j<rows; j++){
+						C[ii][j] -= e*C[i][j]; //apply to original matrix
+						mat_out[ii][j] -= e*mat_out[i][j]; //apply to identity
+					}
+				}
+        	}
+    	}
+    
+    	//we've done all operations, C should be the identity
+    	//matrix mat_out should be the inverse:
+	}else{
+		printf("Error: Dimensions of [%d}[%d] invalid. cmatrix_inverse() requires square matrix", rows, cols);
+	}
+}
+
+struct ellipse v_ellipse_fit(struct eye_data eye, int start_idx, int end_idx) {
+	struct ellipse res;
+	double orientation_tolerance = 1e-3;
+	double sum_x = 0;
+	double sum_y = 0;
+	int n = end_idx - start_idx;
+	double xs[n];
+	double ys[n];
+	int i, j, k;
+	for(i = 0; i < n; i++){
+		xs[i] = eye.xs[i+start_idx];
+		sum_x += xs[i];
+		sum_y += ys[i];
+	}
+	double mean_x = sum_x / n;
+	double mean_y = sum_y / n;
+	
+	for(i = 0; i < n; i++){
+		xs[i] -= mean_x;
+		ys[i] -= mean_y;
+	}
+	
+	double X[n][5];
+	double X_prime[5][n];
+	double X_square[5][5];
+	for(i = 0; i < n; i++){
+		X_prime[0][i] = xs[i] * xs[i];
+		X_prime[1][i] = xs[i] * ys[i];
+		X_prime[2][i] = ys[i] * ys[i];
+		X_prime[3][i] = xs[i];
+		X_prime[4][i] = ys[i];
+		
+		X[i][0] = X_prime[0][i];
+		X[i][1] = X_prime[1][i];
+		X[i][2] = X_prime[2][i];
+		X[i][3] = X_prime[3][i];
+		X[i][4] = X_prime[4][i];
+	}
+	
+	//matrix multiply X_prime*X
+	double dot_sum;
+	for(i = 0; i < 5; i++){
+		for(j = 0; j < 5; j++){
+			dot_sum = 0;
+			for(k = 0; k < n; k++){
+				dot_sum += X_prime[i][k] * X[k][j];
+			}
+			X_square[i][j] = dot_sum;
+		}
+	}
+	
+	double X_inv[5][5];
+	matrix_inverse(5, 5, X_square, X_inv);
+
+	double row_sum[5] = {0, 0, 0, 0, 0};
+	for(i = 0; i < n; i++){
+		for(j = 0; j < 5; j++){
+			row_sum[j] += X[i][j];
+		}
+    }
+	
+	double coeffs[5];
+	//matrix multiply row_sum*X_inv
+	for(j = 0; j < 5; j++){ //TODO: This loop ends at index 4 so coeffs[5] is not addressed
+		dot_sum = 0;
+		for(k = 0; k < n; k++){
+			dot_sum += row_sum[k] * X_inv[k][j];
+		}
+		coeffs[j] = dot_sum;
+	}
+	
+	res.a = coeffs[0];
+	res.b = coeffs[1];
+	res.c = coeffs[2];
+	res.d = coeffs[3];
+	res.e = coeffs[4];
+	//res.f = coeffs[5]; //TODO: This element isn't initialized 
+	
+	double cos_phi, sin_phi, orientation_rad;
+	if(min(abs(res.b/res.a), abs(res.b/res.c)) > orientation_tolerance){
+		orientation_rad = 0.5 * atan(res.b/(res.c-res.a));
+		cos_phi = cos(orientation_rad);
+		sin_phi = sin(orientation_rad);
+		res.a = res.a*cos_phi*cos_phi - res.b*cos_phi*sin_phi + res.c*sin_phi*sin_phi;
+		res.b = 0;
+		res.c = res.a*sin_phi*sin_phi + res.b*cos_phi*sin_phi + res.c*cos_phi*cos_phi;
+		res.d = res.d*cos_phi - res.e*sin_phi;
+		res.e = res.d*sin_phi + res.e*cos_phi;
+		mean_x = cos_phi*mean_x - sin_phi*mean_y;
+		mean_y = sin_phi*mean_x + cos_phi*mean_y;
+	}else{
+		orientation_rad = 0;
+		cos_phi = cos(orientation_rad);
+		sin_phi = sin(orientation_rad);
+	}
+	
+	double test = res.a * res.c;
+	if(test > 0){
+		res.error_state = false;
+	}else{
+		res.error_state = true;
+	}
+	
+	if(res.a < 0){
+		res.a = -res.a;
+		res.c = -res.c;
+		res.d = -res.d;
+		res.e = -res.e;
+	}
+	
+	res.center_x = mean_x - 0.5*res.d/res.a;
+	res.center_y = mean_x - 0.5*res.e/res.c;
+	double F = 1.0 + (res.d*res.d) / (4.0*res.a) + (res.e*res.e) / (4*res.c);
+	double radius_a = sqrt(F/res.a);
+	double radius_b = sqrt(F/res.c);
+	res.major_radius = max(radius_a, radius_b);
+	res.minor_radius = min(radius_a, radius_b);
+	
+	
+	// double R[2][2];
+	// R[0][0] = cos_phi;
+	// R[1][0] = -sin_phi;
+	// R[0][1] = sin_phi;
+	// R[1][1] = cos_phi;
+	// double P_in
+	
+	res.eccentricity = res.minor_radius / res.major_radius;
+	res.rotation_angle = orientation_rad * 180.0 / PI;
+	
+	return res;
+}
 
 
 
@@ -1161,22 +1803,23 @@ int YHighBound[5]={BASE_SIN_HIGH,END_SIN_HIGH,PIVOT_SIN_HIGH,ANGLE_SIN_HIGH,ROT_
 int ForcePossition[5]={0,0,0,0,0};
 int ForceDestination[5]={0,0,0,0,0};
 int ThreadsExit=1;
-int StatusReportIndirection[60]={DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,BASE_POSITION_AT,BASE_POSITION_DELTA,
-								BASE_POSITION_PID_DELTA,BASE_POSITION_FORCE_DELTA,BASE_SIN,BASE_COS,PLAYBACK_BASE_POSITION,SENT_BASE_POSITION,
-								SLOPE_BASE_POSITION,0,PIVOT_POSITION_AT,PIVOT_POSITION_DELTA,PIVOT_POSITION_PID_DELTA,PIVOT_POSITION_FORCE_DELTA,
-								PIVOT_SIN,PIVOT_COS,PLAYBACK_PIVOT_POSITION,SENT_PIVOT_POSITION,SLOPE_PIVOT_POSITION,0,END_POSITION_AT,
-								END_POSITION_DELTA,END_POSITION_PID_DELTA,END_POSITION_FORCE_DELTA,END_SIN,END_COS,PLAYBACK_END_POSITION,
-								SENT_END_POSITION,SLOPE_END_POSITION,0,ANGLE_POSITION_AT,ANGLE_POSITION_DELTA,ANGLE_POSITION_PID_DELTA,
-								ANGLE_POSITION_FORCE_DELTA,ANGLE_SIN,ANGLE_COS,PLAYBACK_ANGLE_POSITION,SENT_ANGLE_POSITION,SLOPE_ANGLE_POSITION,
-								0,ROT_POSITION_AT,ROT_POSITION_DELTA,ROT_POSITION_PID_DELTA,ROT_POSITION_FORCE_DELTA,ROT_SIN,ROT_COS,
-								PLAYBACK_ROT_POSITION,SENT_ROT_POSITION,SLOPE_ROT_POSITION,0};
+
+
+int StatusReportIndirection[60]={
+	DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,
+	BASE_POSITION_AT,  BASE_POSITION_DELTA,  BASE_POSITION_PID_DELTA,  BASE_POSITION_FORCE_DELTA,  BASE_SIN,  BASE_COS,  BASE_MEASURED_ANGLE,  SENT_BASE_POSITION,  SLOPE_BASE_POSITION,0,
+	PIVOT_POSITION_AT, PIVOT_POSITION_DELTA, PIVOT_POSITION_PID_DELTA, PIVOT_POSITION_FORCE_DELTA, PIVOT_SIN, PIVOT_COS, PIVOT_MEASURED_ANGLE, SENT_PIVOT_POSITION, SLOPE_PIVOT_POSITION,0,
+	END_POSITION_AT,   END_POSITION_DELTA,   END_POSITION_PID_DELTA,   END_POSITION_FORCE_DELTA,   END_SIN,   END_COS,   END_MEASURED_ANGLE,   SENT_END_POSITION,   SLOPE_END_POSITION,0,
+	ANGLE_POSITION_AT, ANGLE_POSITION_DELTA, ANGLE_POSITION_PID_DELTA, ANGLE_POSITION_FORCE_DELTA, ANGLE_SIN, ANGLE_COS, ANGLE_MEASURED_ANGLE, SENT_ANGLE_POSITION, SLOPE_ANGLE_POSITION,0,
+	ROT_POSITION_AT,   ROT_POSITION_DELTA,   ROT_POSITION_PID_DELTA,   ROT_POSITION_FORCE_DELTA,   ROT_SIN,   ROT_COS,   ROT_MEASURED_ANGLE,   SENT_ROT_POSITION,   SLOPE_ROT_POSITION,0
+};
 
 void *map_addr,*map_addrCt;
 volatile unsigned int *mapped;
 volatile unsigned int *CalTables;
 volatile unsigned int *RecordTable;
 int CmdVal=0,maxSpeed=0,startSpeed=0,coupledAcceleration=0,forceMode=0,fa0=0,fa1=0,fa2=0,fa3=0,fa4=0,RunMode=0,ServerMode=3;
-int BaseBoundryHigh,BaseBoundryLow,EndBoundryHigh,EndBoundryLow,PivotBoundryHigh,PivotBoundryLow,AngleBoundryHigh=DEFAULT_ANGLE_BOUNDRY_HI,AngleBoundryLow=DEFAULT_ANGLE_BOUNDRY_LOW,RotateBoundryHigh,RotateBoundryLow;
+int BaseBoundryHigh,BaseBoundryLow,EndBoundryHigh,EndBoundryLow,PivotBoundryHigh,PivotBoundryLow,AngleBoundryHigh,AngleBoundryLow,RotateBoundryHigh,RotateBoundryLow;
 int Cycle = 0;
 struct BotPossition {
 	int base;
@@ -1229,6 +1872,8 @@ int controlled=0;
 int DexError=0;
 float fLastTime=0;
 
+int cmditer=0;
+
 struct MasterSlaveMoveRatio MSMoveRatio = {1,1,1,1,1};
 struct MasterSlaveMoveDelta MSMoveDelta = {0,0,0,0,0};
 struct BotSetHomePossition SetHome = {0,0,0,0,0};
@@ -1239,10 +1884,48 @@ struct CaptureArgs {
    FILE *fp;
 };
 struct CaptureArgs CptA,CptMove;
-#define MAX_PARAMS 28
-#define PARAM_LENGTH 20
-char Params[MAX_PARAMS][PARAM_LENGTH+1] = {"MaxSpeed", "Acceleration", "J1Force","J3Force","J2Force","J4Force","J5Force","J1Friction","J3Friction","J2Friction","J4Friction","J5Friction","J1BoundryHigh","J1BoundryLow","J3BoundryHigh","J3BoundryLow","J2BoundryHigh","J2BoundryLow","J4BoundryHigh","J4BoundryLow","J5BoundryHigh","J5BoundryLow","GripperMotor","EERoll","EESpan","StartSpeed","EndSpeed","End"};
 
+//#define PARAM_LENGTH 20
+//char Params[MAX_PARAMS][PARAM_LENGTH+1] = {
+const char* Params[] = {
+	"MaxSpeed", 
+	"Acceleration", 
+	"J1Force",
+	"J3Force",
+	"J2Force",
+	"J4Force",
+	"J5Force",
+	"J1Friction",
+	"J3Friction",
+	"J2Friction",
+	"J4Friction",
+	"J5Friction",
+	"J1BoundryHigh",
+	"J1BoundryLow",
+	"J3BoundryHigh",
+	"J3BoundryLow",
+	"J2BoundryHigh",
+	"J2BoundryLow",
+	"J4BoundryHigh",
+	"J4BoundryLow",
+	"J5BoundryHigh",
+	"J5BoundryLow",
+	"GripperMotor",
+	"EERoll",
+	"EESpan",
+	"StartSpeed",
+	"EndSpeed",
+	"ServoSet2X",
+	"ServoSet",
+	"RebootServo",
+	"Ctrl", //not actually detected from this list.
+	"J1_PID_P",
+	"J2_PID_P",
+	"J3_PID_P",
+	"J4_PID_P",
+	"J5_PID_P",
+	"End"};
+#define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
 static struct termios old, new;
 
@@ -1257,21 +1940,220 @@ int FroceMoveMode=0;
 
 int LastGoal[5]={0,0,0,0,0};
 
+struct ServoRealTimeData{
+	unsigned char ServoAddress;
+	int PresentPossition;
+	int PresentSpeed;
+	int PresentLoad;
+	int error;
+};
+
+#define NUM_SERVOS 2
+
+struct ServoRealTimeData ServoData[NUM_SERVOS];
+
+
+
 
 float JointsCal[5];
 int SoftBoundries[5];
 
-//prototypes
-int getNormalizedInput(int);
-int RestoreCalTables(char *filename);
-void ProcessServerReceiveData(char *recBuff);
-bool ProcessServerReceiveDataDDE(char *recBuff);
-bool ProcessServerSendData(char *recBuff);
-bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff);
-int ParseInput(char *iString);
-int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode);
-int ReadDMA(int p1,int p2,char *p3);
-int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5);
+struct UARTTransactionPacket{
+	unsigned short ServoNum;
+	int PacketLength;
+	int ActionAddress;
+	int ActionSent;
+	int ActionLength;
+	unsigned char *ActionData;
+	int ResponseLength;	
+	unsigned char *ResponseData;
+	int ResponseReceived;
+	int error;
+};
+
+
+
+
+unsigned short update_crc(unsigned short crc_accum, unsigned char *data_blk_ptr, unsigned short data_blk_size)
+{
+	unsigned short i, j;
+	unsigned short crc_table[256] = {0x0000,
+	                                0x8005, 0x800F, 0x000A, 0x801B, 0x001E, 0x0014, 0x8011,
+	                                0x8033, 0x0036, 0x003C, 0x8039, 0x0028, 0x802D, 0x8027,
+	                                0x0022, 0x8063, 0x0066, 0x006C, 0x8069, 0x0078, 0x807D,
+	                                0x8077, 0x0072, 0x0050, 0x8055, 0x805F, 0x005A, 0x804B,
+	                                0x004E, 0x0044, 0x8041, 0x80C3, 0x00C6, 0x00CC, 0x80C9,
+	                                0x00D8, 0x80DD, 0x80D7, 0x00D2, 0x00F0, 0x80F5, 0x80FF,
+	                                0x00FA, 0x80EB, 0x00EE, 0x00E4, 0x80E1, 0x00A0, 0x80A5,
+	                                0x80AF, 0x00AA, 0x80BB, 0x00BE, 0x00B4, 0x80B1, 0x8093,
+	                                0x0096, 0x009C, 0x8099, 0x0088, 0x808D, 0x8087, 0x0082,
+	                                0x8183, 0x0186, 0x018C, 0x8189, 0x0198, 0x819D, 0x8197,
+	                                0x0192, 0x01B0, 0x81B5, 0x81BF, 0x01BA, 0x81AB, 0x01AE,
+	                                0x01A4, 0x81A1, 0x01E0, 0x81E5, 0x81EF, 0x01EA, 0x81FB,
+	                                0x01FE, 0x01F4, 0x81F1, 0x81D3, 0x01D6, 0x01DC, 0x81D9,
+	                                0x01C8, 0x81CD, 0x81C7, 0x01C2, 0x0140, 0x8145, 0x814F,
+	                                0x014A, 0x815B, 0x015E, 0x0154, 0x8151, 0x8173, 0x0176,
+	                                0x017C, 0x8179, 0x0168, 0x816D, 0x8167, 0x0162, 0x8123,
+	                                0x0126, 0x012C, 0x8129, 0x0138, 0x813D, 0x8137, 0x0132,
+	                                0x0110, 0x8115, 0x811F, 0x011A, 0x810B, 0x010E, 0x0104,
+	                                0x8101, 0x8303, 0x0306, 0x030C, 0x8309, 0x0318, 0x831D,
+	                                0x8317, 0x0312, 0x0330, 0x8335, 0x833F, 0x033A, 0x832B,
+	                                0x032E, 0x0324, 0x8321, 0x0360, 0x8365, 0x836F, 0x036A,
+	                                0x837B, 0x037E, 0x0374, 0x8371, 0x8353, 0x0356, 0x035C,
+	                                0x8359, 0x0348, 0x834D, 0x8347, 0x0342, 0x03C0, 0x83C5,
+	                                0x83CF, 0x03CA, 0x83DB, 0x03DE, 0x03D4, 0x83D1, 0x83F3,
+	                                0x03F6, 0x03FC, 0x83F9, 0x03E8, 0x83ED, 0x83E7, 0x03E2,
+	                                0x83A3, 0x03A6, 0x03AC, 0x83A9, 0x03B8, 0x83BD, 0x83B7,
+	                                0x03B2, 0x0390, 0x8395, 0x839F, 0x039A, 0x838B, 0x038E,
+	                                0x0384, 0x8381, 0x0280, 0x8285, 0x828F, 0x028A, 0x829B,
+	                                0x029E, 0x0294, 0x8291, 0x82B3, 0x02B6, 0x02BC, 0x82B9,
+	                                0x02A8, 0x82AD, 0x82A7, 0x02A2, 0x82E3, 0x02E6, 0x02EC,
+	                                0x82E9, 0x02F8, 0x82FD, 0x82F7, 0x02F2, 0x02D0, 0x82D5,
+	                                0x82DF, 0x02DA, 0x82CB, 0x02CE, 0x02C4, 0x82C1, 0x8243,
+	                                0x0246, 0x024C, 0x8249, 0x0258, 0x825D, 0x8257, 0x0252,
+	                                0x0270, 0x8275, 0x827F, 0x027A, 0x826B, 0x026E, 0x0264,
+	                                0x8261, 0x0220, 0x8225, 0x822F, 0x022A, 0x823B, 0x023E,
+	                                0x0234, 0x8231, 0x8213, 0x0216, 0x021C, 0x8219, 0x0208,
+	                                0x820D, 0x8207, 0x0202 };
+
+	for(j = 0; j < data_blk_size; j++)
+	{
+		i = ((unsigned short)(crc_accum >> 8) ^ *data_blk_ptr++) & 0xFF;
+		crc_accum = (crc_accum << 8) ^ crc_table[i];
+	}
+
+	return crc_accum;
+}
+
+void UnloadUART(unsigned char* RxBuffer,int length)
+{
+	int i;
+	unsigned char RecData;
+	for(i = 0;i < length + 11; i++)
+	{
+		mapped[UART1_XMIT_CNT] = 16; // generate next data pull
+		RecData = mapped[UART_DATA_IN];
+		RxBuffer[i] = RecData;
+		#ifdef DEBUG_XL320_UART
+		printf(" %x ", RecData);
+		#endif
+		mapped[UART1_XMIT_CNT] = 0; // generate next data pull		 
+   	}
+}
+
+void SendGoalSetPacket(int newPos, unsigned char servo)
+{
+ 	//int i;
+  	unsigned char RxBuf[20];
+  	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x03, 30, 0, newPos & 0x00ff, (newPos >> 8) & 0x00ff, 0, 0};
+  	unsigned short crcVal;
+  	crcVal = update_crc(0, TxPacket, 12);
+  	TxPacket[12]=crcVal & 0x00ff;
+  	TxPacket[13]=(crcVal >> 8) & 0x00ff;
+ 
+
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + 14),RxBuf, 16);  // send time plus receive time in bytes transacted
+  	//UnloadUART(RxBuf,16); // TODO refine actual size
+}
+void SendWrite2Packet(int WData, unsigned char servo, int WAddres)
+{
+ 	int i;
+  	unsigned char RxBuf[20];
+  	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x03, WAddres & 0x00ff, (WAddres >> 8) & 0x00ff, WData & 0x00ff, (WData >> 8) & 0x00ff, 0, 0};
+  	unsigned short crcVal;
+  	crcVal = update_crc(0, TxPacket, 12);
+  	TxPacket[12]=crcVal & 0x00ff;
+  	TxPacket[13]=(crcVal >> 8) & 0x00ff;
+
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
+  	//UnloadUART(RxBuf,16); // TODO refine actual size
+}
+void SendWrite1Packet(unsigned char WData, unsigned char servo, int WAddres)
+{
+ 	int i;
+  	unsigned char RxBuf[20];
+  	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x06, 0x00, 0x03, WAddres & 0x00ff, (WAddres >> 8) & 0x00ff, WData, 0, 0};
+  	unsigned short crcVal;
+  	crcVal = update_crc(0, TxPacket, 11);
+  	TxPacket[11]=crcVal & 0x00ff;
+  	TxPacket[12]=(crcVal >> 8) & 0x00ff;
+
+	SendPacket(TxPacket, 13, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
+  	//UnloadUART(RxBuf,16); // TODO refine actual size
+}
+void RebootServo(unsigned char servo)
+{
+ 	int i;
+  	unsigned char RxBuf[20];
+  	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x03, 0x00, 0x08, 0, 0};
+  	unsigned short crcVal;
+  	crcVal = update_crc(0, TxPacket, 8);
+  	TxPacket[8]=crcVal & 0x00ff;
+  	TxPacket[9]=(crcVal >> 8) & 0x00ff;
+
+	SendPacket(TxPacket, 10, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
+  	//UnloadUART(RxBuf,16); // TODO refine actual size
+}
+
+int Fcritical = 0;
+int UARTBaudRate = 20; // .0000086 seconds 9 microseconds  1/115200
+int ResponseDelay = 100;
+
+int CalcUartTimeout(int size)
+{
+	return UARTBaudRate * size * 10 + ResponseDelay;   // 1 start bit 8 data 1 stop + response delay
+}
+
+void SendPacket(unsigned char *TxPkt, int length, int TxRxTimeDelay, unsigned char *RxPkt, int ReadLength)
+{
+	int i;
+	while(Fcritical != 0){usleep(1000);} // wait until previous call is complete
+	
+  	mapped[END_EFFECTOR_IO]=128+64+4;
+  	mapped[UART1_XMIT_TIMEBASE] = 868;
+ 	mapped[UART1_XMIT_CNT] = 1;  // reset send queue
+
+	Fcritical = 1;
+  	for(i = 0;i < length;i++)
+  	{
+  
+#ifdef DEBUG_XL320_UART
+
+  		printf("Sending UART Data %x \n", TxPkt[i]);
+#endif
+ 		mapped[UART1_XMIT_DATA] = TxPkt[i];
+		mapped[UART1_XMIT_CNT] = 4;
+  		mapped[UART1_XMIT_CNT] = 0;
+    
+  	}
+  	mapped[UART1_XMIT_CNT] = 2;
+  	mapped[UART1_XMIT_CNT] = 0;
+	usleep(TxRxTimeDelay);
+	UnloadUART(RxPkt,ReadLength);
+	Fcritical = 0;
+}
+void SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int length)
+{
+  int i;
+  unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x02, start & 0x00ff, (start >> 8) & 0x00ff, length & 0x00ff, (length >> 8) & 0x00ff, 0, 0};
+  unsigned short crcVal;
+  crcVal = update_crc(0, TxPacket, 12);
+  TxPacket[12]=crcVal & 0x00ff;
+  TxPacket[13]=(crcVal >> 8) & 0x00ff;
+
+
+#ifdef DEBUG_XL320_UART
+
+  printf("Sending UART Data Read start %d length %d \n", start, length);
+
+#endif
+
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5),RxBuffer, length+7);  // send time plus receive time in bytes transacted
+  	//UnloadUART(RxBuf,Length + 7); // TODO refine actual size
+}
+
+
+
 
 void printPosition()
 {
@@ -1298,8 +2180,30 @@ void *RealtimeMonitor(void *arg)
 {
 	int* ExitState = arg;
 	int i,j,ForceDelta,disTime=0;
+	unsigned char ServoRx[64];
 	while(*ExitState)
 	{
+
+
+		SendReadPacket(ServoRx, 3,30,21);
+		ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+		ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+		ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
+		ServoData[0].error = ServoRx[29];
+
+		//printf("\nRaw 16 %x %d \n",ServoRx[16],ServoRx[16]);
+		//printf("Raw 17 %x %d \n",ServoRx[17],ServoRx[17]);
+
+		
+		//printf("Servo Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
+
+
+		SendReadPacket(ServoRx, 1,30,21);
+		ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+		ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+		ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
+		ServoData[1].error = ServoRx[29];
+
 		if(FroceMoveMode==1)
 		{
 	
@@ -1319,6 +2223,7 @@ void *RealtimeMonitor(void *arg)
 					//for(j=0;j<5;j++)
 					//printf(" Force %d ",ForceDelta);
 				}
+/*
 				if(abs(ForceDelta)<ForceLimit[i])
 				{
 					mapped[FORCE_BIAS_BASE+i]=ForceDelta;
@@ -1327,6 +2232,7 @@ void *RealtimeMonitor(void *arg)
 				{
 					mapped[FORCE_BIAS_BASE+i]=sign(ForceDelta)*ForceLimit[i];
 				}
+*/
 				//ForcePossition[i]=ForcePossition[i]+(int)((float)ForceDelta*ForceAdjustPossition[i]);
 				/*if(ForceDestination[i]>ForcePossition[i])
 				{
@@ -1345,7 +2251,7 @@ void *RealtimeMonitor(void *arg)
 			disTime = 0;
 		}
 
-		usleep(1000);
+		usleep(30000);
 	}
 	//printf("\nMonitor Thread Exiting\n");
     return NULL;
@@ -1353,20 +2259,28 @@ void *RealtimeMonitor(void *arg)
 
 void SetGripperRoll(int Possition)
 {
-	int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
+	SendGoalSetPacket(Possition, 3);
+   	//printf("Moving Servo 3 to %u\n",Possition);
+
+	/*int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
 	mapped[END_EFFECTOR_IO]=80;
 
 	mapped[SERVO_SETPOINT_B]=(ServoSpan*Possition)+SERVO_LOW_BOUND;
 //	mapped[SERVO_SETPOINT_B]=Possition;
-	
-}void SetGripperSpan(int Possition)
+*/	
+}
+void SetGripperSpan(int Possition)
 {
-	int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
+	//SendReadPacket(3,30,21);       
+	SendGoalSetPacket(Possition, 1);
+	//printf("Moving Servo 1 to %u\n",Possition);
+
+/*	int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
 	mapped[END_EFFECTOR_IO]=80;
 
 	mapped[SERVO_SETPOINT_A]=(ServoSpan*Possition)+SERVO_LOW_BOUND;
 //	mapped[SERVO_SETPOINT_B]=Possition;
-	
+*/	
 }
 void SetGripperMotor(int state)
 {
@@ -1535,12 +2449,13 @@ void ProcessServerReceiveData(char *recBuff)
 		MyBotForce[3]=MaxForce(MxForce,MyBot.angleForce);
 		MyBotForce[4]=MaxForce(MxForce,MyBot.rotateForce);*/
 		if(FroceMoveMode==0)
-		{
+		{/*
 			mapped[FORCE_BIAS_BASE]=MaxForce(MxForce,(int)((float)MyBot.baseForce)*fScale);
 			mapped[FORCE_BIAS_END]=MaxForce(MxForce,(int)((float)MyBot.endForce)*fScale);
 			mapped[FORCE_BIAS_PIVOT]=MaxForce(MxForce,(int)((float)MyBot.pivotForce)*fScale);
 			mapped[FORCE_BIAS_ANGLE]=MaxForce(MxForce,(int)((float)MyBot.angleForce)*fScale);
 			mapped[FORCE_BIAS_ROT]=MaxForce(MxForce,(int)((float)MyBot.rotateForce)*fScale);
+*/		
 		}
 		else
 		{
@@ -1584,12 +2499,18 @@ bool ProcessServerSendData(char *sendBuff)
 //	Cycle++;
 	return TRUE;
 }
+
+
+
+
+
 bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 {
 	int i;
 	int *sendBuffReTyped;
 	const char delimiters[] = " ,";
 	char *token;
+	char oplet;
 	float timeStart=0;
     float timeNormal = 1494640000000;
 	long iTimeNormal = 1494628400;
@@ -1622,48 +2543,149 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 //	if(recBuff[0]=="g")
 	
 
-	token = strtok (recBuff, delimiters);
+	token = strtok (recBuff, delimiters); //Job ID?
 
-	{
-		////printf("returning heartbeat\n");
-		sendBuffReTyped=(int *)sendBuff;
-		sendBuffReTyped[0]=atoi(token);
-		token = strtok (NULL, delimiters);
-		//printf("\n %s \n",token);
-		sendBuffReTyped[1]=atoi(token);
-		token = strtok (NULL, delimiters);
-		//printf("\n %s \n",token);
-		timeStart = atof(token) - timeNormal;
-		iTime = timeStart;
+	////printf("returning heartbeat\n");
+	sendBuffReTyped=(int *)sendBuff;
+	sendBuffReTyped[0]=atoi(token);
+	token = strtok (NULL, delimiters); //Instruction ID?
+	//printf("\n %s \n",token);
+	sendBuffReTyped[1]=atoi(token);
+	token = strtok (NULL, delimiters); //Start Time?
+	//printf("\n %s \n",token);
+	timeStart = atof(token) - timeNormal;
+	iTime = timeStart; 
 
-		sendBuffReTyped[2] = spec.tv_sec;//iTime;//   this shoud be start_time_internal broken into 2 words atoi(token);
-		token = strtok (NULL, delimiters);
-		//printf("\n %s \n",token);
-		token = strtok (NULL, delimiters);
+	sendBuffReTyped[2] = spec.tv_sec;//iTime;//   this shoud be start_time_internal broken into 2 words atoi(token);
+	token = strtok (NULL, delimiters); //End time?
+	//printf("\n %s \n",token);
+	sendBuffReTyped[3]=(int)(spec.tv_nsec  / 1.0e3);//iElTime;//   this shoud be start_time_internal broken into 2 words atoi(token);
+	token = strtok (NULL, delimiters); //Oplet?
+	oplet = token[0]; //printf("\n Oplet:%c.",oplet);
+	sendBuffReTyped[4]=token[0];
+	sendBuffReTyped[5]=DexError;
+	if('r'==oplet) { //printfs included for debugging in this block only since speed isn't critical at this point.
+		//printf("\n r:read_from_robot\n");
+		token = strtok (NULL, delimiters); //length
+		i = atoi(token); //number of block to read
+		//printf("read block %d \n",i);
+		token=strtok(NULL, delimiters);//filename
+		//printf("opening file:%s.\n ",token);
+		//if(wfp) {fclose(wfp);} //not needed?
 		
-		sendBuffReTyped[3]=(int)(spec.tv_nsec  / 1.0e3);//iElTime;//   this shoud be start_time_internal broken into 2 words atoi(token);
-		sendBuffReTyped[4]=token[0];
-		sendBuffReTyped[5]=DexError;
-
-
-
+		static int mat_string_length = 0;
+		static char mat_string[256];
+		static char* ptr_mat_string;
+		if('#' == token[0]){
+			
+			if(0 == i){
+				//Switch case for keywords in read from robot call
+				if(strcmp(token, "#POM") == 0 || strcmp(token, "#XYZ") == 0){
+						
+						//Read measured angles from memory here:
+						//printf("\nMeasured Angles:\n");
+						// printf("BASE: %f\n", (float)(getNormalizedInput(BASE_MEASURED_ANGLE))*0.000277777777777777);
+						// printf("END: %f\n", (float)(getNormalizedInput(END_MEASURED_ANGLE))*0.000277777777777777);
+						// printf("PIVOT: %f\n", (float)(getNormalizedInput(PIVOT_MEASURED_ANGLE))*0.000277777777777777);
+						// printf("ANGLE: %f\n", (float)(getNormalizedInput(ANGLE_MEASURED_ANGLE))*0.000277777777777777);
+						// printf("ROT: %f\n", (float)(getNormalizedInput(ROT_MEASURED_ANGLE))*0.000277777777777777);
+						
+						
+						//printf("\nStarting XYZ calc\n");
+						struct J_angles measured_angles = new_J_angles(
+							(float)(getNormalizedInput(BASE_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(PIVOT_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(END_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(ANGLE_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(ROT_MEASURED_ANGLE))
+						);
+						//printf("measured_angles complete\n");
+						struct pos_ori_mat A = J_angles_to_pos_ori_mat(measured_angles);
+						//printf("measured_pos_ori_mat complete\n");
+						
+						
+						//printf("char *mat_string complete\n");
+						
+						
+						//pos_ori_mat_to_string(measured_pos_ori_mat, mat_string);
+						
+						//printf("\n[\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f]\n]\n", A.r0.c0, A.r0.c1, A.r0.c2, A.r0.c3, A.r1.c0, A.r1.c1, A.r1.c2, A.r1.c3, A.r2.c0, A.r2.c1, A.r2.c2, A.r2.c3, A.r3.c0, A.r3.c1, A.r3.c2, A.r3.c3);
+				
+						mat_string_length = sprintf(mat_string, "[[%f, %f, %f, %f],[%f, %f, %f, %f],[%f, %f, %f, %f],[%f, %f, %f, %f]]", A.r0.c0, A.r0.c1, A.r0.c2, A.r0.c3, A.r1.c0, A.r1.c1, A.r1.c2, A.r1.c3, A.r2.c0, A.r2.c1, A.r2.c2, A.r2.c3, A.r3.c0, A.r3.c1, A.r3.c2, A.r3.c3);
+						
+						
+						//printf("mat_string_length: %d", mat_string_length);
+						
+						//char *mat_string = "[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]";
+						//char mat_string[] = pos_ori_mat_to_string(measured_pos_ori_mat);
+						//Place mat_string in pseudo-file and send to PC here
+						
+					
+						//strlcpy(sendBuff + sizeof(sendBuffReTyped[0])*7, mat_string, 0);
+					
+					
+				}else if (strcmp(token, "#measured_angles") == 0) {
+					printf("\nAttempting to read measured angles\n");
+					printf("BASE: %d\n", mapped[BASE_MEASURED_ANGLE]);
+					printf("END: %d\n", mapped[END_MEASURED_ANGLE]);
+					printf("PIVOT: %d\n", mapped[PIVOT_MEASURED_ANGLE]);
+					printf("ANGLE: %d\n", mapped[ANGLE_MEASURED_ANGLE]);
+					printf("ROT: %d\n", mapped[ROT_MEASURED_ANGLE]);
+					mat_string_length = sprintf(mat_string, "[%d, %d, %d, %d, %d]", mapped[BASE_MEASURED_ANGLE], mapped[PIVOT_MEASURED_ANGLE], mapped[END_MEASURED_ANGLE], mapped[ANGLE_MEASURED_ANGLE], mapped[ROT_MEASURED_ANGLE]);
+				}else if (strcmp(token, "xxx") == 0) {
+				  // do something else
+				}else{
+					printf("Error: %s is not a valid string\n", token);
+				}
+				ptr_mat_string = mat_string;
+			}
+		
+			if(mat_string_length > 0){
+						
+				//MAX_CONTENT_CHARS + 1 because strlcpy leaves room for EOS 
+				//and DDE needs to see MAX_CONTENT_CHARS before EOS. 
+				sendBuffReTyped[6] = strlcpy(sendBuff + sizeof(sendBuffReTyped[0])*7, ptr_mat_string, MAX_CONTENT_CHARS + 1);
+				ptr_mat_string += MAX_CONTENT_CHARS;
+				mat_string_length -= MAX_CONTENT_CHARS;
+				//printf("mat_string_length: %d\n", mat_string_length);
+				//printf("sendBuffReTyped[6]: %d\n", sendBuffReTyped[6]);
+				//printf("mat_string: %s\n", mat_string);
+				//printf("ptr_mat_string: %s\n", ptr_mat_string);
+				
+			}
+		
+		}else{	
+			wfp = fopen(token, "r");
+			if (wfp) {
+				//printf("Opened as handle %d.\n ",fileno(wfp));
+				i *= MAX_CONTENT_CHARS; //starting byte in the file
+				//printf("read from byte %d\n",i);
+				fseek(wfp, i, SEEK_SET);
+				sendBuffReTyped[6] = fread ( sendBuff + sizeof(sendBuffReTyped[0])*7, 1, MAX_CONTENT_CHARS, wfp );
+				//printf("Read %d bytes\n",sendBuffReTyped[6]);
+				//printf("\n%s",sendBuff + sizeof(sendBuffReTyped[0])*6);
+				fclose(wfp);
+			}
+			else {
+				printf("Error %d\n", errno);
+				sendBuffReTyped[5] = errno; //there was an error
+				sendBuffReTyped[6] = 0; //no bytes returned
+				//strerror_s( sendBuff + sizeof(sendBuffReTyped[0])*7, MAX_CONTENT_CHARS, errno );
+			}
+		}
+		return TRUE;
+	}
+	else { //if('r'==oplet)
+		// Response with status.
 		//sendBuffReTyped[1]=token[0];
 		//sendBuffReTyped[2]=DexError;
 		
 		for(i=0;i<59;i++)
 		{
 			sendBuffReTyped[i+6]=getNormalizedInput(StatusReportIndirection[i]);
-			/*if(StatusReportIndirection[i] == BASE_POSITION_PID_DELTA)
-			{
-				//printf(" PID Delta for L1 = %d", sendBuffReTyped[i+6]);
-			}
-			if(StatusReportIndirection[i] == BASE_POSITION_DELTA)
-			{
-				//printf(" TABLE OFFSET Delta for L1 = %d", sendBuffReTyped[i+6]);
-			}*/
 		}
 		return TRUE;
-	}
+	} //if('r'==oplet)
 	return FALSE;
 }
 bool ProcessServerReceiveDataDDE(char *recBuff)
@@ -1675,16 +2697,6 @@ bool ProcessServerReceiveDataDDE(char *recBuff)
 	int *sendBuffReTyped;
 	const char delimiters[] = " ,";
 	char *token;
-	
-	//memcpy(&MyBot,recBuff,sizeof(MyBot));
-	////printf("Server %d %d %d %d %d \n",MyBot.base,MyBot.end,MyBot.pivot,MyBot.angle,MyBot.rotate);
-	//mapped[FINE_ADJUST_BASE]=MyBot.base;
-	//mapped[FINE_ADJUST_END]=MyBot.end;
-	//mapped[FINE_ADJUST_PIVOT]=MyBot.pivot;
-	//mapped[FINE_ADJUST_ANGLE]=MyBot.angle;
-	//mapped[FINE_ADJUST_ROT]=MyBot.rotate;
-	
-	//MoveRobot(MyBot.base,MyBot.end,MyBot.pivot,MyBot.angle,MyBot.rotate,BLOCKING_MOVE);
 	FoundStart=0;
 	for(i=0;i<sizeof(CmdString);i++)
 	{
@@ -1718,9 +2730,15 @@ bool ProcessServerReceiveDataDDE(char *recBuff)
 		
 	}
 	////printf("\n%s \n",recBuff);
-	//printf("\n%s \n",CmdString);
+	#ifdef DEBUG_API
+	if(CmdString[0]!='g')
+	printf("\n%s  \n %d",CmdString,cmditer++);
+	#endif
 	DexError=ParseInput(CmdString); 
-////printf("\nsent parse\n"); 
+	#ifdef DEBUG_API
+	if(CmdString[0]!='g')
+	printf("\n Error %d",DexError);
+	#endif
 	return TRUE;
 }
 
@@ -1750,7 +2768,6 @@ void *StartClientSocket()
 
     if(inet_pton(AF_INET, RemoteRobotAdd/*"192.168.1.145"*/, &serv_addr.sin_addr)<=0)
     {
-        //printf("\n inet_pton error occured\n");
         return &"inet_pton failed";
     } 
     if( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
@@ -1758,26 +2775,13 @@ void *StartClientSocket()
        //printf("\n Error : Connect Failed \n");
        return &"connect failed";
     } 
-//	//printf("\n Socket connect\n");
-//	while(1)//for(j=0;j<1000;j++)
 	{
-		////printf("\n next\n");
 		while( (n = recv(sockfd, recvBuff, sizeof(recvBuff),0 ) ) > 0)
 		{
-			//recvBuff[n] = 0;
-			////printf("Socket Read\n");
-			////printf("%s ",recvBuff);
 
 			if(n < 0)
 			{
-				//printf("\n Read error \n");
 			} 
-			/*mapped[FORCE_BIAS_BASE]=(int)(((float)MyBot.base)*ForceScale);
-			mapped[FORCE_BIAS_END]=(int)(((float)MyBot.end)*ForceScale);
-			mapped[FORCE_BIAS_PIVOT]=(int)(((float)MyBot.pivot)*ForceScale);
-			mapped[FORCE_BIAS_ANGLE]=(int)(((float)MyBot.angle)*ForceScale);
-			mapped[FORCE_BIAS_ROT]=(int)(((float)MyBot.rotate)*ForceScale);*/
-			////printf("%d %d %d %d %d \n",MyBot.base,MyBot.end,MyBot.pivot,MyBot.angle,MyBot.rotate);
 #ifdef FOLLOW_POSSITION
 			memcpy(&MyBot,recvBuff,sizeof(MyBot));
 			DiffDelta=1.5;
@@ -1786,27 +2790,6 @@ void *StartClientSocket()
 			MyBot.pivot=SlaveBotPos.pivot + ((GetAxisCurrent(2) - SetHome.pivot)/MSMoveRatio.pivot);
 			MyBot.angle=SlaveBotPos.angle + (((GetAxisCurrent(3) - SetHome.angle)/MSMoveRatio.angle)*DiffDelta);
 			MyBot.rotate=SlaveBotPos.rotate + (((GetAxisCurrent(4) - SetHome.rotate)/MSMoveRatio.rotate)*DiffDelta);
-/*			MyBot.base=0;
-			MyBot.end=0;
-			MyBot.pivot=0;
-			MyBot.angle=0;
-			MyBot.rotate=0;*/
-
-			/*
-			SlaveBotPos.base=MyBot.base;
-			SlaveBotPos.end=MyBot.base;
-			SlaveBotPos.pivot=MyBot.base;
-			SlaveBotPos.angle=MyBot.base;
-			SlaveBotPos.rotate=MyBot.base;
-			*/
-			
-			//usleep(25000);
-
-			/*MyBot.base=BASE_POSITION_FORCE_DELTA;
-			MyBot.end=12300;
-			MyBot.pivot=5123;
-			MyBot.angle=10;
-			MyBot.rotate=15;*/
 			memcpy(sendBuff,&MyBot,sizeof(MyBot));
 			Cycle++;
 
@@ -1898,7 +2881,7 @@ int FindIndex(int Axis,int Start,int Length,int Delay)
 		}	
 		AvgSIN=AvgSIN/Delay;
 		AvgCOS=AvgCOS/Delay;
-		////printf("\n SIN %x COS %x",AvgSIN,AvgCOS);
+		
 		if((AvgCOS>XLowBound[Axis]) && (AvgCOS<XHighBound[Axis]) && (AvgSIN>YLowBound[Axis]) && (AvgSIN<YHighBound[Axis]))
 		{
 			// we found the index 
@@ -1921,384 +2904,9 @@ void SetNewBotRef()
 	SetHome.rotate=GetAxisCurrent(4);
 	
 }
-void* CapturePoints(void *arg)
+void CapturePoints(void *arg)
 {
-    unsigned long i = 0;
-	int a1,a2,a3,a4,a5,f1,f2,f3,f4,f5,BGM=10,EmbedRec=1,RecState=0,Length=0,GripperToggle=0,ServoSet=180;
-	const char delimiters[] = ".";
 
-	char c,*FileNameBase,*FileNameExt,RecordFilename[256],iString[256];
-      char tmpSt[(8 * sizeof(EmbedRec) / 3) + 3]; //safe bet for the number of decimal digits
-//    pthread_t id = pthread_self();
-	initTermios(0);
-	f1=0;
-	mapped[FINE_ADJUST_BASE]=f1;
-	f3 =0;
-	mapped[FINE_ADJUST_END]=f3;
-	f2=0;
-	mapped[FINE_ADJUST_PIVOT]=f2;
-	f4=0;
-	mapped[FINE_ADJUST_ANGLE]=f4;
-	f5=0;
-	mapped[FINE_ADJUST_ROT]=f5;
-	ForcePossition[0]=0;
-	ForcePossition[1]=0;
-	ForcePossition[2]=0;
-	ForcePossition[3]=0;
-	ForcePossition[4]=0;
-
-
-	mapped[COMMAND_REG]=12448;
-	//printf("/n Thread running");
-	if(RunMode==1)
-		forceMode=3;
-	c=' ';
-	//mapped[MAX_ERROR]=(2000 ^ 6000);
-	while(c!='k') // kill
-	{
-		mapped[FINE_ADJUST_BASE]=f1;
-		mapped[FINE_ADJUST_END]=f3;
-		mapped[FINE_ADJUST_PIVOT]=f2;
-		mapped[FINE_ADJUST_ANGLE]=f4;
-		mapped[FINE_ADJUST_ROT]=f5;
-		c=getchar();
-		if(c=='l')  // learn movement
-		{
-			if(RecState==0)
-			{
-				RecState=1;
-				strcpy(iString,CptA.FileName);
-				FileNameBase = strtok (iString, delimiters);
-				//FileNameExt=strtok (NULL, delimiters);
-				strcpy(RecordFilename,FileNameBase);
-				strcat(RecordFilename,"ERM");
-				snprintf(tmpSt, sizeof(tmpSt), "%d", EmbedRec++);
-				strcat(RecordFilename,tmpSt);
-				//free(tmpSt);
-				strcat(RecordFilename,".dta");
-				a1=getNormalizedInput(BASE_POSITION_AT)+getNormalizedInput(BASE_POSITION_FORCE_DELTA)+f1;
-				a3=getNormalizedInput(END_POSITION_AT)+getNormalizedInput(END_POSITION_FORCE_DELTA)+f3;
-				a2=getNormalizedInput(PIVOT_POSITION_AT)+getNormalizedInput(PIVOT_POSITION_FORCE_DELTA)+f2;
-				a4=getNormalizedInput(ANGLE_POSITION_AT)+getNormalizedInput(ANGLE_POSITION_FORCE_DELTA)+f4;
-				a5=getNormalizedInput(ROT_POSITION_AT)+getNormalizedInput(ROT_POSITION_FORCE_DELTA)+f5;
-				fprintf(CptA.fp,"a %d,%d,%d,%d,%d\n",a1,a2,a3,a4,a5);
-				//printf("\na %d,%d,%d,%d,%d",a1,a2,a3,a4,a5);
-				fprintf(CptA.fp,"o %s\n",RecordFilename);
-				mapped[REC_PLAY_TIMEBASE]=5;
-				mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
-				mapped[REC_PLAY_CMD]=0;				
-				mapped[REC_PLAY_CMD]=CMD_RECORD; // start recording
-
-				//InitCaptureMovement(RecordFilename);
-			}
-			else
-			{
-				RecState=0;
-				a1=getNormalizedInput(BASE_POSITION_AT)+getNormalizedInput(BASE_POSITION_FORCE_DELTA)+f1;
-				a3=getNormalizedInput(END_POSITION_AT)+getNormalizedInput(END_POSITION_FORCE_DELTA)+f3;
-				a2=getNormalizedInput(PIVOT_POSITION_AT)+getNormalizedInput(PIVOT_POSITION_FORCE_DELTA)+f2;
-				a4=getNormalizedInput(ANGLE_POSITION_AT)+getNormalizedInput(ANGLE_POSITION_FORCE_DELTA)+f4;
-				a5=getNormalizedInput(ROT_POSITION_AT)+getNormalizedInput(ROT_POSITION_FORCE_DELTA)+f5;
-				//f//printf(CptA.fp,"a %d,%d,%d,%d,%d\n",a1,a2,a3,a4,a5);
-				//printf("\na %d,%d,%d,%d,%d",a1,a2,a3,a4,a5);
-				//f//printf(CptA.fp,"o %s\n",RecordFilename);
-
-				mapped[REC_PLAY_CMD]=0; // stop recording
-				Length=mapped[RECORD_BLOCK_SIZE];
-				ReadDMA(0x3f000000,Length,RecordFilename);
-				mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
-				mapped[REC_PLAY_CMD]=0;
-			}
-			
-		}
-		if(c=='h')
-		{
-			if(FroceMoveMode==0)
-			{
-				FroceMoveMode=1;
-				//printf("/n force mode %d",FroceMoveMode);
-			}
-			else
-			{
-				FroceMoveMode=0;
-				//printf("/n force mode %d",FroceMoveMode);
-			}
-		}
-		if(c=='+')
-		{
-			BGM=BGM+10;
-			SetNewBotRef();
-			/*SetHome.base = SlaveBotPos.base;
-			SetHome.end = SlaveBotPos.end;
-			SetHome.pivot = SlaveBotPos.pivot;
-			SetHome.angle = SlaveBotPos.angle;
-			SetHome.rotate = SlaveBotPos.rotate;*/
-			
-			MSMoveRatio.base++;
-			MSMoveRatio.end++;
-			MSMoveRatio.pivot++;
-			MSMoveRatio.angle++;
-			MSMoveRatio.rotate++;
-			//printf("\n big move %d MasterSlave Move ratio %d\n",BGM,MSMoveRatio.base);
-		}
-		if(c=='-')
-		{
-			BGM=BGM-10;
-			if(BGM < 10)
-			{
-				BGM=10;
-			}
-			if(MSMoveRatio.base != 1)
-			{
-				/*SetHome.base = SlaveBotPos.base;
-				SetHome.end = SlaveBotPos.end;
-				SetHome.pivot = SlaveBotPos.pivot;
-				SetHome.angle = SlaveBotPos.angle;
-				SetHome.rotate = SlaveBotPos.rotate;*/
-				SetNewBotRef();
-				MSMoveRatio.base--;
-				MSMoveRatio.end--;
-				MSMoveRatio.pivot--;
-				MSMoveRatio.angle--;
-				MSMoveRatio.rotate--;
-			}
-			//printf("\n big move %d MasterSlave Move ratio %d\n",BGM,MSMoveRatio.base);
-		}
-		if(c=='h')
-		{
-			SetNewBotRef();
-			/*
-			SetHome.base = getNormalizedInput(BASE_POSITION_AT)+getNormalizedInput(BASE_POSITION_FORCE_DELTA);
-			SetHome.end = getNormalizedInput(END_POSITION_AT)+getNormalizedInput(END_POSITION_FORCE_DELTA);
-			SetHome.pivot = getNormalizedInput(PIVOT_POSITION_AT)+getNormalizedInput(PIVOT_POSITION_FORCE_DELTA);
-			SetHome.angle = getNormalizedInput(ANGLE_POSITION_AT)+getNormalizedInput(ANGLE_POSITION_FORCE_DELTA);
-			SetHome.rotate = getNormalizedInput(ROT_POSITION_AT)+getNormalizedInput(ROT_POSITION_FORCE_DELTA);
-			*/
-		}	
-		if(c=='p')
-		{
-			a1=getNormalizedInput(BASE_POSITION_AT)+getNormalizedInput(BASE_POSITION_FORCE_DELTA)+f1;
-			a3=getNormalizedInput(END_POSITION_AT)+getNormalizedInput(END_POSITION_FORCE_DELTA)+f3;
-			a2=getNormalizedInput(PIVOT_POSITION_AT)+getNormalizedInput(PIVOT_POSITION_FORCE_DELTA)+f2;
-			a4=getNormalizedInput(ANGLE_POSITION_AT)+getNormalizedInput(ANGLE_POSITION_FORCE_DELTA)+f4;
-			a5=getNormalizedInput(ROT_POSITION_AT)+getNormalizedInput(ROT_POSITION_FORCE_DELTA)+f5;
-			fprintf(CptA.fp,"a %d,%d,%d,%d,%d\n",a1,a2,a3,a4,a5);
-			fprintf(CptA.fp,"S EERoll,%d\n",ServoSet);
-			//printf("\na %d,%d,%d,%d,%d",a1,a2,a3,a4,a5);
-		}
-		if(c==' ')
-		{ 
-			fprintf(CptA.fp,"z 500000\n");
-			//printf("\n insert dwell .5 seconds\n");
-		}
-		if(c=='g')
-		{ 
-			if(GripperToggle==0)
-			{
-				fprintf(CptA.fp,"S GripperMotor,1\n");
-				//printf("\n GripperMotor On\n");
-				GripperToggle=1;
-				SetGripperMotor(GripperToggle);
-			}
-			else
-			{
-				fprintf(CptA.fp,"S GripperMotor,0\n");
-				//printf("\n GripperMotor Off\n");
-				GripperToggle=0;
-				SetGripperMotor(GripperToggle);
-			}
-		}
-		if(c=='t')
-		{
-			if(forceMode==1)
-			{
-				mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=0;
-				mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=0;
-				mapped[PID_ADDRESS]=3;
-				mapped[PID_P]=DEFAULT_PID_SETTING_PY;
-				mapped[PID_ADDRESS]=4;
-				mapped[PID_ADDRESS]=0;
-				mapped[PID_P]=0;
-				mapped[PID_ADDRESS]=1;
-				mapped[PID_ADDRESS]=2;
-				mapped[SPEED_FACTORA]=DEF_SPEED_FACTOR_A ;
-				forceMode=2;
-				//printf("\n Move XYZ yo \n");
-				controlled=1;
-				
-			}else if(forceMode==0)
-			{
-
-				mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=DEF_SPEED_FACTOR_DIFF;
-				mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=DEF_SPEED_FACTOR_DIFF;
-				mapped[PID_ADDRESS]=3;
-				mapped[PID_P]=0;
-				mapped[PID_ADDRESS]=4;
-				mapped[PID_ADDRESS]=0;
-				mapped[PID_P]=DEFAULT_PID_SETTING_XYZ;
-				mapped[PID_ADDRESS]=1;
-				mapped[PID_ADDRESS]=2;
-				mapped[SPEED_FACTORA]=0;
-				forceMode=1;
-				controlled=0;
-				
-				//printf("\n Move Pitch and Yaw \n");
-				
-			}else if(forceMode==2)
-			{
-				mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=0;
-				mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=0;
-				mapped[PID_ADDRESS]=0;
-				mapped[PID_P]=DEFAULT_PID_SETTING_XYZ;
-				mapped[PID_ADDRESS]=1;
-				mapped[PID_ADDRESS]=2;
-				mapped[PID_ADDRESS]=3;
-				
-//				mapped[PID_P]=0; //DEFAULT_PID_SETTING_PY;
-				mapped[PID_P]=DEFAULT_PID_SETTING_PY;
-				mapped[PID_ADDRESS]=4;
-				mapped[SPEED_FACTORA]=0;
-				if(RunMode==1)
-					forceMode=3;
-				else
-					forceMode=0;
-				//printf("\n Move fine adjust all \n");
-				controlled=0;
-			}else if(forceMode==3)
-			{
-				////printf("\n Move all \n");
-				mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=DEF_SPEED_FACTOR_DIFF;
-				mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=DEF_SPEED_FACTOR_DIFF;
-				mapped[PID_P]=0;
-				mapped[PID_ADDRESS]=3;
-				mapped[PID_ADDRESS]=4;
-				mapped[PID_ADDRESS]=0;
-				mapped[PID_ADDRESS]=1;
-				mapped[PID_ADDRESS]=2;
-				mapped[SPEED_FACTORA]=DEF_SPEED_FACTOR_A ;
-				forceMode=2;
-				controlled=1;
-				//printf("\n Move All \n");
-			}
-		}
-		if(c=='q')
-		{
-			f1--;
-		}
-		if(c=='w')
-		{
-			f1++;
-		}
-		if(c=='a')
-		{
-			f2--;
-		}
-		if(c=='s')
-		{
-			f2++;
-		}
-		if(c=='z')
-		{
-			f3--;
-		}
-		if(c=='x')
-		{
-			f3++;
-		}
-		if(c=='e')
-		{
-			f4--;
-		}
-		if(c=='r')
-		{
-			f4++;
-		}
-		if(c=='d')
-		{
-			f5--;
-		}
-		if(c=='f')
-		{
-			f5++;
-		}
-		if(c=='Q')
-		{
-			f1=f1-BGM;
-		}
-		if(c=='W')
-		{
-			f1=f1+BGM;
-		}
-		if(c=='A')
-		{
-			f2=f2-BGM;
-		}
-		if(c=='S')
-		{
-			f2=f2+BGM;
-		}
-		if(c=='Z')
-		{
-			f3=f3-BGM;
-		}
-		if(c=='X')
-		{
-			f3=f3+BGM;
-		}
-		if(c=='E')
-		{
-			f4=f4-BGM;
-		}
-		if(c=='R')
-		{
-			f4=f4+BGM;
-		}
-		if(c=='D')
-		{
-			f5=f5-BGM;
-		}
-		if(c=='F')
-		{
-			f5=f5+BGM;
-		}
-		if(c==',')
-		{
-			ServoSet=ServoSet+1;
-			SetGripperRoll(ServoSet);
-		}
-		if(c=='.')
-		{
-			ServoSet=ServoSet-1;
-			SetGripperRoll(ServoSet);
-		}
-	}
-	mapped[MAX_ERROR]=(2000 ^ 4000);
-	mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=0;
-	mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=0;
-	mapped[PID_ADDRESS]=0;
-	mapped[PID_P]=DEFAULT_PID_SETTING_XYZ;
-	mapped[PID_ADDRESS]=1;
-	mapped[PID_ADDRESS]=2;
-	mapped[PID_ADDRESS]=3;
-	mapped[PID_P]=DEFAULT_PID_SETTING_PY;
-	mapped[PID_ADDRESS]=4;
-	mapped[SPEED_FACTORA]=0;
-	
-	
-	mapped[FINE_ADJUST_BASE]=0;
-	mapped[FINE_ADJUST_END]=0;
-	mapped[FINE_ADJUST_PIVOT]=0;
-	mapped[FINE_ADJUST_ANGLE]=0;
-	mapped[FINE_ADJUST_ROT]=0;
-        mapped[COMMAND_REG]=3158688;	
-	//printf("\nAll done\n");
-	controlled=0;
-	fprintf(CptA.fp,"x\n");
-			
-	fclose(CptA.fp);
-	resetTermios();
-	
-    return NULL;
 }
 int InitCapturePoints(char *FileName)
 {
@@ -2311,17 +2919,6 @@ int InitCapturePoints(char *FileName)
 		CapturePoints((void*)&CptA);
 	}
 
-/*		err = pthread_create(&(tid[i]), NULL, &CapturePoints, (void*)&CptA);
-		if (err != 0)
-		{
-			//printf("\ncan't create thread :[%s]", strerror(err));
-			return 1;
-		}
-		else
-		{
-			//printf("\n Begin Program\n");
-		}
-    }*/
 	return 0;
 }
 
@@ -2374,47 +2971,78 @@ void CvrtBoundary_CenterMag_to_HILOW(int Center, int Magnitude, int *ResultHi, i
 
 //unsigned int CvrtBoundary_HILOW_to_CenterMag(int High, int Low){}
 
+int Boundary[10];
+int forceBias[5];
+int Friction[5];
+int FineAdjust[5];
 
 void setDefaults(int State)
 {
 
+	printf("Start of setDefaults()\n");
 	int i,ForceFelt,j,HiBoundry,LowBoundry,BoundryACC;
+	int KeyHoleData[10];
 	char c;
-    FILE *CentersFile,*RemoteRobotAddress,*DiffFile;
+    	FILE *CentersFile,*RemoteRobotAddress,*DiffFile;
 	int HexValue;
-	int BaseBoundryHighL,BaseBoundryLowL,EndBoundryHighL,EndBoundryLowL,PivotBoundryHighL,PivotBoundryLowL;
-	int AngleBoundryHighL,AngleBoundryLowL,RotateBoundryHighL,RotateBoundryLowL;
 
 	int IntFloat;
 	float *fConvert=(float *)(&IntFloat);
+	mapped[COMMAND_REG]=64;  //shut off the servo system
+	mapped[COMMAND_REG]=0;  //shut off the servo system
+	CmdVal=0;
 	
+	CentersFile = fopen("AxisCal.txt", "rs");
+
+    	//read file into array
+	if(CentersFile!=NULL)
+	{
+		fscanf(CentersFile, "%f", &JointsCal[0]);
+		fscanf(CentersFile, "%f", &JointsCal[1]);
+		fscanf(CentersFile, "%f", &JointsCal[2]);
+		fscanf(CentersFile, "%f", &JointsCal[3]);
+		fscanf(CentersFile, "%f", &JointsCal[4]);
+		fscanf(CentersFile, "%i", &HexValue);
+		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
+		fclose(CentersFile);
+	}
 	
 	
 	DiffFile = fopen("DiffCorrectionFactor.txt", "rs");
 	if(DiffFile!=NULL)
 	{
 		fscanf (DiffFile, "%f", &DiffCorrectionFactor);
-		//fgets(DiffFile, sizeof(RemoteRobotAdd)+1, RemoteRobotAddress);
-		//fscanf(RemoteRobotAddress,"%[^\n]",RemoteRobotAdd);
-		//printf("%f \n",DiffCorrectionFactor);
 		fclose(DiffFile);
 	}
 	DiffFile = fopen("Boundaries.txt", "rs");
 	if(DiffFile!=NULL)
 	{
-// BaseBoundryHigh,BaseBoundryLow,EndBoundryHigh,EndBoundryLow,PivotBoundryHigh,PivotBoundryLow,AngleBoundryHigh=DEFAULT_ANGLE_BOUNDRY_HI,AngleBoundryLow=DEFAULT_ANGLE_BOUNDRY_LOW,RotateBoundryHigh,RotateBoundryLow;
+
 		
-		
-		fscanf (DiffFile, "%i %i", &BaseBoundryHighL,&BaseBoundryLowL);
-		fscanf (DiffFile, "%i %i", &PivotBoundryHighL,&PivotBoundryLowL);
-		fscanf (DiffFile, "%i %i", &EndBoundryHighL,&EndBoundryLowL);
-		fscanf (DiffFile, "%i %i", &AngleBoundryHighL,&AngleBoundryLowL);
-		fscanf (DiffFile, "%i %i", &RotateBoundryHighL,&RotateBoundryLowL);
-		//fgets(DiffFile, sizeof(RemoteRobotAdd)+1, RemoteRobotAddress);
-		//fscanf(RemoteRobotAddress,"%[^\n]",RemoteRobotAdd);
-		//printf("Angle High boundry%i    Angle Low Boundry %i \n",AngleHIBoundry,AngleLOWBoundry);
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[0] = (int)((float)HexValue * fabs(JointsCal[0]));
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[1] = (int)((float)HexValue * fabs(JointsCal[0]));
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[2] = (int)((float)HexValue * fabs(JointsCal[1]));
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[3] = (int)((float)HexValue * fabs(JointsCal[1]));
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[4] = (int)((float)HexValue * fabs(JointsCal[2]));
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[5] = (int)((float)HexValue * fabs(JointsCal[2]));
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[6] = (int)((float)HexValue * fabs(JointsCal[3]));
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[7] = (int)((float)HexValue * fabs(JointsCal[3]));
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[8] = (int)((float)HexValue * fabs(JointsCal[4]));
+		fscanf(DiffFile, "%i", &HexValue);
+		Boundary[9] = (int)((float)HexValue * fabs(JointsCal[4]));
 		fclose(DiffFile);
+		KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 	}
+	printf("Boundary Keyhle set\n");
 
 	
 	RemoteRobotAddress = fopen("RemoteRobotAddress.txt", "rs");
@@ -2422,18 +3050,41 @@ void setDefaults(int State)
 	{
 		fgets(RemoteRobotAdd, sizeof(RemoteRobotAdd), RemoteRobotAddress);
 		//fscanf(RemoteRobotAddress,"%[^\n]",RemoteRobotAdd);
-		//printf("%s \n",RemoteRobotAdd);
 		fclose(RemoteRobotAddress);
 	}
-	mapped[FORCE_BIAS_BASE]=0;
-	mapped[FORCE_BIAS_END]=0;
-	mapped[FORCE_BIAS_PIVOT]=0;
-	mapped[FORCE_BIAS_ANGLE]=0;
-	mapped[FORCE_BIAS_ROT]=0;
+
+	forceBias[0]=0;
+	forceBias[1]=0;
+	forceBias[2]=0;
+	forceBias[3]=0;
+	forceBias[4]=0;
+	
+	KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
+	printf("ForceBias Keyhle set\n");
+
+	Friction[0]=0;
+	Friction[1]=0;
+	Friction[2]=0;
+	Friction[3]=0;
+	Friction[4]=0;
+	
+	KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
+	printf("Friction Keyhle set\n");
+
+	FineAdjust[0]=0;
+	FineAdjust[1]=0;
+	FineAdjust[2]=0;
+	FineAdjust[3]=0;
+	FineAdjust[4]=0;
+	
+	KeyholeSend(FineAdjust, FINE_ADJUST_KEYHOLE_CMD, FINE_ADJUST_KEYHOLE_SIZE, FINE_ADJUST_KEYHOLE );
+
+	printf("FineAdjust Keyhle set\n");
+
 
 	mapped[ACCELERATION_MAXSPEED]=ACCELERATION_MAXSPEED_DEF;
 	maxSpeed=(ACCELERATION_MAXSPEED_DEF) & 0b00000000000011111111111111111111;
-	coupledAcceleration=((ACCELERATION_MAXSPEED_DEF) & 0b00000011111100000000000000000000) >> 20;
+	coupledAcceleration=((ACCELERATION_MAXSPEED_DEF) & 0b11111111111100000000000000000000) >> 20;
 
 	if(State==1)
 	{
@@ -2447,7 +3098,7 @@ void setDefaults(int State)
 
 		mapped[ACCELERATION_MAXSPEED]=ACCELERATION_MAXSPEED_DEF;
 		maxSpeed=(ACCELERATION_MAXSPEED_DEF) & 0b00000000000011111111111111111111;
-		coupledAcceleration=((ACCELERATION_MAXSPEED_DEF) & 0b00000011111100000000000000000000) >> 20;
+		coupledAcceleration=((ACCELERATION_MAXSPEED_DEF) & 0b11111111111100000000000000000000) >> 20;
 	
 
 		mapped[REC_PLAY_TIMEBASE]=5;
@@ -2459,78 +3110,41 @@ void setDefaults(int State)
 	{
 		fscanf(CentersFile, "%x", &HexValue);
 		//printf("%x \n",HexValue);
-		mapped[BASE_SIN_CENTER]=HexValue;
+		KeyHoleData[0] = HexValue;
 		fscanf(CentersFile, "%x", &HexValue);
-		mapped[BASE_COS_CENTER]=HexValue;
+		KeyHoleData[1] = HexValue;
 		fscanf(CentersFile, "%x", &HexValue);
-		mapped[END_SIN_CENTER]=HexValue;
+		KeyHoleData[2] = HexValue;
 		fscanf(CentersFile, "%x", &HexValue);
-		mapped[END_COS_CENTER]=HexValue;
+		KeyHoleData[3] = HexValue;
 		fscanf(CentersFile, "%x", &HexValue);
-		mapped[PIVOT_SIN_CENTER]=HexValue;
+		KeyHoleData[4] = HexValue;
 		fscanf(CentersFile, "%x", &HexValue);
-		mapped[PIVOT_COS_CENTER]=HexValue;
+		KeyHoleData[5] = HexValue;
 		fscanf(CentersFile, "%x", &HexValue);
-		mapped[ANGLE_SIN_CENTER]=HexValue;
+		KeyHoleData[6] = HexValue;
 		fscanf(CentersFile, "%x", &HexValue);
-		mapped[ANGLE_COS_CENTER]=HexValue;
+		KeyHoleData[7] = HexValue;
 		fscanf(CentersFile, "%x", &HexValue);
-		mapped[ROT_SIN_CENTER]=HexValue;
+		KeyHoleData[8] = HexValue;
 		fscanf(CentersFile, "%x", &HexValue);
-		mapped[ROT_COS_CENTER]=HexValue;
+		KeyHoleData[9] = HexValue;
 		fclose(CentersFile);
+		KeyholeSend(KeyHoleData, ADC_CENTERS_KEYHOLE_CMD, ADC_CENTERS_KEYHOLE_SIZE, ADC_CENTERS_KEYHOLE );
+	printf("Centers Keyhle set\n");
+
 	}
 	
-	CentersFile = fopen("AxisCal.txt", "rs");
-
-    //read file into array
-	if(CentersFile!=NULL)
-	{
-		fscanf(CentersFile, "%f", &JointsCal[0]);
-		//printf("%f \n",JointsCal[0]);
-		fscanf(CentersFile, "%f", &JointsCal[1]);
-		fscanf(CentersFile, "%f", &JointsCal[2]);
-		fscanf(CentersFile, "%f", &JointsCal[3]);
-		fscanf(CentersFile, "%f", &JointsCal[4]);
-		fscanf(CentersFile, "%i", &HexValue);
-		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
-		fclose(CentersFile);
-	}
  
     
 
-/*		mapped[BASE_SIN_CENTER]=0x7f80000;
-		mapped[BASE_COS_CENTER]=0x7f80000;
-		mapped[END_SIN_CENTER]=0x7f80000;
-		mapped[END_COS_CENTER]=0x07f80000;
-		mapped[PIVOT_SIN_CENTER]=0x4a00000;
-		mapped[PIVOT_COS_CENTER]=0x6500000;
-		mapped[ANGLE_SIN_CENTER]=0x7890000;
-		mapped[ANGLE_COS_CENTER]=0x5080000;
-		mapped[ROT_SIN_CENTER]=0x5200000;
-		mapped[ROT_COS_CENTER]=0x6f00000;*/
-
-//		mapped[BASE_SIN_CENTER]=0x7f80000;
-//		mapped[BASE_COS_CENTER]=0x7f80000;
-//		mapped[END_SIN_CENTER]=0x7f80000;
-//		mapped[END_COS_CENTER]=0x07f80000;
-//		mapped[PIVOT_SIN_CENTER]=0x6500000;
-//		mapped[PIVOT_COS_CENTER]=0x4a00000;
-//		mapped[ANGLE_SIN_CENTER]=0x7f80000;
-//		mapped[ANGLE_COS_CENTER]=0x4900000;
-//		mapped[ROT_SIN_CENTER]=0x6f00000;
-//		mapped[ROT_COS_CENTER]=0x5200000;
-
-
 		mapped[DIFF_FORCE_BETA ]=0x0102;
+		mapped[BETA_XYZ ]=0x0002;
+
 
 	// set up PID defaults
 	
 		mapped[PID_P]=DEFAULT_PID_SETTING_XYZ;
-		mapped[PID_I]=0;
-		mapped[PID_D]=0;
-		mapped[PID_DELTATNOT]=0;
-		mapped[PID_DELTAT]=0;
 		mapped[PID_ADDRESS]=0;
 		mapped[PID_ADDRESS]=1;
 		mapped[PID_ADDRESS]=2;
@@ -2538,192 +3152,42 @@ void setDefaults(int State)
 		mapped[PID_P]=DEFAULT_PID_SETTING_PY;
 		mapped[PID_ADDRESS]=4;
 		
-		// set boundries  
-/*		BaseBoundryHigh=90000;
-		BaseBoundryLow=-90000;
-		EndBoundryHigh=130000;
-		EndBoundryLow=-130000;
-		PivotBoundryHigh=70000;
-		PivotBoundryLow=-70000;
-		AngleBoundryHigh=DEFAULT_ANGLE_BOUNDRY_HI;
-		AngleBoundryLow=DEFAULT_ANGLE_BOUNDRY_LOW;
-		RotateBoundryHigh=3000;
-		RotateBoundryLow=-3000;
-		*/
-		
-		
-		mapped[BOUNDRY_BASE]=BaseBoundryHigh + BaseBoundryLow;
-		//0x2bf2d40e; //
-		mapped[BOUNDRY_END]= EndBoundryHigh + EndBoundryLow;
-		//0x3f7ac086;  //
-		mapped[BOUNDRY_PIVOT]=PivotBoundryHigh + PivotBoundryLow;
-		//0x222eddd2; //1
-		//HiBoundry=AngelBoundryHigh + AngleBoundryLow;
-		//AngleHIBoundry/8;
-		//LowBoundry=AngleLOWBoundry/8;
-		//BoundryACC=(HiBoundry << 16) | (0x0000ffff & LowBoundry);
-		mapped[BOUNDRY_ANGLE]=AngleBoundryHigh + AngleBoundryLow;
-		//BoundryACC;// 0x01f4fe0c; //
-		//printf("Angle boundry pack %x ",BoundryACC);
-		
-		mapped[BOUNDRY_ROT]=RotateBoundryHigh + RotateBoundryLow;
-		//((RotateBoundryHigh/8) << 16) | (0X0000FFFF & (RotateBoundryLow/8));
-
-		
 		
 		
 		
 
 		mapped[SPEED_FACTORA]=0;
-		mapped[SPEED_FACTORB]=0x130;
 		mapped[MAX_ERROR]=(2000 ^ 6000);
 		
 
-		mapped[DIFF_FORCE_TIMEBASE]=140000; // this is currently remapped to MaxSpeed XYZ Force
+		mapped[MAXSPEED_XYZ]=140000; 
 		
 		mapped[DIFF_FORCE_MAX_SPEED]=90000;
-//		IntFloat)
-		*fConvert=DiffCorrectionFactor;
-		
-		//printf(" float value %x \n",IntFloat);
-		//if(RunMode==1)
-			mapped[DIFF_FORCE_ANGLE_COMPENSATE]=0;//IntFloat;
-		//else
-		//	mapped[DIFF_FORCE_ANGLE_COMPENSATE]=0;//IntFloat;
-		
+
 		//mapped[ANGLE_END_RATIO]=645278;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
 		
 
+		
 
-
-
-	
-		mapped[FRICTION_BASE]=0x130; // fixed point 16 bit == .1
-		mapped[FRICTION_END]=0x130; // fixed point 16 bit == .1
-		mapped[FRICTION_PIVOT]=0x130; // fixed point 16 bit == .1
-		mapped[FRICTION_ANGLE]=0x50; // fixed point 16 bit == .1
-		mapped[FRICTION_ROT]=0x50; // fixed point 16 bit == .1
 	
 		if(RestoreCalTables("/srv/samba/share/HiMem.dta")==0)
 		{
+			/*
+			#ifndef NO_BOOT_DANCE
 			MoveRobot(20000,20000,20000,20000,20000,BLOCKING_MOVE);
 			MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+			#endif
+			*/
+			#ifndef NO_BOOT_DANCE
+			strlcpy(iString, "S RunFile BootDance_setDefaults==1.make_ins ;\0", ISTRING_LEN);
+			printf("Starting %s returned %d\n",iString, ParseInput(iString));
+			#endif
 		}
+	printf("CalTables set\n");
 
 		
 	}
-	if(State==2)
-	{
-		CmdVal=3158688;
-		mapped[FINE_ADJUST_BASE]=0;
-		mapped[FINE_ADJUST_END]=0;
-		mapped[FINE_ADJUST_PIVOT]=0;
-		mapped[FINE_ADJUST_ANGLE]=0;
-		mapped[FINE_ADJUST_ROT]=0;
-	}
-	if(State==3)
-	{
-		
-		//printf("\nMonitor Force Started");
-		while(1)
-		{
-			//printf("\nTable Delta ");
-			for(i=0;i<5;i++)
-			{
-				//printf("%6d ",getNormalInput(BASE_POSITION_DELTA+i));
-			}
-			//printf(" PID_DELTA ");
-			for(i=0;i<5;i++)
-			{
-				//printf("%5d ",getNormalizedInput(BASE_POSITION_PID_DELTA+i));
-			}
-			////printf("\nForce_DELTA ");
-			//for(i=0;i<5;i++)
-			//{
-			//	//printf("%5d ",getNormalizedInput(BASE_POSITION_FORCE_DELTA+i));
-			//}
-		}
-		
-	}
-	
-	if(State==4)
-	{
-		//initTermios(0);
-		mapped[PID_ADDRESS]=3;
-		mapped[PID_P]=0;
-		mapped[PID_I]=0;
-		mapped[PID_D]=0;
-		mapped[PID_DELTATNOT]=0;
-		mapped[PID_DELTAT]=0;
-		mapped[PID_ADDRESS]=4;
-		c=' ';
-		mapped[FINE_ADJUST_BASE]=0;
-		mapped[FINE_ADJUST_END]=0;
-		mapped[FINE_ADJUST_PIVOT]=0;
-		mapped[FINE_ADJUST_ANGLE]=0;
-		mapped[FINE_ADJUST_ROT]=0;
-		
-		//printf("\nForce Protect Started");
-		while(1) 
-//		while(c!='k') // kill
-		{
-			//c=getchar();
-			for(i=0;i<5;i++)
-			{
-				ForceFelt=getNormalizedInput(BASE_POSITION_PID_DELTA+i)-getNormalizedInput(BASE_POSITION_DELTA+i);
-				//printf("%5d ",ForceFelt);
-				if(abs(ForceFelt-PositionAdjust[i]) >= ForceLimit[i])
-				{
-					if((ForceFelt-PositionAdjust[i]) < 0)
-					{
-						//PositionAdjust[i]=2*(abs((ForceFelt-PositionAdjust[i]))-ForceLimit[i]);						
-					}
-					else
-					{
-						//PositionAdjust[i]=2*-(abs((ForceFelt-PositionAdjust[i]))-ForceLimit[i]);
-					}
-				}
-			}
-			for(i=0;i<3;i++)
-			{
-				//mapped[FINE_ADJUST_BASE+i]=PositionAdjust[i];
-				//printf("%5d ",PositionAdjust[i]);
-			}
-			//printf("\n");
-			
-			usleep(10000);
-		}	
-	//resetTermios();		
-	}
-	if(State==5)
-	{
-		
-		//printf("\nMonitor Accelerateion Force Started");
-		while(1)
-		{
-			//printf("\nSpeed Delta ");
-			for(i=0;i<5;i++)
-			{
-				//printf("%5d ",mapped[SLOPE_BASE_POSITION+i]);
-			}
-		}
-		
-	}
-	if(State==6)
-	{
-		
-		//printf("\nMonitor Force offset Started");
-		while(1)
-		{
-			////printf("\nSpeed Delta ");
-			for(i=0;i<5;i++)
-			{
-				//printf("%6d  ",GetAxisCurrent(i));
-			}
-			//printf("\n");
-		}
-		
-	}
+	printf("End of setDefaults\n");
 }
 
 void wait_fifo_flush(void)
@@ -2825,6 +3289,12 @@ int getNormalizedInput(int param)
 {
 	int val;
 	float corrF=1;
+	if(param == SLOPE_BASE_POSITION){return ServoData[1].PresentPossition;}
+	if(param == SLOPE_PIVOT_POSITION){return ServoData[1].PresentLoad;}
+	if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
+	if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
+	if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
+	
 	val = mapped[param];
 	if(param <= ROT_POSITION_FORCE_DELTA)
 	{
@@ -2834,6 +3304,13 @@ int getNormalizedInput(int param)
 	{
 		val = (val | 0xfff80000);
 	}
+	
+	if(param == BASE_MEASURED_ANGLE){corrF = JointsCal[0];}
+	if(param == PIVOT_MEASURED_ANGLE){corrF = JointsCal[1];}
+	if(param == END_MEASURED_ANGLE){corrF = JointsCal[2];}
+	if(param == ANGLE_MEASURED_ANGLE){corrF = JointsCal[3] * 16;}
+	if(param == ROT_MEASURED_ANGLE){corrF = JointsCal[4] * 16;}
+	
 	return (int)((float)val / corrF);
 }
 int getNormalInput(int param) 
@@ -2865,9 +3342,6 @@ int WaitMoveGoal(int a1,int a2,int a3,int a4,int a5,int timeout)
 
     clock_gettime(CLOCK_REALTIME, &spec);
 	oldTime  = spec.tv_sec;
-	////printf("\n%d %d %d %d %d\n",b1,b2,b3,b4,b5);	
-	////printf("\n%d %d %d %d %d\n",a1,a2,a3,a4,a5);	
-//    //printf("\nStart wait Goal");
 	while(!isNear(a1,b1,500) || !isNear(a2,b2,500) || !isNear(a3,b3,500) || !isNear(a4,b4,500) || !isNear(a5,b5,500))
 	{
 		b1=getNormalizedInput(BASE_POSITION_AT);
@@ -2875,42 +3349,45 @@ int WaitMoveGoal(int a1,int a2,int a3,int a4,int a5,int timeout)
 		b2=getNormalizedInput(PIVOT_POSITION_AT);
 		b4=getNormalizedInput(ANGLE_POSITION_AT);
 		b5=getNormalizedInput(ROT_POSITION_AT);
-/*		c1=getNormalizedInput(BASE_POSITION_DELTA);
-		c3=getNormalizedInput(END_POSITION_DELTA);
-		c2=getNormalizedInput(PIVOT_POSITION_DELTA);
-		c4=getNormalizedInput(ANGLE_POSITION_DELTA);
-		c5=getNormalizedInput(ROT_POSITION_DELTA);*/
 		clock_gettime(CLOCK_REALTIME, &spec);
 		newTime  = spec.tv_sec;
 		if((newTime-oldTime)>20)
 			return 0;
 		
-		////printf("\n%d %d %d %d %d Waiting for %d %d %d %d %d ",b1,b2,b3,b4,b5,a1,a2,a3,a4,a5);	
 	}
-    ////printf("\nEnd wait Goal");
 	return 0;
 		
 }
 
 void moverobotPID(int a1,int a2,int a3,int a4,int a5)
 {
-	CheckBoundry(&a1,&a2,&a3,&a4,&a5);	
+	//CheckBoundry(&a1,&a2,&a3,&a4,&a5);
+	
 	a1=(int)((double)a1 * JointsCal[0]);
 	a2=(int)((double)a2 * JointsCal[1]);
 	a3=(int)((double)a3 * JointsCal[2]);
 	a4=(int)((double)a4 * JointsCal[3]);
 	a5=(int)((double)a5 * JointsCal[4]);
-	mapped[FINE_ADJUST_BASE]=a1;
-	mapped[FINE_ADJUST_END]=a3;
-	mapped[FINE_ADJUST_PIVOT]=a2;
-	mapped[FINE_ADJUST_ANGLE]=a4;
-	mapped[FINE_ADJUST_ROT]=a5;
+	//printf("PID move %d %d %d %d %d %d \n",a1,a3,a2,a4,a5);
+
+	FineAdjust[0]=a1;
+	FineAdjust[1]=a3;
+	FineAdjust[2]=a2;
+	FineAdjust[3]=a4;
+	FineAdjust[4]=a5;
+	
+	KeyholeSend(FineAdjust, FINE_ADJUST_KEYHOLE_CMD, FINE_ADJUST_KEYHOLE_SIZE, FINE_ADJUST_KEYHOLE );
+
+
 }
 
 int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 {
+	int KeyHoleArray[5];
 
 	//CheckBoundry(&a1,&a2,&a3,&a4,&a5);
+
+
 /*	int b1,b2,b3,b4,b5;
 	b1=getNormalizedInput(PLAYBACK_BASE_POSITION);
 	b2=getNormalizedInput(PLAYBACK_END_POSITION);
@@ -2946,15 +3423,20 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	a3=(int)((double)a3 * JointsCal[2]);
 	a4=(int)((double)a4 * JointsCal[3]);
 	a5=(int)((double)a5 * JointsCal[4]);
-	//printf("angles result %d %d %d %d %d",a1,a2,a3,a4,a5);
-	while((mapped[CMD_FIFO_STATE] & 0x01) != 0);
+	//printf("angles result %d %d %d %d %d\n",a1,a2,a3,a4,a5);
+
+	KeyHoleArray[0] = a1;
+	KeyHoleArray[1] = a3;
+	KeyHoleArray[2] = a2;
+	KeyHoleArray[3] = a4;
+	KeyHoleArray[4] = a5;
+
+
+	while((mapped[CMD_FIFO_STATE] & 0x01) != 0); //This was commented out for some reason in commit: https://github.com/HaddingtonDynamics/Dexter/commit/1ca9251b47468d9841713ec89b62e91050125188
+
 	
 	mapped[COMMAND_REG]=CMD_MOVEEN | CmdVal;
-	mapped[BASE_POSITION]=a1;
-	mapped[END_POSITON]=a3;
-	mapped[PIVOT_POSITON]=a2;
-	mapped[ANGLE_POSITON]=a4;
-	mapped[ROT_POSITON]=a5;
+	KeyholeSend(KeyHoleArray, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
 	mapped[COMMAND_REG]=CMD_MOVEEN | CMD_MOVEGO | CmdVal;
 	mapped[COMMAND_REG]=CmdVal;
 	/*if(mode==BLOCKING_MOVE)
@@ -2962,20 +3444,142 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	return 0;
 }
 
-int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
+void KeyholeSend(int *DataArray, int controlOffset, int size, int entryOffset )
 {
+	int i=0;
+	int ControlMask = (1 << controlOffset) - 1;
+	mapped[entryOffset] = 1 << (controlOffset + 1); // reset keyhole
+	//printf(" keyhole reset %x \n", 1 << (controlOffset + 1));
+	mapped[entryOffset] = 0;
+	for(i=0;i < size; i++)
+	{
+		mapped[entryOffset] = DataArray[i] & ControlMask;
+		//printf(" keyhole Write Data  %d \n", DataArray[i] & ControlMask);
+
+		mapped[entryOffset] = (DataArray[i] & ControlMask) + (1 << controlOffset); // toggle the data write
+//		printf(" keyhole Write Data toggle  %d \n", DataArray[i] + (1 << controlOffset));
+
+		mapped[entryOffset] = DataArray[i] & ControlMask;
+	}
+}
+
+int MoveRobotStraight(struct XYZ xyz_2)
+{
+
+	//File IO
+	double cart_speed;
+	double cart_accel;
+	double cart_step_size;
+	double rot_step_size;
+	wfp = fopen("/srv/samba/share/Cartesian_Settings/Speed.txt", "r");
+	if (wfp) {
+		fscanf(wfp, "%lf", &cart_speed);
+	}else {
+		printf("Failed to load /Cartesian_Settings/Speed.txt Error # %d\n", errno);
+		cart_speed = 100000.0;
+	}
+	wfp = fopen("/srv/samba/share/Cartesian_Settings/Acceleration.txt", "r");
+	if (wfp) {
+		fscanf(wfp, "%lf", &cart_accel);
+	}else {
+		printf("Failed to load /Cartesian_Settings/Acceleration.txt Error # %d\n", errno);
+		cart_accel = 100.0;
+	}
+	wfp = fopen("/srv/samba/share/Cartesian_Settings/Step_Size.txt", "r");
+	if (wfp) {
+		fscanf(wfp, "%lf", &cart_step_size);
+	}else {
+		printf("Failed to load /Cartesian_Settings/Step_Size.txt Error # %d\n", errno);
+		cart_step_size = 50.0;
+	}
+	wfp = fopen("/srv/samba/share/Cartesian_Settings/Rotational_Step_Size.txt", "r");
+	if (wfp) {
+		fscanf(wfp, "%lf", &rot_step_size);
+	}else {
+		printf("Failed to load /Cartesian_Settings/Rotational_Step_Size.txt Error # %d\n", errno);
+		cart_step_size = 50.0;
+	}
+
+
+
+	//Reading Last Commaned Joint Angles
+	struct J_angles LastGoal_J_angles = new_J_angles(
+		(double)LastGoal[0],
+		(double)LastGoal[1],
+		(double)LastGoal[2],
+		(double)LastGoal[3],
+		(double)LastGoal[4]
+	);
 	
-	double max_step_size = 1; //microns
+	//Converting Last Commaned Joint Angles to XYZ. Special Case Home.
+	struct XYZ xyz_1 = new_XYZ(xyz_2.position, xyz_2.direction, xyz_2.config);
+	if(LastGoal_J_angles.J1 == 0.0 && LastGoal_J_angles.J2 == 0.0 && LastGoal_J_angles.J3 == 0.0 && LastGoal_J_angles.J4 == 0.0 && LastGoal_J_angles.J5 == 0.0){
+		xyz_1.position = new_vector(0, L[4], L[0]+L[1]+L[2]+L[3]);
+		xyz_1.direction = new_vector(0, 1, 0);
+		xyz_1.config = new_config(xyz_2.config.right_arm, xyz_2.config.elbow_up,  xyz_2.config.wrist_out);
+
+		/*
+		struct Vector home_position = new_vector(0, L[4], L[0]+L[1]+L[2]+L[3]);
+		struct Vector home_dir = new_vector(0, 1, 0);
+		struct Config home_config = new_config(xyz_2.config.right_arm, xyz_2.config.elbow_up,  xyz_2.config.wrist_out);
+		 = new_XYZ(home_position, home_dir, home_config);
+		 */
+
+	}else{
+		xyz_1 = J_angles_to_XYZ(LastGoal_J_angles);
+	}
+
+	
+	printf("\nLastGoal_J_angles: ");
+	print_J_angles(LastGoal_J_angles);
+	
+	printf("\nxyz_1: ");
+	print_XYZ(xyz_1);
+	printf("\nxyz_2: ");
+	print_XYZ(xyz_2);
+
+	//Prevent Config changes during straight line move
+	if(xyz_1.config.right_arm != xyz_2.config.right_arm || xyz_1.config.elbow_up != xyz_2.config.elbow_up || xyz_1.config.wrist_out != xyz_2.config.wrist_out){
+		printf("\nError: Configurations cannot change during straight line move.");
+		printf("\nCurrent Configuration:\n");
+		print_config(xyz_1.config);
+		printf("\nDestination Configuration:\n");
+		print_config(xyz_2.config);
+
+		return 0;
+	}
+
+	
+
+	printf("\ncart_speed: %f", cart_speed);
+	
 	struct Vector U1 = xyz_1.position;
 	struct Vector U2 = xyz_2.position;
 	struct Vector U21 = subtract(U2, U1);
 	struct Vector v21 = normalize(U21);
 	double U21_mag = magnitude(U21);
-	int num_div = (int)ceil(U21_mag/max_step_size);
-	double step = U21_mag / num_div;
+	int num_div = (int)ceil(U21_mag/cart_step_size);
+	/*
+	int max_num_div =  50000;
+	if(num_div > max_num_div){
+		num_div = max_num_div;
+	}
+	*/
 	
-	int angular_velocity;
-	struct Vector Ui;
+	double step = U21_mag / num_div;
+	//int num_div = 10;
+	
+	printf("\nnum_div: %i", num_div);
+	
+	
+	//Smooth Acceleration Math:
+	double dx = cart_speed*cart_speed / (2*cart_accel);
+	if(2*dx >= U21_mag){
+		printf("\nAcceleration too low.\ndx = %f\nU21_mag = %f", dx, U21_mag);
+		dx = floor(U21_mag/2);
+		cart_speed = sqrt(2*cart_accel*dx); //2*a*dx == 2*a*U21_mag/2
+	}
+
 	
 	
 	struct Vector cur_pos = xyz_1.position;
@@ -2983,19 +3587,35 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 	struct Config cur_config = xyz_1.config;
 	struct XYZ cur_xyz = new_XYZ(cur_pos, cur_dir, cur_config);
 	
-	struct J_angles J_angles_list[num_div];
-	double speeds_list[num_div];
+	struct Vector rot_cross_p = cross(xyz_1.direction, xyz_2.direction);
+	double dir_angle = 0.0;
+	bool diff_normal = false;
+	if(magnitude(rot_cross_p) != 0.0){
+		printf("\nNormals are different.");
+		
+		dir_angle = signed_angle(xyz_1.direction, xyz_2.direction, rot_cross_p);
+		printf("\ndir_angle: %f", dir_angle);
+		diff_normal = true;
+		if(dir_angle / ((float)num_div) > rot_step_size){
+			num_div = (int)ceil(dir_angle/rot_step_size);
+			printf("\num_div: %i", num_div);
+			
+		}
+		rot_step_size = dir_angle / ((float)num_div);
+		printf("\nrot_step_size: %f", rot_step_size);
+	}
+	
+	
+	
+	
+	
+	//struct J_angles J_angles_list[num_div];
+	//double speeds_list[num_div];
 	struct J_angles J_angles_new;
 	struct J_angles J_angles_old = xyz_to_J_angles(cur_xyz);
 	
 	
-	printf("\n\nStarting pre-calculation for MoveRobotStraight:");
 	
-	printf("\nxyz_1: ");
-	print_XYZ(xyz_1);
-	printf("\nxyz_2: ");
-	print_XYZ(xyz_2);
-	printf("\ncart_speed: %f", cart_speed);
 	
 	printf("\nU21:");
 	print_vector(U21);
@@ -3004,57 +3624,81 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 	printf("\nU21_mag: %f", U21_mag);
 	printf("\nnum_div: %i", num_div);
 	printf("\nstep: %f", step);
+	printf("\ndx: %f\n", dx);
 	
 	
 	int i;
 	int cal_max_angular_velocity = 0;
-	for(i=0;i<=num_div;i++){
-		Ui = add(U1, scalar_mult(((float)i)*step, v21));
+	int angular_velocity;
+	struct Vector Ui;
+	double cur_speed;
+	double dist = 0.0;
+	for(i=1;i<=num_div;i++){
+		//Cartesian Interpolation
+		dist = ((float)i)*step;
+		Ui = add(U1, scalar_mult(dist, v21));
 		cur_xyz.position = Ui;
+		if(diff_normal){
+			cur_xyz.direction = rotate(xyz_1.direction, rot_cross_p, ((float)i)*rot_step_size);
+			//printf("\ni: %i  Direction: ", i);
+			//print_vector(rotate(xyz_1.direction, rot_cross_p, ((float)i)*rot_step_size));
+		}
 		J_angles_new = xyz_to_J_angles(cur_xyz);
+		
+		//Smooth Acceleration Speed Calc:
+		if(dist <= dx){
+			cur_speed = 0.5*cart_speed*(-cos(dist*PI/dx) + 1);
+		}else if(dist >= U21_mag - dx){
+			cur_speed = 0.5*cart_speed*(cos((dist - U21_mag + dx)*PI/dx) + 1);
+			//printf("Decell speed: %f   dist: %f\n", cur_speed, dist);
+		}else{
+			cur_speed = cart_speed;
+		}
 		angular_velocity = k_tip_speed_to_angle_speed(J_angles_old, J_angles_new, cart_speed);
-		
-		J_angles_list[i] = J_angles_new;
-		speeds_list[i] = angular_velocity;
-		
-		
+
+
+		//Actual Speed change and Movement
+		mapped[START_SPEED]= 1 ^ angular_velocity;
+		maxSpeed=angular_velocity & 0b00000000000011111111111111111111;
+		mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
+		MoveRobot(J_angles_new.J1, J_angles_new.J2, J_angles_new.J3, J_angles_new.J4, J_angles_new.J5, BLOCKING_MOVE);
+
+
 		//printf("\nang_vel: %d  J: ");
 		//print_J_angles(J_angles_new);
-		if(angular_velocity > cal_max_angular_velocity){
-			cal_max_angular_velocity = angular_velocity;
-		}
+		// if(angular_velocity > cal_max_angular_velocity){
+			// cal_max_angular_velocity = angular_velocity;
+		// }
 		//printf("%i: %i", i, angular_velocity);
 		
 	}
 	
-	printf("\nDone pre-calculating MoveRobotStraight");
-	printf("cal_max_angular_velocity = %i", cal_max_angular_velocity);
-	printf("\nStarting MoveRobotStraight movement");
-	printf("\n");
+	//printf("cal_max_angular_velocity = %i", cal_max_angular_velocity);
+	printf("\nMoveRobotStraight movement complete\n");
+	
 	
 	
 	/*
-	int cur_angular_velocity = 38773; //5 (deg/s)
 	for(i=0;i<=num_div;i++){
-		//cur_angular_velocity = speeds_list[i];
+		cur_angular_velocity = speeds_list[i];
 		
 		
 		//Startspeed
-		printf("mapped startspeed: %i", 1 ^ cur_angular_velocity);
+		//printf("cur_angular_velocity: %i\n", cur_angular_velocity);
 		mapped[START_SPEED]=1 ^ cur_angular_velocity;
 		
 		
 		//Maxspeed
 		maxSpeed=cur_angular_velocity & 0b00000000000011111111111111111111;
-		printf("maxSpeed: %i", cur_angular_velocity & 0b00000000000011111111111111111111);
+		//printf("maxSpeed: %i", cur_angular_velocity & 0b00000000000011111111111111111111);
 		mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
-		printf("mapped startspeed: %i", maxSpeed + (coupledAcceleration << 20));
+		//printf("mapped startspeed: %i", maxSpeed + (coupledAcceleration << 20));
 		
-		printf("i = %i, J1 = %f", i, J_angles_list[i].J1);
-		//MoveRobot(J_angles_list[i].J1, J_angles_list[i].J2, J_angles_list[i].J3, J_angles_list[i].J4, J_angles_list[i].J5, BLOCKING_MOVE);
+		//printf("i = %i, J1 = %f", i, J_angles_list[i].J1);
+		MoveRobot(J_angles_list[i].J1, J_angles_list[i].J2, J_angles_list[i].J3, J_angles_list[i].J4, J_angles_list[i].J5, BLOCKING_MOVE);
 	}
 	*/
-	printf("\n MoveRobotStraight movement");
+	
 	
 	return 0;
 }
@@ -3062,16 +3706,16 @@ int MoveRobotStraight(struct XYZ xyz_1, struct XYZ xyz_2, double cart_speed)
 int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5)
 {
 	int h1,h2,h3,h4,h5,l1,l2,l3,l4,l5;
-	h1=(int)((float)BaseBoundryHigh / fabs(JointsCal[0]));
-	h2=(int)((float)PivotBoundryHigh / fabs(JointsCal[1]));
-	h3=(int)((float)EndBoundryHigh / fabs(JointsCal[2]));
-	h4=(int)((float)AngleBoundryHigh / fabs(JointsCal[3]));
-	h5=(int)((float)RotateBoundryHigh / fabs(JointsCal[4]));
-	l1=(int)((float)BaseBoundryLow / fabs(JointsCal[0]));
-	l2=(int)((float)PivotBoundryLow / fabs(JointsCal[1]));
-	l3=(int)((float)EndBoundryLow / fabs(JointsCal[2]));
-	l4=(int)((float)AngleBoundryLow / fabs(JointsCal[3]));
-	l5=(int)((float)RotateBoundryLow / fabs(JointsCal[4]));
+	h1=(int)((float)Boundary[0] / fabs(JointsCal[0]));
+	h2=(int)((float)Boundary[2] / fabs(JointsCal[1]));
+	h3=(int)((float)Boundary[4] / fabs(JointsCal[2]));
+	h4=(int)((float)Boundary[6] / fabs(JointsCal[3]));
+	h5=(int)((float)Boundary[8] / fabs(JointsCal[4]));
+	l1=(int)((float)Boundary[1] / fabs(JointsCal[0]));
+	l2=(int)((float)Boundary[3] / fabs(JointsCal[1]));
+	l3=(int)((float)Boundary[5] / fabs(JointsCal[2]));
+	l4=(int)((float)Boundary[7] / fabs(JointsCal[3]));
+	l5=(int)((float)Boundary[9] / fabs(JointsCal[4]));
 	
 	if(*(j1) >= h1)
 	{
@@ -3114,20 +3758,9 @@ int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5)
 	{
 		*(j5) = l5;
 	}
-	////printf(" boundry calc %d %d %f %d",*(j1),BaseBoundryHigh,fabs(JointsCal[0]),(int)((float)BaseBoundryHigh / fabs(JointsCal[0])));
-/*
-EndBoundryHigh
-EndBoundryLow
-PivotBoundryHigh
-PivotBoundryLow
-AngleBoundryHigh
-AngleBoundryLow
-RotateBoundryHigh
-RotateBoundryLow
-*/
- if(*(j1)==0)
-	 *(j1)=1;
- return 0;
+	 if(*(j1)==0)
+		 *(j1)=1;
+ 	return 0;
 }
 
 int SetParam(char *a1,float fa2,int a3,int a4,int a5)
@@ -3135,6 +3768,9 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 	int i,BDH,BDL,Axis;
 	int a2=(int)fa2;
 	int fxa2=(a2<<8)+(fa2-a2)*256;
+	unsigned int *uia2 = *(unsigned int*)&fa2;
+
+
 	
 	////printf("%s %s %d %d \n",Params[i],a1,a2,i);
 
@@ -3159,123 +3795,104 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							return 0;
 						break;
 						case 2:
-							mapped[FORCE_BIAS_BASE]=a2;
+							forceBias[0]=a2;
+							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
+
 							return 0;
 						case 3:
-							mapped[FORCE_BIAS_END]=a2;
+							forceBias[1]=a2;
+							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
 							return 0;
 						break;
 						case 4:
-							mapped[FORCE_BIAS_PIVOT]=a2;
+							forceBias[2]=a2;
+							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
 							return 0;
 						break;
 						case 5:
-							mapped[FORCE_BIAS_ANGLE]=a2;
+							forceBias[3]=a2;
+							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
 							return 0;
 						break;
 						case 6:
-							mapped[FORCE_BIAS_ROT]=a2;
+							forceBias[4]=a2;
+							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
 							return 0;
 						break;
 						case 7:
-							mapped[FRICTION_BASE]=fxa2;
+							Friction[0]=fxa2;
+							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
 							return 0;
 						break;
 						case 8:
-							mapped[FRICTION_END]=fxa2;
+							Friction[1]=fxa2;
+							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
 							return 0;
 						break;
 						case 9:
-							mapped[FRICTION_PIVOT]=fxa2;
+							Friction[2]=fxa2;
+							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
 							return 0;
 						break;
 						case 10:
-							mapped[FRICTION_ANGLE]=fxa2;
+							Friction[3]=fxa2;
+							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
 							return 0;
 						break;
 						case 11:
-							mapped[FRICTION_ROT]=fxa2;
+							Friction[4]=fxa2;
+							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
 							return 0;
 						break;
 						case 12:
-							BaseBoundryHigh=(int)((float)a2 * fabs(JointsCal[0]));
-							////printf(" boundry set %d %d %f %f ", a2, BaseBoundryHigh, JointsCal[0], fabs(JointsCal[0]));
-							BDH=BaseBoundryHigh;
-							BDL=BaseBoundryLow;
-							Axis=BOUNDRY_BASE;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[1]=(int)((float)a2 * fabs(JointsCal[0]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+
 							return 0;
 						break;
 						case 13:
-							BaseBoundryLow=(int)((float)a2 * fabs(JointsCal[0]));
-							BDH=BaseBoundryHigh;
-							BDL=BaseBoundryLow;
-							Axis=BOUNDRY_BASE;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[0]=(int)((float)a2 * fabs(JointsCal[0]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 							return 0;
 						break;
 						case 14:
-							EndBoundryHigh=(int)((float)a2 * fabs(JointsCal[2]));
-							BDH=EndBoundryHigh;
-							BDL=EndBoundryLow;
-							Axis=BOUNDRY_END;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[3]=(int)((float)a2 * fabs(JointsCal[2]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 							return 0;
 						break;
 						case 15:
-							EndBoundryLow=(int)((float)a2 * fabs(JointsCal[2]));
-							BDH=EndBoundryHigh;
-							BDL=EndBoundryLow;
-							Axis=BOUNDRY_END;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[2]=(int)((float)a2 * fabs(JointsCal[2]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 							return 0;
 						break;
 						case 16:
-							PivotBoundryHigh=(int)((float)a2 * fabs(JointsCal[1]));
-							BDH=PivotBoundryHigh;
-							BDL=PivotBoundryLow;
-							Axis=BOUNDRY_PIVOT;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[5]=(int)((float)a2 * fabs(JointsCal[1]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 							return 0;
 						break;
 						case 17:
-							PivotBoundryLow=(int)((float)a2 * fabs(JointsCal[1]));
-							BDH=PivotBoundryHigh;
-							BDL=PivotBoundryLow;
-							Axis=BOUNDRY_PIVOT;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[4]=(int)((float)a2 * fabs(JointsCal[1]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 							return 0;
 						break;
 						case 18:
-							AngleBoundryHigh=(int)((float)a2 * fabs(JointsCal[3]));
-							BDH=AngleBoundryHigh;
-							BDL=AngleBoundryLow;
-							Axis=BOUNDRY_ANGLE;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[7]=(int)((float)a2 * fabs(JointsCal[3]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 							return 0;
 						break;
 						case 19:
-							AngleBoundryLow=(int)((float)a2 * fabs(JointsCal[3]));
-							BDH=AngleBoundryHigh;
-							BDL=AngleBoundryLow;
-							Axis=BOUNDRY_ANGLE;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[6]=(int)((float)a2 * fabs(JointsCal[3]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 							return 0;
 						break;
 						case 20:
-							RotateBoundryHigh=(int)((float)a2 * fabs(JointsCal[4]));
-							BDH=RotateBoundryHigh;
-							BDL=RotateBoundryLow;
-							Axis=BOUNDRY_ROT;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[9]=(int)((float)a2 * fabs(JointsCal[4]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 							return 0;
 						break;
 						case 21:
-							RotateBoundryLow=(int)((float)a2 * fabs(JointsCal[4]));
-							BDH=RotateBoundryHigh;
-							BDL=RotateBoundryLow;
-							Axis=BOUNDRY_ROT;
-							mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+							Boundary[8]=(int)((float)a2 * fabs(JointsCal[4]));
+							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 							return 0;
 						break;
 						case 22:
@@ -3296,8 +3913,60 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 						case 25:
 							mapped[START_SPEED]=1 ^ a2;
 						break;
-						case 26:
+						case 26:     // end speed todo not implemented
 						break;
+						case 27:     // ServoSet2X
+							//printf("Write Packet %d %d %d \n", a2,a3,a4);
+							SendWrite2Packet(a4, a2, a3);
+
+						break;
+						case 28:     // ServoSet
+							SendWrite1Packet((unsigned char)a4, a2, a3);
+						break;
+						case 29:     // ServoReset
+							//printf("Servo Reboot %d",a2);
+							RebootServo(a2); 
+						break;
+						case 30:     // Ctrl
+							//This is implimented at a higher level because of the atof on the second argument 
+						break;
+						case 31:     // J1_PID_P							
+							mapped[PID_ADDRESS]=0;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J1_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+						case 32:     // J2_PID_P
+							mapped[PID_ADDRESS]=2;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J2_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+						case 33:     // J3_PID_P
+							mapped[PID_ADDRESS]=1;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J3_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+						case 34:     // J4_PID_P
+							mapped[PID_ADDRESS]=3;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J4_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+						case 35:     // J5_PID_P
+							mapped[PID_ADDRESS]=4;
+							mapped[PID_P]=(int)uia2;
+							// printf("\nSetting J5_PID_P to:\n");
+							// printf("  Float: %f\n", fa2);
+							// printf("  Hex: %x\n", uia2);
+						break;
+
+
 						default:
 						break;
 				}
@@ -3307,6 +3976,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 	return 0;
 
 }
+
 int MoveRobotRelative(int a1,int a2,int a3,int a4,int a5, int mode)
 {
 	int b1,b2,b3,b4,b5;
@@ -3424,13 +4094,19 @@ int RestoreCalTables(char *FileName)
 		fseek(fp, 0, SEEK_END);    /* file pointer at the end of file */
 		Length = ftell(fp);   /* take a position of file pointer size variable */
 		fseek(fp, 0, SEEK_SET);    /* file pointer at the beginning of file */
-		if((readSize=fread((const void *)CalTables,sizeof(int),4*1024*1024,fp))==(Length/4))
+		if((readSize=fread((void *)CalTables,sizeof(int),4*1024*1024,fp))==(Length/4))
 		{
 
 			//printf(" size good %d %d",readSize ,Length);
 			#ifndef NO_BOOT_DANCE
+
+			/*
 			MoveRobot(50000,50000,50000,5000,5000,BLOCKING_MOVE);
 			MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+			*/
+			strlcpy(iString, "S RunFile BootDance_RestoreCalTable_Succesful.make_ins ;\0", ISTRING_LEN);
+			printf("Starting %s returned %d\n",iString, ParseInput(iString));
+
 			#endif
 		}
 		else
@@ -3464,7 +4140,7 @@ int WriteDMA(int Address,char *FileName)
 		blocks=Length/256;
 		for(j=0;j<blocks;j++) // only do full blocks inside loop
 		{	
-			if( ( readSize=fread((const void *)dataarray,sizeof(int),256,fp) )==256)
+			if( ( readSize=fread((void *)dataarray,sizeof(int),256,fp) )==256)
 			{
 				mapped[DMA_WRITE_ADDRESS]=Address+(j*1024);
 				mapped[DMA_WRITE_PARAMS]=(2<<8) | 127;
@@ -3705,9 +4381,10 @@ void ReplayMovement(char *FileName)
 	mapped[FINE_ADJUST_ROT]=fa4;*/
 	mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
 }
+
+
 int getInput(void)
 {
-	char iString[510];
 	if(gets(iString)!=NULL)
 	{
 		return ParseInput(iString);
@@ -3743,11 +4420,15 @@ int ParseInput(char *iString)
 {
 	//char iString[255];
 	const char delimiters[] = " ,";
+	const char ctrldelims[] = ":[] ,";
+	FILE *fp;
 	char *token,*p1,*p2,*p3,*p4,*p5,*p6,*p7,*p8,*p9,*p10,*p11,*p12,*p13,*p14,*p15,*p16,*p17,*p18,*p19;
 	int BDH,BDL;
 
 
 	int i,j,Add,Start,Length,Delay,Axis,tokenVal;
+	int d3,d4,d5;
+	float f1;
 	////printf("\nStart wait Goal");
 	if(iString !=NULL)
 	{
@@ -3765,33 +4446,35 @@ int ParseInput(char *iString)
 				case WRITE_TO_ROBOT:
 					p1=strtok (NULL, delimiters);
                               Add=(int)p1[0];
-                              printf("\nwrite %s %d: ",p1,Add);
+                              //printf("\nwrite %s %d: ",p1,Add);
 					switch(Add) {
 					   case 'f': //filename
 						p2=strtok(NULL, delimiters);//always zero, toss it.
 						p2=strtok(NULL, delimiters);//filename
 						if(wfp) fclose(wfp);
 						wfp = fopen(p2, "w");
-                                    printf("Opened %s as handle %d. ",p2,fileno(wfp));
+                        printf("\nWriting file to %s as handle %d...\n",p2,fileno(wfp));
 						break;
-					   case 's': //start
-					   case 'm': //middle
-					   case 'e': //end
+					    case 's': //start
+					    case 'm': //middle
+					    case 'e': //end
 						p2=strtok(NULL, delimiters);//bytes
                                     Length=atoi(p2);
-                                    printf("Length: %d bytes. \n", Length);
+                                    //printf("Length: %d bytes. \n", Length);
                                     if (0<Length) {
                                         p3=strtok(NULL, "");//remaining data
-                                        printf("Found: %d bytes. ", strlen(p3));
+                                        //printf("Found: %d bytes. ", strlen(p3));
                                         Length = unescape(p3, Length);
-                                        printf(" %d bytes after unescape",Length);
+                                        //printf(" %d bytes after unescape",Length);
                                         i=fwrite(p3, 1, Length, wfp);
-                                        printf("Wrote %d bytes. ",i);
+                                        //printf("Wrote %d bytes. ",i);
                                         }
 						if('e'==Add && wfp) {
                                         fclose(wfp);
                                         wfp = 0;
-                                        printf(" Finished write.\n");
+                                        printf("...Finished writing.\n");
+						// TODO: re load LinkLinks.txt file into L array ?
+
                                         }
 						break;
 				          default : 
@@ -3828,11 +4511,151 @@ int ParseInput(char *iString)
 				break; 
 				case SET_PARAM :
 					p1=strtok (NULL, delimiters);
-					p2=strtok (NULL, delimiters);
-	//				p3=strtok (NULL, delimiters);
-	//				p4=strtok (NULL, delimiters);
-	//				p5=strtok (NULL, delimiters);
-					SetParam(p1,atof(p2),0,0,0);
+					
+					if (!strcmp("RunFile",p1)) {
+						p2 = strtok (NULL, delimiters);
+						fp = fopen(p2, "r");
+						if (fp) {
+							printf("Opened %s as handle %d\n", p2, fileno(fp));
+							do {
+								p3 = fgets(iString, ISTRING_LEN, fp);
+								if (p3) { //not EOF
+									p4 = strchr(iString,';');//,ISTRING_LEN); //Check that there is a ';' in there.
+									if (p4) { //found a ;
+										*p4=0; //terminate at the ;
+										//printf(" read: \"%s\"\n", iString);
+										ParseInput(iString); //recursivly execute
+										} 
+									}
+								} while (p3);
+							fclose(fp);
+							printf("Done\n");
+							}
+						else { 
+							printf("Failed to load %s Error # %d %s\n", p2, errno, strerror(errno)); 
+							return errno;
+							}
+						}
+					else if (!strcmp("Ctrl",p1)) {
+						while ((p1 = strtok(NULL,ctrldelims))) {
+							printf("key %s\n",p1);
+							if (!strcmp("Diff",p1)) {
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf("Angle / Rot: %d\n",d3);
+								mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=d3;
+								mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=d3;
+							}
+							else if(!strcmp("FMul",p1)) {
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf("SPEED_FACTORA: %d\n",d3);
+								mapped[SPEED_FACTORA]=d3;
+							}
+							else if(!strcmp("PIDP",p1)) {
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf("Base: %d\n",d3);
+								mapped[PID_ADDRESS]=0;
+								mapped[PID_P]=d3;
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf("End / Pivot: %d\n",d3);
+								mapped[PID_ADDRESS]=1;
+								mapped[PID_P]=d3;
+								mapped[PID_ADDRESS]=2;
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf("Angle / Rot: %d\n",d3);
+								mapped[PID_ADDRESS]=3;
+								mapped[PID_P]=d3;
+								mapped[PID_ADDRESS]=4;
+							}
+/* Needs PID_I and PID_D added back to the mapped register from the FPGA
+							else if(!strcmp("PID",p1)) {
+								d3 = atoi(strtok(NULL, ctrldelims));
+								mapped[PID_ADDRESS]=i;
+								printf(" J%d:\n",d3);
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf(" P:%d\n",d3);
+								mapped[PID_P]=d3;
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf(" I:%d\n",d3);
+								mapped[PID_I]=d3;
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf(" D:%d\n",d3);
+								mapped[PID_D]=d3;
+							}
+*/
+							else if(!strcmp("Frict",p1)) {
+								for ( i = 0; i<5; i++) {
+									f1 = atof(strtok(NULL, ctrldelims));
+									d3=(int)f1;
+									d4=(d3<<8)+(f1-d3)*256;
+									Friction[i]=d4;
+									printf("Friction[%d]=%d\n",i,d4);
+								}
+								KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
+							}
+							else if (!strcmp("Decay",p1)) {
+								d3 = atoi(strtok(NULL, ctrldelims));
+								printf("All: %d\n",d3);
+								mapped[BASE_FORCE_DECAY]=d3;
+								mapped[END_FORCE_DECAY]=d3;
+								mapped[PIVOT_FORCE_DECAY]=d3;
+								mapped[ANGLE_FORCE_DECAY]=d3;
+								mapped[ROTATE_FORCE_DECAY]=d3;
+							}
+							else if (!strcmp("Cmd",p1)) {
+								d3 = atoi(strtok(NULL, ctrldelims));
+								CmdVal = d3;
+								mapped[COMMAND_REG] = CmdVal;
+								for (;d3;d3 >>= 1) printf("%d", d3 & 1);
+								printf(" : %d \n",CmdVal);
+							}
+							
+						}
+						mapped[DIFF_FORCE_MAX_SPEED] = 200000; //TODO: Is this needed? Ok for ALL?
+						// CmdVal 	= CMD_ENABLE_LOOP 
+						// 		| CMD_CALIBRATE_RUN 
+						// 		| CMD_RESET_FORCE 
+						// 		| CMD_ANGLE_ENABLE 
+						// 		| CMD_ROT_ENABLE
+						// 		;
+					}else if(!strcmp("LinkLengths",p1)){
+						p2=strtok (NULL, delimiters);
+						p3=strtok (NULL, delimiters);
+						p4=strtok (NULL, delimiters);
+						p5=strtok (NULL, delimiters);
+						p6=strtok (NULL, delimiters);
+						fp=fopen("LinkLengths.txt", "w");
+						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
+						fclose (fp);
+					}else if(!strcmp("StartPosition",p1)){
+						p2=strtok (NULL, delimiters);
+						p3=strtok (NULL, delimiters);
+						p4=strtok (NULL, delimiters);
+						p5=strtok (NULL, delimiters);
+						p6=strtok (NULL, delimiters);
+						fp=fopen("StartPosition.txt", "w");
+						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
+						fclose (fp);
+					}
+					else {
+						p2=strtok (NULL, delimiters);
+						p3=strtok (NULL, delimiters);
+						p4=strtok (NULL, delimiters);
+						p5=strtok (NULL, delimiters);
+						if(p3!=NULL)
+									d3=atoi(p3);
+						else
+							d3=0;
+						if(p4!=NULL)
+									d4=atoi(p4);
+						else
+							d4=0;
+						if(p5!=NULL)
+									d5=atoi(p5);
+						else
+							d5=0;
+						
+						SetParam(p1,atof(p2),d3,d4,d5);
+					}
 				break; 
 				case MOVEALL_RELATIVE :
 					p1=strtok (NULL, delimiters);
@@ -3948,13 +4771,23 @@ int ParseInput(char *iString)
 					{
 						//printf("/nIndex not found");
 					}
-				break; 
+				break;
 				case MOVEALL_CMD :
 					p1=strtok (NULL, delimiters);
 					p2=strtok (NULL, delimiters);
 					p3=strtok (NULL, delimiters);
 					p4=strtok (NULL, delimiters);
 					p5=strtok (NULL, delimiters);
+					
+					p6=strtok (NULL, delimiters);
+					if (p6 && 'x'!=p6[0]) SetGripperRoll(atoi(p6));
+					//if(p6 != NULL){ printf("p6 %s\n",p6); }
+					//else{ printf("p6 doesn't exist\n"); }
+					p7=strtok (NULL, delimiters);
+					if (p7 && 'x'!=p7[0]) SetGripperSpan(atoi(p7));
+					//if(p7 != NULL){ printf("p7 %s\n",p7); }
+					//else{ printf("p7 doesn't exist\n"); }
+					
 					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)						
 						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
 				break; 
@@ -4002,11 +4835,8 @@ int ParseInput(char *iString)
 				break;
 				
 				case MOVETOSTRAIGHT_CMD:
-					printf("\n\nStarting MoveToStraight\n");
-					
-					//printf("\niString: \n%s", iString);
-					
-				
+					//printf("\n\nStarting MoveToStraight3\n");
+
 					p1 = strtok(NULL, delimiters);
 					p2 = strtok(NULL, delimiters);
 					p3 = strtok(NULL, delimiters);
@@ -4016,38 +4846,7 @@ int ParseInput(char *iString)
 					p7 = strtok(NULL, delimiters);
 					p8 = strtok(NULL, delimiters);
 					p9 = strtok(NULL, delimiters);
-					p10 = strtok(NULL, delimiters);
 					
-					/*
-					if(!p10){
-						printf("\nNot p10");
-					}else{
-						printf("\n%u", p9);
-						printf("\n%u", p10);
-						printf("\n%s", p10);
-						
-						printf("\n%u", p11);
-						printf("\n%s", p11);
-					}
-					*/
-					
-					p11 = strtok(NULL, delimiters);
-					p12 = strtok(NULL, delimiters);
-					p13 = strtok(NULL, delimiters);
-					p14 = strtok(NULL, delimiters);
-					p15 = strtok(NULL, delimiters);
-					p16 = strtok(NULL, delimiters);
-					p17 = strtok(NULL, delimiters);
-					p18 = strtok(NULL, delimiters);
-					p19 = strtok(NULL, delimiters);
-					
-					//printf("\nParsing Complete\n");
-					//printf("\n1: %d, \n2: %d, \n3: %d, \n4: %d, \n5: %d, \n6: %d, \n7: %d, \n8: %d, \n9: %d, \n10: %d, \n11: %d, \n12: %d, \n13: %d, \n14: %d, \n15: %d, \n16: %d, \n17: %d, \n18: %d, \n19: %d", (float)atoi(p1), (float)atoi(p2), (float)atoi(p3), (float)atoi(p4), (float)atoi(p5), (float)atoi(p6), (float)atoi(p7), (float)atoi(p8), (float)atoi(p9), (float)atoi(p10), (float)atoi(p11), (float)atoi(p12), (float)atoi(p13), (float)atoi(p14), (float)atoi(p15), (float)atoi(p16), (float)atoi(p17), (float)atoi(p18), (float)atoi(p19));
-					//printf("\nSpeed: %d", )
-					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f, p10f);
-					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p11f, p12f, p13f, p14f, p15f, p16f, p17f, p18f, p19f);
-					
-					/*
 					printf("\np1: %f", (float)atoi(p1));
 					printf("\np2: %f", (float)atoi(p2));
 					printf("\np3: %f", (float)atoi(p3));
@@ -4058,80 +4857,38 @@ int ParseInput(char *iString)
 					printf("\np8: %f", (float)atoi(p8));
 					printf("\np9: %f", (float)atoi(p9));
 					
-					
-					//printf("\np10: %f", (float)atoi(p10));
-					printf("\np11: %f", (float)atoi(p11));
-					printf("\np12: %f", (float)atoi(p12));
-					printf("\np13: %f", (float)atoi(p13));
-					printf("\np14: %f", (float)atoi(p14));
-					printf("\np15: %f", (float)atoi(p15));
-					printf("\np16: %f", (float)atoi(p16));
-					printf("\np17: %f", (float)atoi(p7));
-					printf("\np18: %f", (float)atoi(p18));
-					printf("\np19: %f", (float)atoi(p19));
-					
-					*/
-					
-					
-					double cart_speed = (float)atoi(p1);
-					//printf("\n1");
-					
-					struct Vector my_point_start = new_vector((float)atoi(p2), (float)atoi(p3), (float)atoi(p4));
-					//printf("\n2");
-					struct Vector my_dir_start = new_vector((float)atoi(p5), (float)atoi(p6), (float)atoi(p7));
-					//printf("\n3");
-					struct Config my_config_start = new_config((bool)atoi(p8), (bool)atoi(p9), (bool)atoi(p10));
-					//printf("\n4");
-					
 					/*
-					printf("\ncart_speed: %f (microns/sec)\n", cart_speed);
-					printf("\nmy_point_start: ");
-					print_vector(my_point_start);
-					printf("\nmy_dir_start: ");
-					print_vector(my_dir_start);
-					printf("\nBool input: %d, %d, %d\n", atoi(p17), atoi(p18), atoi(p19));
-					printf("\nmy_config_start:" );
-					print_config(my_config_start);
-					*/
-					struct XYZ xyz_start = new_XYZ(my_point_start, my_dir_start, my_config_start);
+					struct J_angles measured_angles = new_J_angles(
+							(float)(getNormalizedInput(BASE_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(PIVOT_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(END_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(ANGLE_MEASURED_ANGLE)),
+							(float)(getNormalizedInput(ROT_MEASURED_ANGLE))
+						);
 					
 					
-					//printf("\n5");
-					struct Vector my_point_end = new_vector((float)atoi(p11), (float)atoi(p12), (float)atoi(p13));
-					//printf("\n6");
-					struct Vector my_dir_end = new_vector((float)atoi(p14), (float)atoi(p15), (float)atoi(p16));
-					//printf("\n7");
-					struct Config my_config_end = new_config((bool)atoi(p17), (bool)atoi(p18), (bool)atoi(p19));
-					//printf("\n8");
-					struct XYZ xyz_end = new_XYZ(my_point_end, my_dir_end, my_config_end);
-					//printf("\n9");
-					
-					//printf("\nJangles: \n");
-					//printf("[%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
-					//printf("\n");
-					
-					//printf("\n\nStarting MOVETOSTRAIGHT:");
-					
-					//print_config(my_config_start);
-					/*
-					printf("\nxyz_start: ");
+					struct XYZ xyz_start = J_angles_to_XYZ(measured_angles);
+					printf("\nxyz_start:\n");
 					print_XYZ(xyz_start);
+					*/
 					
-					printf("\n\nmy_point_end: ");
-					print_vector(my_point_end);
-					printf("\nmy_dir_end: ");
-					print_vector(my_dir_end);
-					printf("\nmy_config_end");
-					print_config(my_config_end);
-					printf("\nxyz_end: ");
-					print_XYZ(xyz_end);
-					printf("\n");
-					*/					
+					// struct Vector my_point_start = new_vector(-100000.0, 500000.0, 100000.0);
+					// struct Vector my_dir_start = new_vector(0.0, 0.0, -1.0);
+					// struct Config my_config_start = new_config(1, 1, 1);
+					// struct XYZ xyz_start = new_XYZ(my_point_start, my_dir_start, my_config_start);
 
+
+					struct Vector my_point_end = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
+					struct Vector my_dir_end = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					struct Config my_config_end = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
+					struct XYZ xyz_end = new_XYZ(my_point_end, my_dir_end, my_config_end);
+					printf("\nxyz_end:\n");
+					print_XYZ(xyz_end);
+					
 					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL){
-						
 						//printf("\n\nStarting MoveRobotStraight:\n");
-						MoveRobotStraight(xyz_start, xyz_end, cart_speed);
+						
+						MoveRobotStraight(xyz_end);
 						//MoveRobot(J1, J2, J3, J4, J5, BLOCKING_MOVE);
 					}
 					
@@ -4175,7 +4932,7 @@ int ParseInput(char *iString)
 						
 
 						//printf("\n  %x %d",CalTables[Add+i],CalTables[Add+i]);
-						//printf("\n %x ",mapped[Add+i]);
+						printf("\n %x ",mapped[Add+i]);
 					}
 				break; 
 				case WRITE_CMD  :
@@ -4185,21 +4942,21 @@ int ParseInput(char *iString)
 					{
 						//printf("\n %d %d need addres and data",atoi(p1),atoi(p2));
 					}
-					//printf("\n %d %d \n",atoi(p1),atoi(p2));
 					i=atoi(p1);
 					j=atoi(p2);
-					if(i==COMMAND_REG)
+					//printf("\n %d %d %d \n",OldMemMapInderection[i],i,j);
+					if(OldMemMapInderection[i]==COMMAND_REG)
 						CmdVal=j;
-					mapped[i]=j;
+					mapped[OldMemMapInderection[i]]=j;
 					if(i==ACCELERATION_MAXSPEED)
 					{
 						maxSpeed=j & 0b00000000000011111111111111111111;
-						coupledAcceleration=(j & 0b00000011111100000000000000000000) >> 20;
+						coupledAcceleration=(j & 0b111111111111100000000000000000000) >> 20;
 						//startSpeed=0,
 						
 					}
 				break; 
-				case SET_ALL_BOUNDRY  :
+				case SET_ALL_BOUNDRY :
 					p1=strtok (NULL, delimiters);
 					p2=strtok (NULL, delimiters);
 					p3=strtok (NULL, delimiters);
@@ -4210,46 +4967,30 @@ int ParseInput(char *iString)
 					p8=strtok (NULL, delimiters);
 					p9=strtok (NULL, delimiters);
 					p10=strtok (NULL, delimiters);
-					BaseBoundryHigh=(int)((float)atoi(p1) * fabs(JointsCal[0]));
-					BaseBoundryLow=(int)((float)atoi(p2) * fabs(JointsCal[0]));
-					BDH=BaseBoundryHigh;
-					BDL=BaseBoundryLow;
-					Axis=BOUNDRY_BASE;
-					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
-					PivotBoundryHigh=(int)((float)atoi(p3) * fabs(JointsCal[1]));
-					PivotBoundryLow=(int)((float)atoi(p4) * fabs(JointsCal[1]));
-					BDH=PivotBoundryHigh;
-					BDL=PivotBoundryLow;
-					Axis=BOUNDRY_PIVOT;
-					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
-					EndBoundryHigh=(int)((float)atoi(p5) * fabs(JointsCal[2]));
-					EndBoundryLow=(int)((float)atoi(p6) * fabs(JointsCal[2]));
-					BDH=EndBoundryHigh;
-					BDL=EndBoundryLow;
-					Axis=BOUNDRY_END;
-					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
-					AngleBoundryHigh=(int)((float)atoi(p7) * fabs(JointsCal[3]));
-					AngleBoundryLow=(int)((float)atoi(p8) * fabs(JointsCal[3]));
-					BDH=AngleBoundryHigh;
-					BDL=AngleBoundryLow;
-					Axis=BOUNDRY_ANGLE;
-					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
-					RotateBoundryHigh=(int)((float)atoi(p9) * fabs(JointsCal[4]));
-					RotateBoundryLow=(int)((float)atoi(p10) * fabs(JointsCal[4]));
-					BDH=RotateBoundryHigh;
-					BDL=RotateBoundryLow;
-					Axis=BOUNDRY_ROT;
-					mapped[Axis]=((BDH/8) << 16) | (0X0000FFFF & (BDL/8));
+					Boundary[1] =(int)((float)atoi(p1) * fabs(JointsCal[0]));
+					Boundary[0] =(int)((float)atoi(p2) * fabs(JointsCal[0]));
+					Boundary[3]=(int)((float)atoi(p5) * fabs(JointsCal[2]));
+					Boundary[2]=(int)((float)atoi(p6) * fabs(JointsCal[2]));
+					Boundary[5]=(int)((float)atoi(p3) * fabs(JointsCal[1]));
+					Boundary[4]=(int)((float)atoi(p4) * fabs(JointsCal[1]));
+					Boundary[7]=(int)((float)atoi(p7) * fabs(JointsCal[3]));
+					Boundary[6]=(int)((float)atoi(p8) * fabs(JointsCal[3]));
+					Boundary[9]=(int)((float)atoi(p9) * fabs(JointsCal[4]));
+					Boundary[8]=(int)((float)atoi(p10) * fabs(JointsCal[4]));
+					//printf(" Boundary set %d %d %d %d %d %d %d %d %d %d \n", Boundary[0],Boundary[1],Boundary[2],Boundary[3],Boundary[4],Boundary[5],Boundary[6],Boundary[7],Boundary[8],Boundary[9]);
+					KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 					
 				break;
 				
 				
 				case EXIT_CMD  :
+/*
 					mapped[FINE_ADJUST_BASE]=0;
 					mapped[FINE_ADJUST_END]=0;
 					mapped[FINE_ADJUST_PIVOT]=0;
 					mapped[FINE_ADJUST_ANGLE]=0;
 					mapped[FINE_ADJUST_ROT]=0;
+*/
 					return 1;
 				break; 
 				
@@ -4261,14 +5002,19 @@ int ParseInput(char *iString)
 			}
 			return 0;
 		}
-		else
+		else{
 			return 1;
+		}
 	}
 	return 1;
 }
 
 int main(int argc, char *argv[]) {
-
+  printf("Start of main()\n");
+  //int err_code = 0;
+  //printf("hello world %s", err_code);
+  
+  
   int fd,mfd,err;
   
   int size;
@@ -4317,11 +5063,32 @@ int main(int argc, char *argv[]) {
   }
   CalTables = map_addrCt;
 
+// Load LinkLengths.txt file into L array
+	wfp = fopen("/srv/samba/share/LinkLengths.txt", "r");
+	if (wfp) {
+		printf("Link Lengths: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &L[0], &L[1], &L[2], &L[3], &L[4]));
+		printf(" %lf, %lf, %lf, %lf, %lf \n", L[0], L[1], L[2], L[3], L[4]);
+
+		}
+	else { printf("Failed to load LinkLengths.txt Error # %d\n", errno); }
+
+// Load StartPosition.txt file into SP array
+	wfp = fopen("/srv/samba/share/StartPosition.txt", "r");
+	if (wfp) {
+		printf("Start Positions: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &SP[0], &SP[1], &SP[2], &SP[3], &SP[4]));
+		printf(" %lf, %lf, %lf, %lf, %lf \n", SP[0], SP[1], SP[2], SP[3], SP[4]);
+
+		}
+	else { printf("Failed to load StartPosition.txt Error # %d\n", errno); }
+
 
 //  Addr= = atoi(argv[3]);
 //  Dta= = atoi(argv[4]);
 //  mapped[Addr] = Dta;
 	setDefaults(DefaultMode);
+	//strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
+	//printf("Starting %s returned %d\n",iString, ParseInput(iString));
+	
 //	if(DefaultMode ==2 )
 	if(ServerMode==1)
 	{
@@ -4361,7 +5128,7 @@ int main(int argc, char *argv[]) {
 			close(mfd);
 			return 0;   
 		}
-		mapped[BASE_POSITION]=1;
+		//mapped[BASE_POSITION]=1;
     	#ifndef NO_BOOT_DANCE
 		
 		
@@ -4380,6 +5147,7 @@ int main(int argc, char *argv[]) {
 		//Wigglesworth Code End
 		*/
 
+		/*
 		MoveRobot(0,0,0,50000,50000,BLOCKING_MOVE);
 	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
 	    MoveRobot(0,0,0,50000,-50000,BLOCKING_MOVE);
@@ -4388,6 +5156,11 @@ int main(int argc, char *argv[]) {
 	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
 	    MoveRobot(0,0,0,50000,-50000,BLOCKING_MOVE);
 	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
+		*/
+
+		strlcpy(iString, "S RunFile BootDance_ServerMode==3.make_ins ;\0", ISTRING_LEN);
+		printf("Starting %s returned %d\n",iString, ParseInput(iString));
+
 	    #endif	
 		err = pthread_create(&(tid[0]), NULL, &StartServerSocketDDE,  (void*)&ThreadsExit);
 		if (err != 0)
@@ -4397,6 +5170,8 @@ int main(int argc, char *argv[]) {
 		}
 		else
 		{
+			//strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
+			//printf("Starting %s returned %d\n",iString, ParseInput(iString));
 			//printf("\n Begin Socket Server Thread For DDE\n");
 		}
 	}
@@ -4418,7 +5193,7 @@ int main(int argc, char *argv[]) {
 	
     if(ServerMode==3)
 	{
-		while(1){} //loop forever
+		while(1){sleep(1);} //loop forever TODO: Add a sleep in this loop
 	}
 	while(getInput()==0);
 	ThreadsExit=0;
@@ -4427,11 +5202,14 @@ int main(int argc, char *argv[]) {
 
 	//printf("\nExiting \n");
 
-  munmap(map_addr, size);
-  munmap(map_addrCt, CalTblSize);
-  
+    munmap(map_addr, size);
+    munmap(map_addrCt, CalTblSize);
 
-  close(fd);
-   close(mfd);
-  return 0;
+    strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
+    printf("Starting %s returned %d\n",iString, ParseInput(iString));
+
+    close(fd);
+    close(mfd);
+    printf("End of main()\n");
+	return 0;
 }

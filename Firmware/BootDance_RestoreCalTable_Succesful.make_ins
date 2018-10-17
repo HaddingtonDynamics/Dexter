@@ -1,0 +1,6 @@
+; This dance happens if the calibration tables exist and are loaded succesfully.
+; This will not happen if calibration has never been done.
+a 50000 50000 50000 50000 50000;
+a 0 0 0 0 0;
+a 50000 50000 50000 50000 50000;
+a 0 0 0 0 0;
