@@ -4104,8 +4104,8 @@ int RestoreCalTables(char *FileName)
 			MoveRobot(50000,50000,50000,5000,5000,BLOCKING_MOVE);
 			MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
 			*/
-			strlcpy(iString, "S RunFile BootDance_RestoreCalTable_Succesful.make_ins ;\0", ISTRING_LEN);
-			printf("Starting %s returned %d\n",iString, ParseInput(iString));
+			//strlcpy(iString, "S RunFile BootDance_RestoreCalTable_Succesful.make_ins ;\0", ISTRING_LEN);
+			//printf("Starting %s returned %d\n",iString, ParseInput(iString));
 
 			#endif
 		}
@@ -5158,8 +5158,99 @@ int main(int argc, char *argv[]) {
 	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
 		*/
 
-		strlcpy(iString, "S RunFile BootDance_ServerMode==3.make_ins ;\0", ISTRING_LEN);
-		printf("Starting %s returned %d\n",iString, ParseInput(iString));
+		//strlcpy(iString, "S RunFile BootDance_ServerMode==3.make_ins ;\0", ISTRING_LEN);
+		//printf("Starting %s returned %d\n",iString, ParseInput(iString));
+		char *token;
+		int i = 0;
+		int ip_last = 0;
+		float ip_sleep = 1.0;
+		int ip_a = 0;
+		int ip_b = 0;
+		int ip_c = 0;
+		const char delimiters[] = " .\t";
+		wfp = fopen("/etc/network/interfaces", "r");
+		while(fgets(iString, ISTRING_LEN, wfp) != NULL && i < 20) {
+			if((strstr(iString, "address 192.168.")) != NULL) {
+				token = strtok(iString, delimiters);
+				token = strtok(NULL, delimiters);
+				token = strtok(NULL, delimiters);
+				token = strtok(NULL, delimiters);
+				token = strtok(NULL, delimiters);
+
+				ip_last = atoi(token);
+				printf("Last feild found: %i\n", ip_last);
+
+				ip_a = (int)floorf((float)ip_last/100.0);
+				printf("ip_a: %i\n", ip_a);
+				ip_b = (int)floorf((float)(ip_last-ip_a*100)/10.0);
+				printf("ip_a: %i\n", ip_b);
+				ip_c = ip_last-ip_b*10-ip_a*100;
+				printf("ip_a: %i\n", ip_c);
+
+
+				strlcpy(iString, "S RunFile BootDance_IP_0.make_ins ;\0", ISTRING_LEN);
+    			printf("Starting %s returned %d\n",iString, ParseInput(iString));
+				for(i = 0; i < ip_a; i++){
+					strlcpy(iString, "S RunFile BootDance_IP_a.make_ins ;\0", ISTRING_LEN);
+    				printf("Starting %s returned %d\n",iString, ParseInput(iString));
+				}
+				sleep(0.5*ip_sleep);
+				strlcpy(iString, "S RunFile BootDance_IP_0.make_ins ;\0", ISTRING_LEN);
+    			printf("Starting %s returned %d\n",iString, ParseInput(iString));
+				sleep(ip_sleep);
+				for(i = 0; i < ip_b; i++){
+					strlcpy(iString, "S RunFile BootDance_IP_b.make_ins ;\0", ISTRING_LEN);
+    				printf("Starting %s returned %d\n",iString, ParseInput(iString));
+				}
+				sleep(0.5*ip_sleep);
+				strlcpy(iString, "S RunFile BootDance_IP_0.make_ins ;\0", ISTRING_LEN);
+    			printf("Starting %s returned %d\n",iString, ParseInput(iString));
+				sleep(ip_sleep);
+				for(i = 0; i < ip_c; i++){
+					strlcpy(iString, "S RunFile BootDance_IP_c.make_ins ;\0", ISTRING_LEN);
+    				printf("Starting %s returned %d\n",iString, ParseInput(iString));
+				}
+				sleep(0.5*ip_sleep);
+				strlcpy(iString, "S RunFile BootDance_IP_0.make_ins ;\0", ISTRING_LEN);
+    			printf("Starting %s returned %d\n",iString, ParseInput(iString));
+
+
+				//printf("First: %i, Second: %i, Third: %i\n", ip_a, ip_b, ip_c);
+
+				/*
+				for(i = 0; i < 5; i++){
+					token = strtok(NULL, delimiters);
+					printf("%s\n", token);
+				}*/
+
+				break;
+
+				//fscanf(iString, "address 192.168.1.%i\n", ip_last);
+				//printf("last feild of IP: %i\n", ip_last);
+
+			}
+			i++;
+		}
+
+
+		/*
+		wfp = fopen("/etc/network/interfaces", "r");
+		token = strtok ((char *)wfp, delimiters); 
+		printf("First Token: %s\n", token);
+		for(i = 0; i < 30; i++){
+			token = strtok (NULL, delimiters);
+			printf("%s\n", token);
+		}
+		*/
+		/*
+		while(strcmp(token, "address") != 0){
+			token = strtok (NULL, delimiters);
+			printf("%s\n", token);
+		}
+		token = strtok (NULL, delimiters); 
+
+		printf("\nip_address found: %s\n", token);
+		*/
 
 	    #endif	
 		err = pthread_create(&(tid[0]), NULL, &StartServerSocketDDE,  (void*)&ThreadsExit);
