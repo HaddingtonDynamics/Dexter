@@ -1795,7 +1795,7 @@ struct ellipse v_ellipse_fit(struct eye_data eye, int start_idx, int end_idx) {
 
 
 
-FILE *wfp; //File handle to write data into via socket 'W' command
+FILE *wfp=0; //File handle to write data into via socket 'W' command
 int XLowBound[5]={BASE_COS_LOW,END_COS_LOW,PIVOT_COS_LOW,ANGLE_COS_LOW,ROT_COS_LOW};
 int XHighBound[5]={BASE_COS_HIGH,END_COS_HIGH,PIVOT_COS_HIGH,ANGLE_COS_HIGH,ROT_COS_HIGH};
 int YLowBound[5]={BASE_SIN_LOW,END_SIN_LOW,PIVOT_SIN_LOW,ANGLE_SIN_LOW,ROT_SIN_LOW};
@@ -2571,7 +2571,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		//printf("read block %d \n",i);
 		token=strtok(NULL, delimiters);//filename
 		//printf("opening file:%s.\n ",token);
-		//if(wfp) {fclose(wfp);} //not needed?
+		//if(wfp>0) {fclose(wfp);} //not needed?
 		
 		static int mat_string_length = 0;
 		static char mat_string[256];
@@ -2665,6 +2665,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 				//printf("Read %d bytes\n",sendBuffReTyped[6]);
 				//printf("\n%s",sendBuff + sizeof(sendBuffReTyped[0])*6);
 				fclose(wfp);
+				wfp = 0;
 			}
 			else {
 				printf("Error %d\n", errno);
@@ -3474,6 +3475,8 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	wfp = fopen("/srv/samba/share/Cartesian_Settings/Speed.txt", "r");
 	if (wfp) {
 		fscanf(wfp, "%lf", &cart_speed);
+		fclose(wfp);
+		wfp = 0;
 	}else {
 		printf("Failed to load /Cartesian_Settings/Speed.txt Error # %d\n", errno);
 		cart_speed = 100000.0;
@@ -3481,6 +3484,8 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	wfp = fopen("/srv/samba/share/Cartesian_Settings/Acceleration.txt", "r");
 	if (wfp) {
 		fscanf(wfp, "%lf", &cart_accel);
+		fclose(wfp);
+		wfp = 0;
 	}else {
 		printf("Failed to load /Cartesian_Settings/Acceleration.txt Error # %d\n", errno);
 		cart_accel = 100.0;
@@ -3488,6 +3493,8 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	wfp = fopen("/srv/samba/share/Cartesian_Settings/Step_Size.txt", "r");
 	if (wfp) {
 		fscanf(wfp, "%lf", &cart_step_size);
+		fclose(wfp);
+		wfp = 0;
 	}else {
 		printf("Failed to load /Cartesian_Settings/Step_Size.txt Error # %d\n", errno);
 		cart_step_size = 50.0;
@@ -3495,6 +3502,8 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	wfp = fopen("/srv/samba/share/Cartesian_Settings/Rotational_Step_Size.txt", "r");
 	if (wfp) {
 		fscanf(wfp, "%lf", &rot_step_size);
+		fclose(wfp);
+		wfp = 0;
 	}else {
 		printf("Failed to load /Cartesian_Settings/Rotational_Step_Size.txt Error # %d\n", errno);
 		cart_step_size = 50.0;
@@ -4451,7 +4460,7 @@ int ParseInput(char *iString)
 					   case 'f': //filename
 						p2=strtok(NULL, delimiters);//always zero, toss it.
 						p2=strtok(NULL, delimiters);//filename
-						if(wfp) fclose(wfp);
+						if(wfp>0) fclose(wfp);
 						wfp = fopen(p2, "w");
                         printf("\nWriting file to %s as handle %d...\n",p2,fileno(wfp));
 						break;
@@ -5068,7 +5077,8 @@ int main(int argc, char *argv[]) {
 	if (wfp) {
 		printf("Link Lengths: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &L[0], &L[1], &L[2], &L[3], &L[4]));
 		printf(" %lf, %lf, %lf, %lf, %lf \n", L[0], L[1], L[2], L[3], L[4]);
-
+		fclose(wfp);
+		wfp = 0;
 		}
 	else { printf("Failed to load LinkLengths.txt Error # %d\n", errno); }
 
@@ -5077,7 +5087,8 @@ int main(int argc, char *argv[]) {
 	if (wfp) {
 		printf("Start Positions: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &SP[0], &SP[1], &SP[2], &SP[3], &SP[4]));
 		printf(" %lf, %lf, %lf, %lf, %lf \n", SP[0], SP[1], SP[2], SP[3], SP[4]);
-
+		fclose(wfp);
+		wfp = 0;
 		}
 	else { printf("Failed to load StartPosition.txt Error # %d\n", errno); }
 
@@ -5232,7 +5243,7 @@ int main(int argc, char *argv[]) {
 			i++;
 		}
 
-
+		if (wfp>0) {fclose(wfp); wfp = 0;}
 		/*
 		wfp = fopen("/etc/network/interfaces", "r");
 		token = strtok ((char *)wfp, delimiters); 
