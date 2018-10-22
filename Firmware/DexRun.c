@@ -1795,7 +1795,7 @@ struct ellipse v_ellipse_fit(struct eye_data eye, int start_idx, int end_idx) {
 
 
 
-FILE *wfp=0; //File handle to write data into via socket 'W' command
+FILE *wfp = 0; //File handle to write data into via socket 'W' command
 int XLowBound[5]={BASE_COS_LOW,END_COS_LOW,PIVOT_COS_LOW,ANGLE_COS_LOW,ROT_COS_LOW};
 int XHighBound[5]={BASE_COS_HIGH,END_COS_HIGH,PIVOT_COS_HIGH,ANGLE_COS_HIGH,ROT_COS_HIGH};
 int YLowBound[5]={BASE_SIN_LOW,END_SIN_LOW,PIVOT_SIN_LOW,ANGLE_SIN_LOW,ROT_SIN_LOW};
@@ -5179,6 +5179,7 @@ int main(int argc, char *argv[]) {
 		int ip_b = 0;
 		int ip_c = 0;
 		const char delimiters[] = " .\t";
+		if (wfp>0) {fclose(wfp); wfp = 0;}
 		wfp = fopen("/etc/network/interfaces", "r");
 		while(fgets(iString, ISTRING_LEN, wfp) != NULL && i < 20) {
 			if((strstr(iString, "address 192.168.")) != NULL) {
@@ -5243,7 +5244,7 @@ int main(int argc, char *argv[]) {
 			i++;
 		}
 
-		if (wfp>0) {fclose(wfp); wfp = 0;}
+
 		/*
 		wfp = fopen("/etc/network/interfaces", "r");
 		token = strtok ((char *)wfp, delimiters); 
