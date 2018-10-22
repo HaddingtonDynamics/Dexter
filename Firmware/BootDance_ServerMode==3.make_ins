@@ -1,6 +1,0 @@
-; This dance happens if the second arg to ./DexRun is a 3 meaning Dexter is controlled by something external.
-; Setting this argument to a 2 allows commands to be sent via SSH
-a 0 0 0 50000 50000;
-a 0 0 0 0 0;
-a 0 0 0 50000 -50000;
-a 0 0 0 0 0;
