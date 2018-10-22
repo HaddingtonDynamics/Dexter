@@ -1,4 +1,0 @@
-; This dance happens if the first arg of ./DexRun is a 1 AND RestoreCalTables was succesful.
-; A first arg of 1 means the default Speeds and PID_Ps etc. are loaded in.
-a 20000 20000 20000 20000 20000;
-a 0 0 0 0 0;
