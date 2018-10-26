@@ -3180,7 +3180,7 @@ void setDefaults(int State)
 			#endif
 			*/
 			#ifndef NO_BOOT_DANCE
-			strlcpy(iString, "S RunFile BootDance_setDefaults==1.make_ins ;\0", ISTRING_LEN);
+			strlcpy(iString, "S RunFile BootDance_setDefaults_is_1.make_ins ;\0", ISTRING_LEN);
 			printf("Starting %s returned %d\n",iString, ParseInput(iString));
 			#endif
 		}
@@ -4439,6 +4439,7 @@ int ParseInput(char *iString)
 	int d3,d4,d5;
 	float f1;
 	////printf("\nStart wait Goal");
+	//printf("\n\nReceived String: %s\n", iString);
 	if(iString !=NULL)
 	{
 		token = strtok (iString, delimiters);
