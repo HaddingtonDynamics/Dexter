@@ -1,6 +1,8 @@
-Future home of Dexter Development Environment
+Dexter Development Environment is the IDE for Dexter. 
 
-Currently, you can find DDE at:<br>
+This folder will contain the long term release version of DDE, which will not change as rapidly as the development version.
+
+Newer development releases of DDE can be found at:<br>
 https://github.com/cfry/dde
 
 The current DDE documentation (precedded by some previously written articles) is available online here:
