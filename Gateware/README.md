@@ -1,7 +1,7 @@
-Future home of FPGA logic files.
+FPGA logic files. The .ldl file is the source code for the FPGA, which can be opened by Viva, a graphical FPGA design program which we will make available very soon. The .BIT file is the compiled image for the FPGA.
 
 The FPGA Gateware is loaded from the [SDCard Image](../../../wiki/SD-Card-Image)
-Currently, the FPGA Gateware can be found at:<br>
+Prior versions of the FPGA Gateware can be found at:<br>
 https://github.com/kgallspark/Dexter (The [Firmware](../Firmware) folder here replaces the uiotest.c / DexRun.c files in that repo)
 
 **Update .bit files**
