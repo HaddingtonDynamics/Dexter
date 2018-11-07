@@ -2357,10 +2357,10 @@ void *StartServerSocketDDE(void *arg)
 //			while ( (RLength = recv (connfd,recBuff,sizeof(recBuff),0 )) > 0)
 				{
 					//recBuff[RLength]=0;
-					(void)ProcessServerReceiveDataDDE(recBuff);
-				
-					(void)ProcessServerSendDataDDE(sendBuff,recBuff);/*==TRUE)*/
+					if (ProcessServerReceiveDataDDE(recBuff)) {
+						(void)ProcessServerSendDataDDE(sendBuff,recBuff);/*==TRUE)*/
 						write (connfd,sendBuff,60*4/*sizeof(sendBuff)*/); 
+						}
 				}
 			}
 			//printf("error code %s \n",strerror(errno));			
@@ -4439,7 +4439,6 @@ int ParseInput(char *iString)
 	int d3,d4,d5;
 	float f1;
 	////printf("\nStart wait Goal");
-	//printf("\n\nReceived String: %s\n", iString);
 	if(iString !=NULL)
 	{
 		token = strtok (iString, delimiters);
@@ -4456,7 +4455,7 @@ int ParseInput(char *iString)
 				case WRITE_TO_ROBOT:
 					p1=strtok (NULL, delimiters);
                               Add=(int)p1[0];
-                              //printf("\nwrite %s %d: ",p1,Add);
+                              //printf("write %s %d: \n",p1,Add);
 					switch(Add) {
 					   case 'f': //filename
 						p2=strtok(NULL, delimiters);//always zero, toss it.
@@ -4479,7 +4478,7 @@ int ParseInput(char *iString)
                                         i=fwrite(p3, 1, Length, wfp);
                                         //printf("Wrote %d bytes. ",i);
                                         }
-						if('e'==Add && wfp) {
+						if('e'==Add && (wfp>0)) {
                                         fclose(wfp);
                                         wfp = 0;
                                         printf("...Finished writing.\n");
@@ -4790,11 +4789,11 @@ int ParseInput(char *iString)
 					p5=strtok (NULL, delimiters);
 					
 					p6=strtok (NULL, delimiters);
-					if (p6 && 'x'!=p6[0]) SetGripperRoll(atoi(p6));
+					if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
 					//if(p6 != NULL){ printf("p6 %s\n",p6); }
 					//else{ printf("p6 doesn't exist\n"); }
 					p7=strtok (NULL, delimiters);
-					if (p7 && 'x'!=p7[0]) SetGripperSpan(atoi(p7));
+					if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
 					//if(p7 != NULL){ printf("p7 %s\n",p7); }
 					//else{ printf("p7 doesn't exist\n"); }
 					
@@ -5180,7 +5179,6 @@ int main(int argc, char *argv[]) {
 		int ip_b = 0;
 		int ip_c = 0;
 		const char delimiters[] = " .\t";
-		if (wfp>0) {fclose(wfp); wfp = 0;}
 		wfp = fopen("/etc/network/interfaces", "r");
 		while(fgets(iString, ISTRING_LEN, wfp) != NULL && i < 20) {
 			if((strstr(iString, "address 192.168.")) != NULL) {
@@ -5245,7 +5243,7 @@ int main(int argc, char *argv[]) {
 			i++;
 		}
 
-
+		if (wfp>0) {fclose(wfp); wfp = 0;}
 		/*
 		wfp = fopen("/etc/network/interfaces", "r");
 		token = strtok ((char *)wfp, delimiters); 
