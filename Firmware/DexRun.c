@@ -62,7 +62,7 @@ int CalcUartTimeout(int size);
 
 
 
-#define INPUT_OFFSET 12
+#define INPUT_OFFSET 14
 
    // Motor position index
 #define CMD_POSITION_KEYHOLE 0
@@ -205,7 +205,10 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define XYZ_FORCE_TIMEBASE 49
 #define DIFFERENTIAL_FORCE_TIMEBASE 50
 #define PID_TIMEBASE 51
- 
+
+#define RAW_ECONDER_ANGLE_KEYHOLE 52
+#define RAW_ECONDER_ANGLE_KEYHOLE_CMD 10 // s19 datatype
+#define RAW_ECONDER_ANGLE_KEYHOLE_SIZE 5
 
 
 
@@ -303,6 +306,13 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define PIVOT_MEASURED_ANGLE 53 + INPUT_OFFSET
 #define ANGLE_MEASURED_ANGLE 54 + INPUT_OFFSET
 #define ROT_MEASURED_ANGLE 55 + INPUT_OFFSET
+
+// Encoder Angles (Integer portion only??)
+#define BASE_RAW_ENCODER_ANGLE 56 + INPUT_OFFSET
+#define END_RAW_ENCODER_ANGLE 57 + INPUT_OFFSET
+#define PIVOT_RAW_ENCODER_ANGLE 58 + INPUT_OFFSET
+#define ANGLE_RAW_ENCODER_ANGLE 59 + INPUT_OFFSET
+#define ROT_RAW_ENCODER_ANGLE 60 + INPUT_OFFSET
 
 
 
@@ -941,7 +951,14 @@ struct XYZ J_angles_to_XYZ(struct J_angles angles) {
 
 // Inverse Kinematics:
 struct J_angles xyz_to_J_angles(struct XYZ xyz) {
-
+	/*
+	printf("xyz_to_J_angles called. Link Lengths:\n");
+	printf("L1: %d", L[0]);
+	printf("L2: %d", L[1]);
+	printf("L3: %d", L[2]);
+	printf("L4: %d", L[3]);
+	printf("L5: %d", L[4]);
+	*/
 	// Pre-allocation
 	struct J_angles J = new_J_angles(0, 0, 0, 0, 0);
 	/*
@@ -1140,8 +1157,36 @@ int k_tip_speed_to_angle_speed(struct J_angles J_angles_old, struct J_angles J_a
 		return 3877.0; //30 (deg/s)
 	}
 	double max_theta = J_angles_max_diff(J_angles_old, J_angles_new);
-	
+	/*
+	double max_theta = 0.0;
+	double cur_max = 0.0;
+	double delta;
+	double if_diff = 1; // if a differential joint has the largest dtheta then this becomes the ratio bewteen the first 3 joints and the last two 
+	delta = abs(J_angles_1.J1 - J_angles_2.J1);
+	if(delta > max_theta)
+		max_theta = delta;
+	delta = abs(J_angles_1.J2 - J_angles_2.J2);
+	if(delta > max_theta)
+		max_theta = delta;
+	delta = abs(J_angles_1.J3 - J_angles_2.J3);
+	if(delta > max_theta)
+		max_theta = delta;
+	delta = abs(J_angles_1.J4 - J_angles_2.J4);
+	if(delta > max_theta){
+		max_theta = delta;
+		if_diff = JointsCal[0] / JointsCal[4]; //This won't work if the last to values of AxisCal.txt are not the same
+	}
+	delta = abs(J_angles_1.J5 - J_angles_2.J5);
+	if(delta > max_theta){
+		max_theta = delta;
+		if_diff = JointsCal[0] / JointsCal[4];
+	}
+	max_theta = 
+	return (int)(if_diff*max_theta*cart_speed/dist_EE);
+	*/
+
 	return (int)(max_theta*cart_speed/dist_EE);
+
 }
 		
 
@@ -1204,7 +1249,7 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 		// U[i + 1] = add(U[i], scalar_mult(L[i], V[i]));
 	// }
 	
-	printf("\nStarting J_angles_to_pos_ori_mat()\n");
+	//printf("\nStarting J_angles_to_pos_ori_mat()\n");
 	
 	//Pre-allocation:
 	struct Vector U0 = {0, 0, 0};
@@ -1224,7 +1269,7 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 	struct Vector P1 = {0, 0, 0};
 	struct Vector P2 = {0, 0, 0};
 	
-	printf("Pre-allocation complete\n");
+	//printf("Pre-allocation complete\n");
 	
 	//FK:
 	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
@@ -1234,55 +1279,78 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
 	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
 	
-	printf("Vector rotations complete\n");
+	//printf("Vector rotations complete\n");
 	
 	U1 = add(U0, scalar_mult(L[0], V0));
 	U2 = add(U1, scalar_mult(L[1], V1));
 	U3 = add(U2, scalar_mult(L[2], V2));
 	U4 = add(U3, scalar_mult(L[3], V3));
 	U5 = add(U4, scalar_mult(L[4], V4));
-	
-	printf("Vector adds complete\n");
+
+    /*
+    printf("LinkLengths: %lf, %lf, %lf, %lf, %lf \n", L[0], L[1], L[2], L[3], L[4]);
+
+
+    printf("U1: ");
+    print_vector(U1);
+    printf("\nU2: ");
+    print_vector(U2);
+    printf("\nU3: ");
+    print_vector(U3);
+    printf("\nU4: ");
+    print_vector(U4);
+    printf("\nU5: ");
+    print_vector(U5);
+	printf("\n");
+    */
+
+	//printf("Vector adds complete\n");
 	
 	//Calc pos_ori_mat:
 	struct Vector Vz = V3;
 	struct Vector Vy = V4;
 	struct Vector Vx = cross(Vy, Vz);
-	printf("\nVector cross complete\n");
+	//printf("\nVector cross complete\n");
 	struct pos_ori_mat result;
-	printf("\npos_ori_mat Struct def complete\n");
+	//printf("\npos_ori_mat Struct def complete\n");
 	
 	
 	result.r0.c0 = Vx.x;
 	result.r1.c0 = Vx.y;
 	result.r2.c0 = Vx.z;
 	
-	printf("\nResult 0 complete\n");
+	//printf("\nResult 0 complete\n");
 	
 	result.r0.c1 = Vy.x;
 	result.r1.c1 = Vy.y;
 	result.r2.c1 = Vy.z;
 	
-	printf("\nResult 1 complete\n");
+	//printf("\nResult 1 complete\n");
 	
 	result.r0.c2 = Vz.x;
 	result.r1.c2 = Vz.y;
 	result.r2.c2 = Vz.z;
 	
-	printf("\nResult 2 complete\n");
+	//printf("\nResult 2 complete\n");
 	
+    /*
 	result.r0.c3 = U4.x;
 	result.r1.c3 = U4.y;
 	result.r2.c3 = U4.z;
+    */
+
+    result.r0.c3 = U5.x;
+	result.r1.c3 = U5.y;
+	result.r2.c3 = U5.z;
 	
-	printf("\nResult 3 complete\n");
+	//printf("\nResult 3 complete\n");
 	
 	result.r3.c0 = 0;
 	result.r3.c1 = 0;
 	result.r3.c2 = 0;
 	result.r3.c3 = 1;
 	
-	printf("\nResult 4 complete\n");
+	//printf("\nResult 4 complete\n");
 	
 	//= {{Vx.x, Vy.x, Vz.x, U4.x}, {Vx.y, Vy.y, Vz.y, U4.y}, {Vx.z, Vy.z, Vz.z, U4.z}, {0, 0, 0, 1}};
 	
@@ -1924,6 +1992,8 @@ const char* Params[] = {
 	"J3_PID_P",
 	"J4_PID_P",
 	"J5_PID_P",
+    "EncoderAngles",
+    "CommandedAngles",
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
@@ -2623,7 +2693,8 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 					
 						//strlcpy(sendBuff + sizeof(sendBuffReTyped[0])*7, mat_string, 0);
 					
-					
+				}else if(strcmp(token, "#EncoderAngles") == 0){
+                    mat_string_length = sprintf(mat_string, "%d %d %d %d %d", mapped[BASE_RAW_ENCODER_ANGLE], mapped[PIVOT_RAW_ENCODER_ANGLE], mapped[END_RAW_ENCODER_ANGLE], mapped[ANGLE_RAW_ENCODER_ANGLE], mapped[ROT_RAW_ENCODER_ANGLE]);
 				}else if (strcmp(token, "#measured_angles") == 0) {
 					printf("\nAttempting to read measured angles\n");
 					printf("BASE: %d\n", mapped[BASE_MEASURED_ANGLE]);
@@ -3004,6 +3075,7 @@ void setDefaults(int State)
 		fscanf(CentersFile, "%f", &JointsCal[3]);
 		fscanf(CentersFile, "%f", &JointsCal[4]);
 		fscanf(CentersFile, "%i", &HexValue);
+        //printf("Reading AxisCal.txt. HexValue = %d\n", HexValue);
 		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
 		fclose(CentersFile);
 	}
@@ -3974,6 +4046,16 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							// printf("  Float: %f\n", fa2);
 							// printf("  Hex: %x\n", uia2);
 						break;
+                        case 36:     // EncoderAngles
+							//This is implimented at a higher level because of the atof on the second argument 
+                            
+						break;
+                        case 37:     // CommandedAngles
+							//This is implimented at a higher level because of the atof on the second argument 
+                           // KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+						break;
+                        
+
 
 
 						default:
@@ -3995,7 +4077,7 @@ int MoveRobotRelative(int a1,int a2,int a3,int a4,int a5, int mode)
 	b4=getNormalizedInput(ANGLE_POSITION_AT);
 	b5=getNormalizedInput(ROT_POSITION_AT);
 	
-	////printf("\nRelative move %d %d %d %d %d",b1,b2,b3,b4,b5);
+	printf("Relative move relative to: %d %d %d %d %d\n",b1,b2,b3,b4,b5);
 	return MoveRobot(a1+b1,a2+b2,a3+b3,a4+b4,a5+b5,mode);
 }
 
@@ -4433,12 +4515,14 @@ int ParseInput(char *iString)
 	FILE *fp;
 	char *token,*p1,*p2,*p3,*p4,*p5,*p6,*p7,*p8,*p9,*p10,*p11,*p12,*p13,*p14,*p15,*p16,*p17,*p18,*p19;
 	int BDH,BDL;
+    int angles_temp[5];
 
 
 	int i,j,Add,Start,Length,Delay,Axis,tokenVal;
 	int d3,d4,d5;
 	float f1;
 	////printf("\nStart wait Goal");
+	printf("ParseInput: %s\n", iString);
 	if(iString !=NULL)
 	{
 		token = strtok (iString, delimiters);
@@ -4520,7 +4604,7 @@ int ParseInput(char *iString)
 				break; 
 				case SET_PARAM :
 					p1=strtok (NULL, delimiters);
-					
+					printf("SET_PARAM: %s\n", p1);
 					if (!strcmp("RunFile",p1)) {
 						p2 = strtok (NULL, delimiters);
 						fp = fopen(p2, "r");
@@ -4544,8 +4628,8 @@ int ParseInput(char *iString)
 							printf("Failed to load %s Error # %d %s\n", p2, errno, strerror(errno)); 
 							return errno;
 							}
-						}
-					else if (!strcmp("Ctrl",p1)) {
+                    
+					}else if (!strcmp("Ctrl",p1)) {
 						while ((p1 = strtok(NULL,ctrldelims))) {
 							printf("key %s\n",p1);
 							if (!strcmp("Diff",p1)) {
@@ -4644,8 +4728,65 @@ int ParseInput(char *iString)
 						fp=fopen("StartPosition.txt", "w");
 						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
 						fclose (fp);
-					}
-					else {
+					
+                    }else if (!strcmp("EncoderAngles",p1)){
+                        //Read new register
+                        p1=strtok (NULL, delimiters);
+                        p2=strtok (NULL, delimiters);
+                        p3=strtok (NULL, delimiters);
+                        p4=strtok (NULL, delimiters);
+                        p5=strtok (NULL, delimiters);
+
+                        angles_temp[0]=atoi(p1)^255;
+                        angles_temp[2]=atoi(p2)^255;
+                        angles_temp[1]=atoi(p3)^255;
+                        angles_temp[3]=atoi(p4)^255;
+                        angles_temp[4]=atoi(p5)^255;
+                        printf("EncoderAngles (after xor): %d %d %d %d %d\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+                        
+                        KeyholeSend(angles_temp, RAW_ECONDER_ANGLE_KEYHOLE_CMD, RAW_ECONDER_ANGLE_KEYHOLE_SIZE, RAW_ECONDER_ANGLE_KEYHOLE );
+                    }else if (!strcmp("CommandedAngles",p1)){
+                        //Read new register
+                        p1=strtok (NULL, delimiters);
+                        p2=strtok (NULL, delimiters);
+                        p3=strtok (NULL, delimiters);
+                        p4=strtok (NULL, delimiters);
+                        p5=strtok (NULL, delimiters);
+
+                        angles_temp[0]=atoi(p1);
+                        angles_temp[1]=atoi(p2);
+                        angles_temp[2]=atoi(p3);
+                        angles_temp[3]=atoi(p4);
+                        angles_temp[4]=atoi(p5);
+
+
+                        printf("CommandedAngles: %d %d %d %d %d\n", angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+                        
+                        //getNormalizedInput(mapped[BASE_POSITION_AT]) / JointsCal[0];
+
+                        
+                        angles_temp[0] = (int)((double)atoi(p1) * JointsCal[0]) - getNormalizedInput(BASE_POSITION_AT);
+                        angles_temp[1] = (int)((double)atoi(p3) * JointsCal[2]) - getNormalizedInput(END_POSITION_AT);
+                        angles_temp[2] = (int)((double)atoi(p2) * JointsCal[1]) - getNormalizedInput(PIVOT_POSITION_AT);
+                        angles_temp[3] = (int)((double)atoi(p4) * JointsCal[3]) - getNormalizedInput(ANGLE_POSITION_AT);
+                        angles_temp[4] = (int)((double)atoi(p5) * JointsCal[4]) - getNormalizedInput(ROT_POSITION_AT);
+                        
+                        /*
+                        angles_temp[0] = -(int)((double)atoi(p1) * JointsCal[0]);
+                        angles_temp[1] = -(int)((double)atoi(p3) * JointsCal[2]);
+                        angles_temp[2] = -(int)((double)atoi(p2) * JointsCal[1]);
+                        angles_temp[3] = -(int)((double)atoi(p4) * JointsCal[3]);
+                        angles_temp[4] = -(int)((double)atoi(p5) * JointsCal[4]);
+                        */
+
+                        printf("CommandedAngles: %d %d %d %d %d (steps)\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+                        mapped[COMMAND_REG]= CMD_MOVEEN | CmdVal;
+                        KeyholeSend(angles_temp, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
+                        mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0x80000000; //sets mux to read from commanded angles keyhole
+                        mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0xC0000000; //triggers the add
+                        mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal;
+
+					}else {
 						p2=strtok (NULL, delimiters);
 						p3=strtok (NULL, delimiters);
 						p4=strtok (NULL, delimiters);
@@ -5179,6 +5320,8 @@ int main(int argc, char *argv[]) {
 		int ip_b = 0;
 		int ip_c = 0;
 		const char delimiters[] = " .\t";
+
+		
 		wfp = fopen("/etc/network/interfaces", "r");
 		while(fgets(iString, ISTRING_LEN, wfp) != NULL && i < 20) {
 			if((strstr(iString, "address 192.168.")) != NULL) {
@@ -5228,11 +5371,11 @@ int main(int argc, char *argv[]) {
 
 				//printf("First: %i, Second: %i, Third: %i\n", ip_a, ip_b, ip_c);
 
-				/*
-				for(i = 0; i < 5; i++){
-					token = strtok(NULL, delimiters);
-					printf("%s\n", token);
-				}*/
+				
+				//for(i = 0; i < 5; i++){
+				//	token = strtok(NULL, delimiters);
+				//	printf("%s\n", token);
+				//}
 
 				break;
 
@@ -5244,6 +5387,9 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (wfp>0) {fclose(wfp); wfp = 0;}
+		
+
+
 		/*
 		wfp = fopen("/etc/network/interfaces", "r");
 		token = strtok ((char *)wfp, delimiters); 
