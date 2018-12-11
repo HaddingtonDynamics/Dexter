@@ -1992,7 +1992,7 @@ const char* Params[] = {
 	"J3_PID_P",
 	"J4_PID_P",
 	"J5_PID_P",
-    "EncoderAngles",
+    "EyeNumbers",
     "CommandedAngles",
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
@@ -2693,7 +2693,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 					
 						//strlcpy(sendBuff + sizeof(sendBuffReTyped[0])*7, mat_string, 0);
 					
-				}else if(strcmp(token, "#EncoderAngles") == 0){
+				}else if(strcmp(token, "#EyeNumbers") == 0){
                     mat_string_length = sprintf(mat_string, "%d %d %d %d %d", mapped[BASE_RAW_ENCODER_ANGLE], mapped[PIVOT_RAW_ENCODER_ANGLE], mapped[END_RAW_ENCODER_ANGLE], mapped[ANGLE_RAW_ENCODER_ANGLE], mapped[ROT_RAW_ENCODER_ANGLE]);
 				}else if (strcmp(token, "#measured_angles") == 0) {
 					printf("\nAttempting to read measured angles\n");
@@ -4046,7 +4046,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							// printf("  Float: %f\n", fa2);
 							// printf("  Hex: %x\n", uia2);
 						break;
-                        case 36:     // EncoderAngles
+                        case 36:     // EyeNumbers
 							//This is implimented at a higher level because of the atof on the second argument 
                             
 						break;
@@ -4729,7 +4729,7 @@ int ParseInput(char *iString)
 						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
 						fclose (fp);
 					
-                    }else if (!strcmp("EncoderAngles",p1)){
+                    }else if (!strcmp("EyeNumbers",p1)){
                         //Read new register
                         p1=strtok (NULL, delimiters);
                         p2=strtok (NULL, delimiters);
@@ -4742,7 +4742,7 @@ int ParseInput(char *iString)
                         angles_temp[1]=atoi(p3)^255;
                         angles_temp[3]=atoi(p4)^255;
                         angles_temp[4]=atoi(p5)^255;
-                        printf("EncoderAngles (after xor): %d %d %d %d %d\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+                        printf("EyeNumbers (after xor): %d %d %d %d %d\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
                         
                         KeyholeSend(angles_temp, RAW_ECONDER_ANGLE_KEYHOLE_CMD, RAW_ECONDER_ANGLE_KEYHOLE_SIZE, RAW_ECONDER_ANGLE_KEYHOLE );
                     }else if (!strcmp("CommandedAngles",p1)){
