@@ -4522,7 +4522,7 @@ int ParseInput(char *iString)
 	int d3,d4,d5;
 	float f1;
 	////printf("\nStart wait Goal");
-	printf("ParseInput: %s\n", iString);
+	//printf("ParseInput: %s\n", iString);
 	if(iString !=NULL)
 	{
 		token = strtok (iString, delimiters);
