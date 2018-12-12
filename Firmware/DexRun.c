@@ -308,11 +308,17 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define ROT_MEASURED_ANGLE 55 + INPUT_OFFSET
 
 // Encoder Angles (Integer portion only??)
-#define BASE_RAW_ENCODER_ANGLE 56 + INPUT_OFFSET
-#define END_RAW_ENCODER_ANGLE 57 + INPUT_OFFSET
-#define PIVOT_RAW_ENCODER_ANGLE 58 + INPUT_OFFSET
-#define ANGLE_RAW_ENCODER_ANGLE 59 + INPUT_OFFSET
-#define ROT_RAW_ENCODER_ANGLE 60 + INPUT_OFFSET
+#define BASE_EYE_NUMBER 56 + INPUT_OFFSET
+#define END_EYE_NUMBER 57 + INPUT_OFFSET
+#define PIVOT_EYE_NUMBER 58 + INPUT_OFFSET
+#define ANGLE_EYE_NUMBER 59 + INPUT_OFFSET
+#define ROT_EYE_NUMBER 60 + INPUT_OFFSET
+
+#define BASE_RAW_ENCODER_ANGLE_FXP 61 + INPUT_OFFSET
+#define END_RAW_ENCODER_ANGLE_FXP 62 + INPUT_OFFSET
+#define PIVOT_RAW_ENCODER_ANGLE_FXP 63 + INPUT_OFFSET
+#define ANGLE_RAW_ENCODER_ANGLE_FXP 64 + INPUT_OFFSET
+#define ROT_RAW_ENCODER_ANGLE_FXP 65 + INPUT_OFFSET
 
 
 
@@ -453,7 +459,10 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define PI (3.141592653589793)
 //double L[5] = { 0.1651, 0.320675, 0.3302, 0.0508, 0.08255 }; // (meters)
 double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
-double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
+int SP_CommandedAngles[5] = { 0, 0, 0, 0, 0 }; // Starting Position Commanded (arcseconds)
+int SP_EyeNumbers[5] = { 0, 0, 0, 0, 0 }; // Starting Position EyeNumber (arcseconds)
+int SP_RawEncoders[5] = { 0, 0, 0, 0, 0 }; // Starting Position Raw Encoder (arcseconds)
+
 
 struct Vector {
 	double x, y, z;
@@ -869,11 +878,11 @@ struct XYZ J_angles_to_XYZ(struct J_angles angles) {
 	struct Vector P2 = {0, 0, 0};
 	
 	//FK:
-	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
-	V1 = rotate(V0, P1, angles.J2 + SP[1]);		   			// Vector for Link 2
-	V2 = rotate(V1, P1, angles.J3 + SP[2]);		   			// Vector for Link 3
-	V3 = rotate(V2, P1, angles.J4 + SP[3]);		  			// Vector for Link 4
-	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
+	P1 = rotate(P0, V0, -(angles.J1 - 180*3600)); 	// Links 2, 3 and 4 lie in P1
+	V1 = rotate(V0, P1, angles.J2);		   			// Vector for Link 2
+	V2 = rotate(V1, P1, angles.J3);		   			// Vector for Link 3
+	V3 = rotate(V2, P1, angles.J4);		  			// Vector for Link 4
+	P2 = rotate(P1, V3, -(angles.J5 - 180*3600));	// Link 4 and 5 lie in P2
 	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
 	
 	U1 = add(U0, scalar_mult(L[0], V0));
@@ -1094,18 +1103,18 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 	V3 = normalize(subtract(U4, U3));
 
 	if (xyz.config.right_arm) {
-		J.J1 = signed_angle(P1, P0, V0) - SP[0];
-		J.J2 = signed_angle(V1, V0, P1) - SP[1];
-		J.J3 = signed_angle(V2, V1, P1) - SP[2];
-		J.J4 = signed_angle(V3, V2, P1) - SP[3];
-		J.J5 = signed_angle(P2, P1, V3) - SP[4];
+		J.J1 = signed_angle(P1, P0, V0);
+		J.J2 = signed_angle(V1, V0, P1);
+		J.J3 = signed_angle(V2, V1, P1);
+		J.J4 = signed_angle(V3, V2, P1);
+		J.J5 = signed_angle(P2, P1, V3);
 	}
 	else {
-		J.J1 = signed_angle(P1, P0, V0) + 180*3600 - SP[0];
-		J.J2 = -signed_angle(V1, V0, P1) - SP[1];
-		J.J3 = -signed_angle(V2, V1, P1) - SP[2];
-		J.J4 = -signed_angle(V3, V2, P1) - SP[3];
-		J.J5 = -signed_angle(P2, P1, V3) - SP[4];
+		J.J1 = signed_angle(P1, P0, V0) + 180*3600;
+		J.J2 = -signed_angle(V1, V0, P1);
+		J.J3 = -signed_angle(V2, V1, P1);
+		J.J4 = -signed_angle(V3, V2, P1);
+		J.J5 = -signed_angle(P2, P1, V3);
 	}
 
 	
@@ -1272,11 +1281,11 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 	//printf("Pre-allocation complete\n");
 	
 	//FK:
-	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
-	V1 = rotate(V0, P1, angles.J2 + SP[1]);		   			// Vector for Link 2
-	V2 = rotate(V1, P1, angles.J3 + SP[2]);		   			// Vector for Link 3
-	V3 = rotate(V2, P1, angles.J4 + SP[3]);		  			// Vector for Link 4
-	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
+	P1 = rotate(P0, V0, -(angles.J1 - 180*3600)); 	// Links 2, 3 and 4 lie in P1
+	V1 = rotate(V0, P1, angles.J2);		   			// Vector for Link 2
+	V2 = rotate(V1, P1, angles.J3);		   			// Vector for Link 3
+	V3 = rotate(V2, P1, angles.J4);		  			// Vector for Link 4
+	P2 = rotate(P1, V3, -(angles.J5 - 180*3600));	// Link 4 and 5 lie in P2
 	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
 	
 	//printf("Vector rotations complete\n");
@@ -2694,7 +2703,14 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 						//strlcpy(sendBuff + sizeof(sendBuffReTyped[0])*7, mat_string, 0);
 					
 				}else if(strcmp(token, "#EyeNumbers") == 0){
-                    mat_string_length = sprintf(mat_string, "%d %d %d %d %d", mapped[BASE_RAW_ENCODER_ANGLE], mapped[PIVOT_RAW_ENCODER_ANGLE], mapped[END_RAW_ENCODER_ANGLE], mapped[ANGLE_RAW_ENCODER_ANGLE], mapped[ROT_RAW_ENCODER_ANGLE]);
+                    mat_string_length = sprintf(mat_string, "[%i, %i, %i, %i, %i]", mapped[BASE_EYE_NUMBER], mapped[PIVOT_EYE_NUMBER], mapped[END_EYE_NUMBER], mapped[ANGLE_EYE_NUMBER], mapped[ROT_EYE_NUMBER]);
+                }else if(strcmp(token, "#RawEncoders") == 0){
+                    mat_string_length = sprintf(mat_string, "[%i, %i, %i, %i, %i]",
+                        mapped[BASE_RAW_ENCODER_ANGLE_FXP],
+                        mapped[PIVOT_RAW_ENCODER_ANGLE_FXP],
+                        mapped[END_RAW_ENCODER_ANGLE_FXP],
+                        mapped[ANGLE_RAW_ENCODER_ANGLE_FXP],
+                        mapped[ROT_RAW_ENCODER_ANGLE_FXP]);
 				}else if (strcmp(token, "#measured_angles") == 0) {
 					printf("\nAttempting to read measured angles\n");
 					printf("BASE: %d\n", mapped[BASE_MEASURED_ANGLE]);
@@ -5213,7 +5229,7 @@ int main(int argc, char *argv[]) {
   }
   CalTables = map_addrCt;
 
-// Load LinkLengths.txt file into L array
+    // Load LinkLengths.txt file into L array
 	wfp = fopen("/srv/samba/share/LinkLengths.txt", "r");
 	if (wfp) {
 		printf("Link Lengths: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &L[0], &L[1], &L[2], &L[3], &L[4]));
@@ -5223,16 +5239,58 @@ int main(int argc, char *argv[]) {
 		}
 	else { printf("Failed to load LinkLengths.txt Error # %d\n", errno); }
 
-// Load StartPosition.txt file into SP array
-	wfp = fopen("/srv/samba/share/StartPosition.txt", "r");
+
+    //Start Position code:
+    int reset_StartPosition = 1; // 1 = reset, 0 = do not reset
+
+	wfp = fopen("/srv/samba/share/StartPosition_CommandedAngles.txt", "r");
 	if (wfp) {
-		printf("Start Positions: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &SP[0], &SP[1], &SP[2], &SP[3], &SP[4]));
-		printf(" %lf, %lf, %lf, %lf, %lf \n", SP[0], SP[1], SP[2], SP[3], SP[4]);
+		printf("CommandedAngles Start Positions: Loaded %d. Values: ", fscanf(wfp, "[%i, %i, %i, %i, %i]", &SP_CommandedAngles[0], &SP_CommandedAngles[1], &SP_CommandedAngles[2], &SP_CommandedAngles[3], &SP_CommandedAngles[4]));
+		printf("[%i, %i, %i, %i, %i]\n", SP_CommandedAngles[0], SP_CommandedAngles[1], SP_CommandedAngles[2], SP_CommandedAngles[3], SP_CommandedAngles[4]);
 		fclose(wfp);
 		wfp = 0;
-		}
-	else { printf("Failed to load StartPosition.txt Error # %d\n", errno); }
+	}else {
+        printf("Failed to load StartPosition.txt Error # %d\n", errno);
+        reset_StartPosition = 0;
+    }
 
+    wfp = fopen("/srv/samba/share/StartPosition_EyeNumbers.txt", "r");
+	if (wfp) {
+		printf("CommandedAngles Start Positions: Loaded %d. Values: ", fscanf(wfp, "[%i, %i, %i, %i, %i]", &SP_EyeNumbers[0], &SP_EyeNumbers[1], &SP_EyeNumbers[2], &SP_EyeNumbers[3], &SP_EyeNumbers[4]));
+		printf("[%i, %i, %i, %i, %i]\n", SP_EyeNumbers[0], SP_EyeNumbers[1], SP_EyeNumbers[2], SP_EyeNumbers[3], SP_EyeNumbers[4]);
+		fclose(wfp);
+		wfp = 0;
+	}else {
+        printf("Failed to load StartPosition.txt Error # %d\n", errno);
+        reset_StartPosition = 0;
+    }
+
+    wfp = fopen("/srv/samba/share/StartPosition_RawEncoders.txt", "r");
+	if (wfp) {
+		printf("CommandedAngles Start Positions: Loaded %d. Values: ", fscanf(wfp, "[%i, %i, %i, %i, %i]", &SP_RawEncoders[0], &SP_RawEncoders[1], &SP_RawEncoders[2], &SP_RawEncoders[3], &SP_RawEncoders[4]));
+		printf("[%i, %i, %i, %i, %i]\n", SP_RawEncoders[0], SP_RawEncoders[1], SP_RawEncoders[2], SP_RawEncoders[3], SP_RawEncoders[4]);
+		fclose(wfp);
+		wfp = 0;
+	}else {
+        printf("Failed to load StartPosition.txt Error # %d\n", errno);
+        reset_StartPosition = 0;
+    }
+
+    if(reset_StartPosition){
+        printf("Resetting StartPosition\n");
+        sprintf(iString, "S, EyeNumbers, %d, %d, %d, %d, %d;", SP_EyeNumbers[0], SP_EyeNumbers[1], SP_EyeNumbers[2], SP_EyeNumbers[3], SP_EyeNumbers[4]);
+        ParseInput(iString);
+        sprintf(iString, "F;");
+        ParseInput(iString);
+        sprintf(iString, "w, 42, 256;");
+        ParseInput(iString);
+        sprintf(iString, "w, 42, 0;");
+        ParseInput(iString);
+        sprintf(iString, "S, CommandedAngles, %d, %d, %d, %d, %d;", SP_CommandedAngles[0], SP_CommandedAngles[1], SP_CommandedAngles[2], SP_CommandedAngles[3], SP_CommandedAngles[4]);
+        ParseInput(iString);
+    }else{
+        printf("Not resetting StartPosition: Could not find files.\n");
+    }
 
 //  Addr= = atoi(argv[3]);
 //  Dta= = atoi(argv[4]);
