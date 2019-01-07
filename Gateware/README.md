@@ -8,7 +8,7 @@ https://github.com/kgallspark/Dexter (The [Firmware](../Firmware) folder here re
 
 First, copy the new .bit file to the share folder.
 
-[Establish a network connection to Dexter and SSH in](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking)
+[Establish a network connection and SSH into Dexter](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking)
 
 At the command prompt
 
