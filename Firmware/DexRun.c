@@ -206,7 +206,9 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define DIFFERENTIAL_FORCE_TIMEBASE 50
 #define PID_TIMEBASE 51
  
-
+#define RAW_ECONDER_ANGLE_KEYHOLE 52
+#define RAW_ECONDER_ANGLE_KEYHOLE_CMD 10 // s19 datatype
+#define RAW_ECONDER_ANGLE_KEYHOLE_SIZE 5
 
 
 
@@ -304,6 +306,19 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define ANGLE_MEASURED_ANGLE 54 + INPUT_OFFSET
 #define ROT_MEASURED_ANGLE 55 + INPUT_OFFSET
 
+
+// Encoder Angles (Integer portion only??)
+#define BASE_EYE_NUMBER 56 + INPUT_OFFSET
+#define END_EYE_NUMBER 57 + INPUT_OFFSET
+#define PIVOT_EYE_NUMBER 58 + INPUT_OFFSET
+#define ANGLE_EYE_NUMBER 59 + INPUT_OFFSET
+#define ROT_EYE_NUMBER 60 + INPUT_OFFSET
+
+#define BASE_RAW_ENCODER_ANGLE_FXP 61 + INPUT_OFFSET
+#define END_RAW_ENCODER_ANGLE_FXP 62 + INPUT_OFFSET
+#define PIVOT_RAW_ENCODER_ANGLE_FXP 63 + INPUT_OFFSET
+#define ANGLE_RAW_ENCODER_ANGLE_FXP 64 + INPUT_OFFSET
+#define ROT_RAW_ENCODER_ANGLE_FXP 65 + INPUT_OFFSET
 
 
 
@@ -469,6 +484,9 @@ int LastGoal[5]={0,0,0,0,0};
 double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
 double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
 
+int SP_CommandedAngles[5] = { 0, 0, 0, 0, 0 }; // Starting Position Commanded (arcseconds)
+int SP_EyeNumbers[5] = { 0, 0, 0, 0, 0 }; // Starting Position EyeNumber (arcseconds)
+int SP_RawEncoders[5] = { 0, 0, 0, 0, 0 }; // Starting Position Raw Encoder (arcseconds)
 
 struct Vector {
 	double x, y, z;
@@ -3718,8 +3736,8 @@ int MoveRobotStraight(struct XYZ xyz_2)
 		printf("\ndir_angle: %f", dir_angle);
 		diff_normal = true;
 		if(dir_angle / ((float)num_div) > CartesianPivotStepSize){
-			num_div = (int)ceil(dir_angle/CartesianPivotStepSize);
-			printf("\num_div: %i", num_div);
+			num_div_pivot = (int)ceil(dir_angle/CartesianPivotStepSize);
+			printf("\num_div: %i", num_div_pivot);
 			
 		}
 		CartesianPivotStepSize = dir_angle / ((float)num_div);
