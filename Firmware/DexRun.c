@@ -902,11 +902,11 @@ struct XYZ J_angles_to_XYZ(struct J_angles angles) {
 	struct Vector P2 = {0, 0, 0};
 	
 	//FK:
-	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
-	V1 = rotate(V0, P1, angles.J2 + SP[1]);		   			// Vector for Link 2
-	V2 = rotate(V1, P1, angles.J3 + SP[2]);		   			// Vector for Link 3
-	V3 = rotate(V2, P1, angles.J4 + SP[3]);		  			// Vector for Link 4
-	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
+	P1 = rotate(P0, V0, -(angles.J1 - 180*3600)); 	// Links 2, 3 and 4 lie in P1
+	V1 = rotate(V0, P1, angles.J2);		   			// Vector for Link 2
+	V2 = rotate(V1, P1, angles.J3);		   			// Vector for Link 3
+	V3 = rotate(V2, P1, angles.J4);		  			// Vector for Link 4
+	P2 = rotate(P1, V3, -(angles.J5 - 180*3600));	// Link 4 and 5 lie in P2
 	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
 	
 	U1 = add(U0, scalar_mult(L[0], V0));
@@ -1072,9 +1072,9 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 	if (is_NaN(P1)) {
 		// Shouldnt message: "Unkown Singularity found at " + xyz.print() + ", Please report this message as a bug."
 		//std::cout << "Shouldnt: Unkown Singularity";
-		//printf("\n\nUnkown Singularity found at: ");
-		//print_XYZ(xyz);
-		//printf("\nPlease report this message as a bug.\n\n");
+		printf("\n\nUnkown Singularity found at: ");
+		print_XYZ(xyz);
+		printf("\nPlease report this message as a bug.\n\n");
 	}
 
 	// Checking if in range
@@ -1128,18 +1128,18 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 	V3 = normalize(subtract(U4, U3));
 
 	if (xyz.config.right_arm) {
-		J.J1 = signed_angle(P1, P0, V0) - SP[0];
-		J.J2 = signed_angle(V1, V0, P1) - SP[1];
-		J.J3 = signed_angle(V2, V1, P1) - SP[2];
-		J.J4 = signed_angle(V3, V2, P1) - SP[3];
-		J.J5 = signed_angle(P2, P1, V3) - SP[4];
+		J.J1 = signed_angle(P1, P0, V0);
+		J.J2 = signed_angle(V1, V0, P1);
+		J.J3 = signed_angle(V2, V1, P1);
+		J.J4 = signed_angle(V3, V2, P1);
+		J.J5 = signed_angle(P2, P1, V3);
 	}
 	else {
-		J.J1 = signed_angle(P1, P0, V0) + 180*3600 - SP[0];
-		J.J2 = -signed_angle(V1, V0, P1) - SP[1];
-		J.J3 = -signed_angle(V2, V1, P1) - SP[2];
-		J.J4 = -signed_angle(V3, V2, P1) - SP[3];
-		J.J5 = -signed_angle(P2, P1, V3) - SP[4];
+		J.J1 = signed_angle(P1, P0, V0) + 180*3600;
+		J.J2 = -signed_angle(V1, V0, P1);
+		J.J3 = -signed_angle(V2, V1, P1);
+		J.J4 = -signed_angle(V3, V2, P1);
+		J.J5 = -signed_angle(P2, P1, V3);
 	}
 
 	
@@ -1259,7 +1259,7 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 		// U[i + 1] = add(U[i], scalar_mult(L[i], V[i]));
 	// }
 	
-	printf("\nStarting J_angles_to_pos_ori_mat()\n");
+	//printf("\nStarting J_angles_to_pos_ori_mat()\n");
 	
 	//Pre-allocation:
 	struct Vector U0 = {0, 0, 0};
@@ -1279,7 +1279,7 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 	struct Vector P1 = {0, 0, 0};
 	struct Vector P2 = {0, 0, 0};
 	
-	printf("Pre-allocation complete\n");
+	//printf("Pre-allocation complete\n");
 	
 	//FK:
 	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
@@ -1289,7 +1289,7 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
 	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
 	
-	printf("Vector rotations complete\n");
+	//printf("Vector rotations complete\n");
 	
 	U1 = add(U0, scalar_mult(L[0], V0));
 	U2 = add(U1, scalar_mult(L[1], V1));
@@ -1297,47 +1297,47 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 	U4 = add(U3, scalar_mult(L[3], V3));
 	U5 = add(U4, scalar_mult(L[4], V4));
 	
-	printf("Vector adds complete\n");
+	//printf("Vector adds complete\n");
 	
 	//Calc pos_ori_mat:
 	struct Vector Vz = V3;
 	struct Vector Vy = V4;
 	struct Vector Vx = cross(Vy, Vz);
-	printf("\nVector cross complete\n");
+	//printf("\nVector cross complete\n");
 	struct pos_ori_mat result;
-	printf("\npos_ori_mat Struct def complete\n");
+	//printf("\npos_ori_mat Struct def complete\n");
 	
 	
 	result.r0.c0 = Vx.x;
 	result.r1.c0 = Vx.y;
 	result.r2.c0 = Vx.z;
 	
-	printf("\nResult 0 complete\n");
+	//printf("\nResult 0 complete\n");
 	
 	result.r0.c1 = Vy.x;
 	result.r1.c1 = Vy.y;
 	result.r2.c1 = Vy.z;
 	
-	printf("\nResult 1 complete\n");
+	//printf("\nResult 1 complete\n");
 	
 	result.r0.c2 = Vz.x;
 	result.r1.c2 = Vz.y;
 	result.r2.c2 = Vz.z;
 	
-	printf("\nResult 2 complete\n");
+	//printf("\nResult 2 complete\n");
 	
 	result.r0.c3 = U4.x;
 	result.r1.c3 = U4.y;
 	result.r2.c3 = U4.z;
 	
-	printf("\nResult 3 complete\n");
+	//printf("\nResult 3 complete\n");
 	
 	result.r3.c0 = 0;
 	result.r3.c1 = 0;
 	result.r3.c2 = 0;
 	result.r3.c3 = 1;
 	
-	printf("\nResult 4 complete\n");
+	//printf("\nResult 4 complete\n");
 	
 	//= {{Vx.x, Vy.x, Vz.x, U4.x}, {Vx.y, Vy.y, Vz.y, U4.y}, {Vx.z, Vy.z, Vz.z, U4.z}, {0, 0, 0, 1}};
 	
@@ -1993,6 +1993,9 @@ const char* Params[] = {
 	"CartesianPivotSpeedStart",
 	"CartesianPivotSpeedEnd",
 	"CartesianPivotAcceleration",
+
+    "EyeNumbers",
+    "CommandedAngles",
 	
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
