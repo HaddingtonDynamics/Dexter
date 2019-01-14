@@ -1282,11 +1282,11 @@ struct pos_ori_mat J_angles_to_pos_ori_mat(struct J_angles angles) {
 	//printf("Pre-allocation complete\n");
 	
 	//FK:
-	P1 = rotate(P0, V0, -(angles.J1 - 180*3600) + SP[0]); 	// Links 2, 3 and 4 lie in P1
-	V1 = rotate(V0, P1, angles.J2 + SP[1]);		   			// Vector for Link 2
-	V2 = rotate(V1, P1, angles.J3 + SP[2]);		   			// Vector for Link 3
-	V3 = rotate(V2, P1, angles.J4 + SP[3]);		  			// Vector for Link 4
-	P2 = rotate(P1, V3, -(angles.J5 - 180*3600) + SP[4]);	// Link 4 and 5 lie in P2
+	P1 = rotate(P0, V0, -(angles.J1 - 180*3600)); 	// Links 2, 3 and 4 lie in P1
+	V1 = rotate(V0, P1, angles.J2);		   			// Vector for Link 2
+	V2 = rotate(V1, P1, angles.J3);		   			// Vector for Link 3
+	V3 = rotate(V2, P1, angles.J4);		  			// Vector for Link 4
+	P2 = rotate(P1, V3, -(angles.J5 - 180*3600));	// Link 4 and 5 lie in P2
 	V4 = rotate(V3, P2, -90*3600);				   	// Vector for Link 5 (90 degree bend)
 	
 	//printf("Vector rotations complete\n");
@@ -2696,7 +2696,15 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 					
 						//strlcpy(sendBuff + sizeof(sendBuffReTyped[0])*7, mat_string, 0);
 					
-					
+				}else if(strcmp(token, "#EyeNumbers") == 0){
+                    mat_string_length = sprintf(mat_string, "[%i, %i, %i, %i, %i]", mapped[BASE_EYE_NUMBER], mapped[PIVOT_EYE_NUMBER], mapped[END_EYE_NUMBER], mapped[ANGLE_EYE_NUMBER], mapped[ROT_EYE_NUMBER]);
+                }else if(strcmp(token, "#RawEncoders") == 0){
+                    mat_string_length = sprintf(mat_string, "[%i, %i, %i, %i, %i]",
+                        mapped[BASE_RAW_ENCODER_ANGLE_FXP],
+                        mapped[PIVOT_RAW_ENCODER_ANGLE_FXP],
+                        mapped[END_RAW_ENCODER_ANGLE_FXP],
+                        mapped[ANGLE_RAW_ENCODER_ANGLE_FXP],
+                        mapped[ROT_RAW_ENCODER_ANGLE_FXP]);
 				}else if (strcmp(token, "#measured_angles") == 0) {
 					printf("\nAttempting to read measured angles\n");
 					printf("BASE: %d\n", mapped[BASE_MEASURED_ANGLE]);
