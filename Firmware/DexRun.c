@@ -62,7 +62,7 @@ int CalcUartTimeout(int size);
 
 
 
-#define INPUT_OFFSET 12
+#define INPUT_OFFSET 14
 
    // Motor position index
 #define CMD_POSITION_KEYHOLE 0
@@ -429,9 +429,30 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 /* Start Wigglesworth Code*/
 
 
+//double micro_step_per_s_to_MaxSpeed = 8.388535999997595;
+double clockcycle_microstep_per_bit_sec = 8.192;
+int startSpeed_arcsec_per_sec = 3600;
+int maxSpeed_arcsec_per_sec = 30*3600;
+
+int AngularSpeed = 30*3600; 				// (arcsec/s)
+int AngularSpeedStartAndEnd = 360; 			// (arcsec/s)
+int AngularAcceleration = 3.6;				// (arcsec/s^2)
+
+int CartesianSpeed = 300000; 				// (micron/s)
+int CartesianSpeedStart = 0; 				// (micron/s)
+int CartesianSpeedEnd = 0; 					// (micron/s)
+int CartesianAcceleration = 1000000; 		// (micron/s^2)
+int CartesianStepSize = 10; 				// (micron)
+int CartesianPivotSpeed = 108000; 			// (arcsec/s)
+int CartesianPivotSpeedStart = 0; 			// (arcsec/s)
+int CartesianPivotSpeedEnd = 0; 			// (arcsec/s)
+int CartesianPivotAcceleration = 10800000; 	// (arcsec/s^2)
+int CartesianPivotStepSize = 36; 			// (arcsec)
+int LastGoal[5]={0,0,0,0,0};
+
 
 //#include <cstdlib> //C++ header
-#include <math.h> // for trig and floor functions
+//#include <math.h> // for trig and floor functions
 //#include <iostream> //doesn't exist on Dexter
 //#include <limits> // for intentionaly returning nan 
 //#include <time.h> /* c//lock_t, clock, CLOCKS_PER_SEC */
@@ -439,11 +460,15 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 //#include <stdbool.h>
 
 
+
+
 // Vector Library:
+#include <math.h>
 #define PI (3.141592653589793)
 //double L[5] = { 0.1651, 0.320675, 0.3302, 0.0508, 0.08255 }; // (meters)
 double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
 double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
+
 
 struct Vector {
 	double x, y, z;
@@ -667,7 +692,7 @@ double angle(struct Vector v1, struct Vector v2) {
 		return 0.0;
 	}
 	if (magnitude(add(v1, v2)) == 0) {
-		return 180;
+		return 180*3600;
 	}
 	else {
 		return atan2_arcsec(magnitude(cross(v1, v2)), dot(v1, v2));
@@ -1029,9 +1054,9 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 	if (is_NaN(P1)) {
 		// Shouldnt message: "Unkown Singularity found at " + xyz.print() + ", Please report this message as a bug."
 		//std::cout << "Shouldnt: Unkown Singularity";
-		printf("\n\nUnkown Singularity found at: ");
-		print_XYZ(xyz);
-		printf("\nPlease report this message as a bug.\n\n");
+		//printf("\n\nUnkown Singularity found at: ");
+		//print_XYZ(xyz);
+		//printf("\nPlease report this message as a bug.\n\n");
 	}
 
 	// Checking if in range
@@ -1039,8 +1064,16 @@ struct J_angles xyz_to_J_angles(struct XYZ xyz) {
 	if (D3 > L[1] + L[2]) {
 		// Error message: "Point out of reach"
 		//std::cout << "Point out of reach";
-		printf("\n\nOut of Reach Error at position: ");
+		printf("\nOut of Reach Error at position: ");
 		print_XYZ(xyz);
+		printf("\nLastGoal: [%d, %d, %d, %d, %d]\n", LastGoal[0], LastGoal[1], LastGoal[2], LastGoal[3], LastGoal[4]);
+
+		J.J1 = LastGoal[0];
+		J.J2 = LastGoal[1];
+		J.J3 = LastGoal[2];
+		J.J4 = LastGoal[3];
+		J.J5 = LastGoal[4];
+		return J;
 	}
 
 
@@ -1137,11 +1170,15 @@ int k_tip_speed_to_angle_speed(struct J_angles J_angles_old, struct J_angles J_a
 	struct Vector EE_point_2 = J_angles_to_XYZ(J_angles_new).position;
 	double dist_EE = dist_point_to_point(EE_point_1, EE_point_2);
 	if(dist_EE == 0){
+		//printf("SKIP\n");
 		return 3877.0; //30 (deg/s)
 	}
 	double max_theta = J_angles_max_diff(J_angles_old, J_angles_new);
 	
-	return (int)(max_theta*cart_speed/dist_EE);
+	int result = (int)(max_theta*cart_speed/dist_EE);
+	//printf("cartspeed: %f, maxtheta: %f, distEE: %f, result: %d\n", cart_speed, max_theta, dist_EE, result);
+
+	return result;
 }
 		
 
@@ -1924,6 +1961,21 @@ const char* Params[] = {
 	"J3_PID_P",
 	"J4_PID_P",
 	"J5_PID_P",
+
+	"AngularSpeed",
+	"AngularSpeedStartAndEnd",
+	"AngularAcceleration",
+
+	"CartesianSpeed",
+	"CartesianSpeedStart",
+	"CartesianSpeedEnd",
+	"CartesianAcceleration",
+	"CartesianStepSize",
+	"CartesianPivotSpeed",
+	"CartesianPivotSpeedStart",
+	"CartesianPivotSpeedEnd",
+	"CartesianPivotAcceleration",
+	
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
@@ -1938,7 +1990,7 @@ int MyBotForce[5]={0,0,0,0,0};
 float ForceAdjustPossition[5]={-.01,-.01,-.01,-.01,-.01};
 int FroceMoveMode=0;
 
-int LastGoal[5]={0,0,0,0,0};
+//int LastGoal[5]={0,0,0,0,0}; //moved to above kinematics code 
 
 struct ServoRealTimeData{
 	unsigned char ServoAddress;
@@ -3410,7 +3462,32 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 
 	//if(mode==BLOCKING_MOVE)
 		//WaitMoveGoal(LastGoal[0],LastGoal[1],LastGoal[2],LastGoal[3],LastGoal[4],DEFAULT_MOVE_TIMEOUT);
-
+	
+	
+	
+	//Select joint with largest angular displacement (BAD CODE PLEASE RE-WRITE)
+	int j = 0;
+    double cur_max = 0.0;
+    if(abs(a1 - LastGoal[0]) > cur_max){
+        cur_max = abs(a1 - LastGoal[0]);
+        j = 0;
+    };
+    if(abs(a2 - LastGoal[1]) > cur_max){
+        cur_max = abs(a2 - LastGoal[1]);
+        j = 1;
+    };
+    if(abs(a3 - LastGoal[2]) > cur_max){
+        cur_max = abs(a3 - LastGoal[2]);
+        j = 2;
+    };
+    if(abs(a4 - LastGoal[3]) > cur_max){
+        cur_max = abs(a4 - LastGoal[3]);
+        j = 3;
+    };
+    if(abs(a5 - LastGoal[4]) > cur_max){
+        cur_max = abs(a5 - LastGoal[4]);
+        j = 4;
+    };
 	
 
 	LastGoal[0]=a1;
@@ -3418,6 +3495,8 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	LastGoal[2]=a3;
 	LastGoal[3]=a4;
 	LastGoal[4]=a5;
+
+	//printf("LastGoal set: [%d, %d, %d, %d, %d]\n", LastGoal[0], LastGoal[1], LastGoal[2], LastGoal[3], LastGoal[4]);
 
 	a1=(int)((double)a1 * JointsCal[0]);
 	a2=(int)((double)a2 * JointsCal[1]);
@@ -3435,7 +3514,20 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 
 	while((mapped[CMD_FIFO_STATE] & 0x01) != 0); //This was commented out for some reason in commit: https://github.com/HaddingtonDynamics/Dexter/commit/1ca9251b47468d9841713ec89b62e91050125188
 
-	
+    
+
+	//printf("Largest displacement: J%d, %f\n", j, cur_max);
+    //Actually adding the speed change to the queue:
+	int new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j] * clockcycle_microstep_per_bit_sec));
+	//printf("new_StartSpeed: %d\n", new_StartSpeed);
+    mapped[START_SPEED] = 1 ^ new_StartSpeed;
+	int new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j] * clockcycle_microstep_per_bit_sec));
+	//printf("new_MaxSpeed: %d\n", new_MaxSpeed);
+	maxSpeed=(new_MaxSpeed) & 0b00000000000011111111111111111111;
+	mapped[ACCELERATION_MAXSPEED]= maxSpeed + (coupledAcceleration << 20);
+
+	//printf("MaxSpeed: %d(bit/clockcycle)    MaxSpeed: %d(arcsec/s)    J%d: %f (deg)\n", new_MaxSpeed, maxSpeed_arcsec_per_sec, j, cur_max/3600.0);
+
 	mapped[COMMAND_REG]=CMD_MOVEEN | CmdVal;
 	KeyholeSend(KeyHoleArray, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
 	mapped[COMMAND_REG]=CMD_MOVEEN | CMD_MOVEGO | CmdVal;
@@ -3468,10 +3560,17 @@ int MoveRobotStraight(struct XYZ xyz_2)
 {
 
 	//File IO
-	double cart_speed;
-	double cart_accel;
-	double cart_step_size;
-	double rot_step_size;
+
+	
+	int cart_speed = CartesianSpeed;
+	/*
+	double cart_accel = CartesianAcceleration;
+	double cart_step_size = CartesianStepSize;
+	double rot_step_size = CartesianPivotStepSize;
+	*/
+
+
+	/*
 	wfp = fopen("/srv/samba/share/Cartesian_Settings/Speed.txt", "r");
 	if (wfp) {
 		fscanf(wfp, "%lf", &cart_speed);
@@ -3479,7 +3578,7 @@ int MoveRobotStraight(struct XYZ xyz_2)
 		wfp = 0;
 	}else {
 		printf("Failed to load /Cartesian_Settings/Speed.txt Error # %d\n", errno);
-		cart_speed = 100000.0;
+		cart_speed = 300000.0;
 	}
 	wfp = fopen("/srv/samba/share/Cartesian_Settings/Acceleration.txt", "r");
 	if (wfp) {
@@ -3488,7 +3587,7 @@ int MoveRobotStraight(struct XYZ xyz_2)
 		wfp = 0;
 	}else {
 		printf("Failed to load /Cartesian_Settings/Acceleration.txt Error # %d\n", errno);
-		cart_accel = 100.0;
+		cart_accel = 1000000.0;
 	}
 	wfp = fopen("/srv/samba/share/Cartesian_Settings/Step_Size.txt", "r");
 	if (wfp) {
@@ -3497,7 +3596,7 @@ int MoveRobotStraight(struct XYZ xyz_2)
 		wfp = 0;
 	}else {
 		printf("Failed to load /Cartesian_Settings/Step_Size.txt Error # %d\n", errno);
-		cart_step_size = 50.0;
+		cart_step_size = 10.0;
 	}
 	wfp = fopen("/srv/samba/share/Cartesian_Settings/Rotational_Step_Size.txt", "r");
 	if (wfp) {
@@ -3508,7 +3607,7 @@ int MoveRobotStraight(struct XYZ xyz_2)
 		printf("Failed to load /Cartesian_Settings/Rotational_Step_Size.txt Error # %d\n", errno);
 		cart_step_size = 50.0;
 	}
-
+	*/
 
 
 	//Reading Last Commaned Joint Angles
@@ -3526,7 +3625,7 @@ int MoveRobotStraight(struct XYZ xyz_2)
 		xyz_1.position = new_vector(0, L[4], L[0]+L[1]+L[2]+L[3]);
 		xyz_1.direction = new_vector(0, 1, 0);
 		xyz_1.config = new_config(xyz_2.config.right_arm, xyz_2.config.elbow_up,  xyz_2.config.wrist_out);
-
+		printf("Correcting for singularity in MoveRobotStraight\n");
 		/*
 		struct Vector home_position = new_vector(0, L[4], L[0]+L[1]+L[2]+L[3]);
 		struct Vector home_dir = new_vector(0, 1, 0);
@@ -3560,14 +3659,26 @@ int MoveRobotStraight(struct XYZ xyz_2)
 
 	
 
-	printf("\ncart_speed: %f", cart_speed);
+	printf("CartesianSpeed: %i\n", CartesianSpeed);
 	
+	int num_div_cart = 1;
+	int num_div_pivot = 1;
 	struct Vector U1 = xyz_1.position;
 	struct Vector U2 = xyz_2.position;
 	struct Vector U21 = subtract(U2, U1);
 	struct Vector v21 = normalize(U21);
 	double U21_mag = magnitude(U21);
-	int num_div = (int)ceil(U21_mag/cart_step_size);
+	bool diff_xyz = true;
+	if(U21_mag > 100.0){
+		num_div_cart = (int)ceil(U21_mag/CartesianStepSize);
+	}else{
+		diff_xyz = false;
+		U21_mag = 0;
+		v21.x = 0.0;
+		v21.y = 0.0;
+		v21.z = 0.0;
+	}
+
 	/*
 	int max_num_div =  50000;
 	if(num_div > max_num_div){
@@ -3582,11 +3693,11 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	
 	
 	//Smooth Acceleration Math:
-	double dx = cart_speed*cart_speed / (2*cart_accel);
+	double dx = (double)(cart_speed*cart_speed) / (2*CartesianAcceleration);
 	if(2*dx >= U21_mag){
 		printf("\nAcceleration too low.\ndx = %f\nU21_mag = %f", dx, U21_mag);
 		dx = floor(U21_mag/2);
-		cart_speed = sqrt(2*cart_accel*dx); //2*a*dx == 2*a*U21_mag/2
+		cart_speed = (int)round(sqrt(2*(double)(CartesianAcceleration)*dx)); //2*a*dx == 2*a*U21_mag/2
 	}
 
 	
@@ -3599,19 +3710,20 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	struct Vector rot_cross_p = cross(xyz_1.direction, xyz_2.direction);
 	double dir_angle = 0.0;
 	bool diff_normal = false;
-	if(magnitude(rot_cross_p) != 0.0){
+	
+	if(magnitude(rot_cross_p) > 0.005){
 		printf("\nNormals are different.");
 		
 		dir_angle = signed_angle(xyz_1.direction, xyz_2.direction, rot_cross_p);
 		printf("\ndir_angle: %f", dir_angle);
 		diff_normal = true;
-		if(dir_angle / ((float)num_div) > rot_step_size){
-			num_div = (int)ceil(dir_angle/rot_step_size);
+		if(dir_angle / ((float)num_div) > CartesianPivotStepSize){
+			num_div = (int)ceil(dir_angle/CartesianPivotStepSize);
 			printf("\num_div: %i", num_div);
 			
 		}
-		rot_step_size = dir_angle / ((float)num_div);
-		printf("\nrot_step_size: %f", rot_step_size);
+		CartesianPivotStepSize = dir_angle / ((float)num_div);
+		printf("\nCartesianPivotStepSize: %i", CartesianPivotStepSize);
 	}
 	
 	
@@ -3642,46 +3754,51 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	struct Vector Ui;
 	double cur_speed;
 	double dist = 0.0;
-	for(i=1;i<=num_div;i++){
-		//Cartesian Interpolation
-		dist = ((float)i)*step;
-		Ui = add(U1, scalar_mult(dist, v21));
-		cur_xyz.position = Ui;
-		if(diff_normal){
-			cur_xyz.direction = rotate(xyz_1.direction, rot_cross_p, ((float)i)*rot_step_size);
-			//printf("\ni: %i  Direction: ", i);
-			//print_vector(rotate(xyz_1.direction, rot_cross_p, ((float)i)*rot_step_size));
+	if(diff_xyz && !diff_normal){
+		for(i=1;i<=num_div;i++){
+			//Cartesian Interpolation
+			dist = ((float)i)*step;
+			Ui = add(U1, scalar_mult(dist, v21));
+			cur_xyz.position = Ui;
+			J_angles_new = xyz_to_J_angles(cur_xyz);
+			//Smooth Acceleration Speed Calc:
+			if(dist <= dx){
+				//cur_speed = 0.5*CartesianSpeed*(-cos(dist*PI/dx) + 1); //S-curve
+				cur_speed = dist*(CartesianSpeed-CartesianSpeedStart)/dx + CartesianSpeedStart;
+			}else if(dist >= U21_mag - dx){
+				//cur_speed = 0.5*CartesianSpeed*(cos((dist - U21_mag + dx)*PI/dx) + 1); //S-curve
+				cur_speed = CartesianSpeed - (dist-U21_mag + dx)*(CartesianSpeed-CartesianSpeedEnd)/dx;
+			}else{
+				cur_speed = CartesianSpeed;
+			}
+			maxSpeed_arcsec_per_sec = k_tip_speed_to_angle_speed(J_angles_old, J_angles_new, cur_speed);
+			startSpeed_arcsec_per_sec = maxSpeed_arcsec_per_sec;
+			MoveRobot(J_angles_new.J1, J_angles_new.J2, J_angles_new.J3, J_angles_new.J4, J_angles_new.J5, BLOCKING_MOVE);
 		}
-		J_angles_new = xyz_to_J_angles(cur_xyz);
-		
-		//Smooth Acceleration Speed Calc:
-		if(dist <= dx){
-			cur_speed = 0.5*cart_speed*(-cos(dist*PI/dx) + 1);
-		}else if(dist >= U21_mag - dx){
-			cur_speed = 0.5*cart_speed*(cos((dist - U21_mag + dx)*PI/dx) + 1);
-			//printf("Decell speed: %f   dist: %f\n", cur_speed, dist);
-		}else{
-			cur_speed = cart_speed;
+	}else if(!diff_xyz && diff_normal){
+		for(i=1;i<=num_div;i++){
+			//Cartesian Interpolation
+			dist = ((float)i)*step;
+			Ui = add(U1, scalar_mult(dist, v21));
+			cur_xyz.position = Ui;
+			J_angles_new = xyz_to_J_angles(cur_xyz);
+			//Smooth Acceleration Speed Calc:
+			if(dist <= dx){
+				//cur_speed = 0.5*CartesianSpeed*(-cos(dist*PI/dx) + 1); //S-curve
+				cur_speed = dist*(CartesianSpeed-CartesianSpeedStart)/dx + CartesianSpeedStart;
+			}else if(dist >= U21_mag - dx){
+				//cur_speed = 0.5*CartesianSpeed*(cos((dist - U21_mag + dx)*PI/dx) + 1); //S-curve
+				cur_speed = CartesianSpeed - (dist-U21_mag + dx)*(CartesianSpeed-CartesianSpeedEnd)/dx;
+			}else{
+				cur_speed = CartesianSpeed;
+			}
+			maxSpeed_arcsec_per_sec = k_tip_speed_to_angle_speed(J_angles_old, J_angles_new, cur_speed);
+			startSpeed_arcsec_per_sec = maxSpeed_arcsec_per_sec;
+			MoveRobot(J_angles_new.J1, J_angles_new.J2, J_angles_new.J3, J_angles_new.J4, J_angles_new.J5, BLOCKING_MOVE);
 		}
-		angular_velocity = k_tip_speed_to_angle_speed(J_angles_old, J_angles_new, cart_speed);
-
-
-		//Actual Speed change and Movement
-		mapped[START_SPEED]= 1 ^ angular_velocity;
-		maxSpeed=angular_velocity & 0b00000000000011111111111111111111;
-		mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
-		MoveRobot(J_angles_new.J1, J_angles_new.J2, J_angles_new.J3, J_angles_new.J4, J_angles_new.J5, BLOCKING_MOVE);
-
-
-		//printf("\nang_vel: %d  J: ");
-		//print_J_angles(J_angles_new);
-		// if(angular_velocity > cal_max_angular_velocity){
-			// cal_max_angular_velocity = angular_velocity;
-		// }
-		//printf("%i: %i", i, angular_velocity);
-		
 	}
 	
+
 	//printf("cal_max_angular_velocity = %i", cal_max_angular_velocity);
 	printf("\nMoveRobotStraight movement complete\n");
 	
@@ -3793,9 +3910,12 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 						case 0:
 						////printf("Set Speed\n");
 							//set Max Speed
+                            /*
 							maxSpeed=a2 & 0b00000000000011111111111111111111;
 							mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
-							return 0;
+							*/
+                            maxSpeed_arcsec_per_sec = a2;
+                            return 0;
 						break;
 						case 1:
 							//set Acceleration
@@ -3920,7 +4040,8 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							return 0;
 						break;
 						case 25:
-							mapped[START_SPEED]=1 ^ a2;
+							//mapped[START_SPEED]=1 ^ a2; //Replaced
+                            startSpeed_arcsec_per_sec = a2;
 						break;
 						case 26:     // end speed todo not implemented
 						break;
@@ -3975,6 +4096,47 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							// printf("  Hex: %x\n", uia2);
 						break;
 
+						case 36:
+							AngularSpeed = a2;
+						break;
+						case 37:
+							AngularSpeedStartAndEnd = a2;
+						break;
+						case 38:
+							AngularAcceleration = a2;
+						break;
+
+						case 39:
+							CartesianSpeed = a2;
+						break;
+						case 40:
+							CartesianSpeedStart = a2;
+						break;
+						case 41:
+							CartesianSpeedEnd = a2;
+						break;
+						case 42:
+							CartesianAcceleration = a2;
+						break;
+						case 43:
+							CartesianStepSize = a2;
+						break;
+						case 44:
+							CartesianPivotSpeed = a2;
+						break;
+						case 45:
+							CartesianPivotSpeedStart = a2;
+						break;
+						case 46:
+							CartesianPivotSpeedEnd = a2;
+						break;
+						case 47:
+							CartesianPivotAcceleration = a2;
+						break;
+						case 48:
+							CartesianPivotStepSize = a2;
+						break;
+
 
 						default:
 						break;
@@ -3995,7 +4157,7 @@ int MoveRobotRelative(int a1,int a2,int a3,int a4,int a5, int mode)
 	b4=getNormalizedInput(ANGLE_POSITION_AT);
 	b5=getNormalizedInput(ROT_POSITION_AT);
 	
-	////printf("\nRelative move %d %d %d %d %d",b1,b2,b3,b4,b5);
+	printf("MoveRealative relative to %d %d %d %d %d",b1,b2,b3,b4,b5);
 	return MoveRobot(a1+b1,a2+b2,a3+b3,a4+b4,a5+b5,mode);
 }
 
@@ -4439,6 +4601,7 @@ int ParseInput(char *iString)
 	int d3,d4,d5;
 	float f1;
 	////printf("\nStart wait Goal");
+	printf("ParseInput: %s\n", iString);
 	if(iString !=NULL)
 	{
 		token = strtok (iString, delimiters);
@@ -5029,7 +5192,6 @@ int main(int argc, char *argv[]) {
   int size;
   int DefaultMode;
   int CalTblSize = 32*1024*1024; 
-
 
   if (argc != 4) {
     fprintf(stderr, "Usage: %s Needs init mode, Master/Slave and RunMode\n", argv[0]);
