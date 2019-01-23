@@ -445,13 +445,15 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 
 
 //double micro_step_per_s_to_MaxSpeed = 8.388535999997595;
-double clockcycle_microstep_per_bit_sec = 8.192;
+double arcsec_per_nbits = 0.4642324678861586;
+double bit_sec_per_microstep_clockcycle = 8.192;
 int startSpeed_arcsec_per_sec = 3600;
 int maxSpeed_arcsec_per_sec = 30*3600;
 
+
 int AngularSpeed = 30*3600; 				// (arcsec/s)
 int AngularSpeedStartAndEnd = 360; 			// (arcsec/s)
-int AngularAcceleration = 3.6;				// (arcsec/s^2)
+int AngularAcceleration = 1;				// (arcsec/s^2)
 
 int CartesianSpeed = 300000; 				// (micron/s)
 int CartesianSpeedStart = 0; 				// (micron/s)
@@ -482,7 +484,7 @@ int LastGoal[5]={0,0,0,0,0};
 #define PI (3.141592653589793)
 //double L[5] = { 0.1651, 0.320675, 0.3302, 0.0508, 0.08255 }; // (meters)
 double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
-double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
+//double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
 
 int SP_CommandedAngles[5] = { 0, 0, 0, 0, 0 }; // Starting Position Commanded (arcseconds)
 int SP_EyeNumbers[5] = { 0, 0, 0, 0, 0 }; // Starting Position EyeNumber (arcseconds)
@@ -3450,7 +3452,8 @@ void moverobotPID(int a1,int a2,int a3,int a4,int a5)
 	a3=(int)((double)a3 * JointsCal[2]);
 	a4=(int)((double)a4 * JointsCal[3]);
 	a5=(int)((double)a5 * JointsCal[4]);
-	//printf("PID move %d %d %d %d %d %d \n",a1,a3,a2,a4,a5);
+
+	printf("PID move %i %i %i %i %i %i \n",a1,a3,a2,a4,a5);
 
 	FineAdjust[0]=a1;
 	FineAdjust[1]=a3;
@@ -3495,29 +3498,70 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	
 	
 	//Select joint with largest angular displacement (BAD CODE PLEASE RE-WRITE)
-	int j = 0;
-    double cur_max = 0.0;
-    if(abs(a1 - LastGoal[0]) > cur_max){
-        cur_max = abs(a1 - LastGoal[0]);
-        j = 0;
+	int j_step = 0;
+    int j_deg = 0;
+    double test_angle;
+    double cur_max_step = 0.0;
+    double cur_max_deg = 0.0;
+    double test_angle_step [] = {0, 0, 0, 0, 0};
+    double test_angle_deg [] = {0, 0, 0, 0, 0};
+    test_angle_step[0] = abs((double)(a1 - LastGoal[0]) * JointsCal[0]);
+    if(test_angle_step[0] > cur_max_step){
+        cur_max_step = test_angle_step[0];
+        j_step = 0;
     };
-    if(abs(a2 - LastGoal[1]) > cur_max){
-        cur_max = abs(a2 - LastGoal[1]);
-        j = 1;
+    test_angle_step[1] = abs((double)(a2 - LastGoal[1]) * JointsCal[1]);
+    if(test_angle_step[1] > cur_max_step){
+        cur_max_step = test_angle_step[1];
+        j_step = 1;
     };
-    if(abs(a3 - LastGoal[2]) > cur_max){
-        cur_max = abs(a3 - LastGoal[2]);
-        j = 2;
+    test_angle_step[2] = abs((double)(a3 - LastGoal[2]) * JointsCal[2]);
+    if(test_angle_step[2] > cur_max_step){
+        cur_max_step = test_angle_step[2];
+        j_step = 2;
     };
-    if(abs(a4 - LastGoal[3]) > cur_max){
-        cur_max = abs(a4 - LastGoal[3]);
-        j = 3;
+    test_angle_step[3] = abs((double)(a4 - LastGoal[3]) * JointsCal[3]);
+    if(test_angle_step[3] > cur_max_step){
+        cur_max_step = test_angle_step[3];
+        j_step = 3;
     };
-    if(abs(a5 - LastGoal[4]) > cur_max){
-        cur_max = abs(a5 - LastGoal[4]);
-        j = 4;
+    test_angle_step[4] = abs((double)(a5 - LastGoal[4]) * JointsCal[4]);
+    if(test_angle_step[4] > cur_max_step){
+        cur_max_step = test_angle_step[4];
+        j_step = 4;
     };
+
+    printf("major delta step: J%d delta: %f (abs steps)  delta: %f (abs deg)\n", j_step+1, cur_max_step, -cur_max_step / JointsCal[j_step] / 3600);
 	
+
+    
+    test_angle_deg[0] = abs((double)(a1 - LastGoal[0]));
+    if(test_angle_deg[0] > cur_max_deg){
+        cur_max_deg = test_angle_deg[0];
+        j_deg = 0;
+    };
+    test_angle_deg[1] = abs((double)(a2 - LastGoal[1]));
+    if(test_angle_deg[1] > cur_max_deg){
+        cur_max_deg = test_angle_deg[1];
+        j_deg = 1;
+    };
+    test_angle_deg[2] = abs((double)(a3 - LastGoal[2]));
+    if(test_angle_deg[2] > cur_max_deg){
+        cur_max_deg = test_angle_deg[2];
+        j_deg = 2;
+    };
+    test_angle_deg[3] = abs((double)(a4 - LastGoal[3]));
+    if(test_angle_deg[3] > cur_max_deg){
+        cur_max_deg = test_angle_deg[3];
+        j_deg = 3;
+    };
+    test_angle_deg[4] = abs((double)(a5 - LastGoal[4]));
+    if(test_angle_deg[4] > cur_max_deg){
+        cur_max_deg = test_angle_deg[4];
+        j_deg = 4;
+    };
+
+    printf("major delta deg:  J%d delta: %f (abs steps)  delta: %f (abs deg)\n", j_deg+1, -cur_max_deg * JointsCal[j_deg], cur_max_deg / 3600);
 
 	LastGoal[0]=a1;
 	LastGoal[1]=a2;
@@ -3547,13 +3591,49 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 
 	//printf("Largest displacement: J%d, %f\n", j, cur_max);
     //Actually adding the speed change to the queue:
-	int new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j] * clockcycle_microstep_per_bit_sec));
-	//printf("new_StartSpeed: %d\n", new_StartSpeed);
-    mapped[START_SPEED] = 1 ^ new_StartSpeed;
-	int new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j] * clockcycle_microstep_per_bit_sec));
-	//printf("new_MaxSpeed: %d\n", new_MaxSpeed);
+    int new_StartSpeed;
+    int new_MaxSpeed;
+
+    /*
+    new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_deg] / JointsCal[j_step])));
+    new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_deg] / JointsCal[j_step])));
+    */
+    
+    /*
+    new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_step] / JointsCal[j_deg])));
+    new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_step] / JointsCal[j_deg])));
+    */
+
+    new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle) * test_angle_deg[j_step] / test_angle_deg[j_deg]);
+    new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle) * test_angle_deg[j_step] / test_angle_deg[j_deg]);
+
+    /*
+    if(j_step < 3 && j_deg > 2){
+        
+        //new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_deg] / JointsCal[j_step])));
+        //new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_deg] / JointsCal[j_step])));
+        
+        
+        //new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle) * test_angle_step[j_deg] / test_angle_step[j_step]);
+        //new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle) * test_angle_step[j_deg] / test_angle_step[j_step]);
+        
+        new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle) * test_angle_deg[j_step] / test_angle_deg[j_deg]);
+        new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle) * test_angle_deg[j_step] / test_angle_deg[j_deg]);
+        printf("j_step < 3 && j_deg > 2 is true\n");
+    }else{
+        new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle));
+        new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle));
+        printf("j_step < 3 && j_deg > 2 is false\n");
+    }
+    */
+    
+
+    if(1 > new_StartSpeed){new_StartSpeed = 1;} //Anything less than 1 will cause infinite loop. Consider error code for this.
+    mapped[START_SPEED] = 500 ^ new_StartSpeed; // Start speed is defaulted in the FPGA to 500   
 	maxSpeed=(new_MaxSpeed) & 0b00000000000011111111111111111111;
 	mapped[ACCELERATION_MAXSPEED]= maxSpeed + (coupledAcceleration << 20);
+    //printf("new_StartSpeed: %d\n", new_StartSpeed);
+    //printf("new_MaxSpeed: %d\n", new_MaxSpeed);
 
 	//printf("MaxSpeed: %d(bit/clockcycle)    MaxSpeed: %d(arcsec/s)    J%d: %f (deg)\n", new_MaxSpeed, maxSpeed_arcsec_per_sec, j, cur_max/3600.0);
 
@@ -3715,10 +3795,13 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	}
 	*/
 	
-	double step = U21_mag / num_div;
+	//double step = U21_mag / num_div;
+    double step_cart = U21_mag / num_div_cart;
+    double step_pivot;
+
 	//int num_div = 10;
 	
-	printf("\nnum_div: %i", num_div);
+	//printf("\nnum_div: %i", num_div);
 	
 	
 	//Smooth Acceleration Math:
@@ -3746,12 +3829,12 @@ int MoveRobotStraight(struct XYZ xyz_2)
 		dir_angle = signed_angle(xyz_1.direction, xyz_2.direction, rot_cross_p);
 		printf("\ndir_angle: %f", dir_angle);
 		diff_normal = true;
-		if(dir_angle / ((float)num_div) > CartesianPivotStepSize){
+		if(dir_angle / ((float)num_div_cart) > CartesianPivotStepSize){
 			num_div_pivot = (int)ceil(dir_angle/CartesianPivotStepSize);
 			printf("\num_div: %i", num_div_pivot);
 			
 		}
-		CartesianPivotStepSize = dir_angle / ((float)num_div);
+		step_pivot = dir_angle / ((float)num_div_pivot);
 		printf("\nCartesianPivotStepSize: %i", CartesianPivotStepSize);
 	}
 	
@@ -3772,8 +3855,8 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	printf("\nv21:");
 	print_vector(v21);
 	printf("\nU21_mag: %f", U21_mag);
-	printf("\nnum_div: %i", num_div);
-	printf("\nstep: %f", step);
+	//printf("\nnum_div: %i", num_div);
+	//printf("\nstep: %f", step);
 	printf("\ndx: %f\n", dx);
 	
 	
@@ -3784,9 +3867,9 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	double cur_speed;
 	double dist = 0.0;
 	if(diff_xyz && !diff_normal){
-		for(i=1;i<=num_div;i++){
+		for(i=1;i<=num_div_cart;i++){
 			//Cartesian Interpolation
-			dist = ((float)i)*step;
+			dist = ((float)i)*step_cart;
 			Ui = add(U1, scalar_mult(dist, v21));
 			cur_xyz.position = Ui;
 			J_angles_new = xyz_to_J_angles(cur_xyz);
@@ -3805,9 +3888,9 @@ int MoveRobotStraight(struct XYZ xyz_2)
 			MoveRobot(J_angles_new.J1, J_angles_new.J2, J_angles_new.J3, J_angles_new.J4, J_angles_new.J5, BLOCKING_MOVE);
 		}
 	}else if(!diff_xyz && diff_normal){
-		for(i=1;i<=num_div;i++){
+		for(i=1;i<=num_div_pivot;i++){
 			//Cartesian Interpolation
-			dist = ((float)i)*step;
+			dist = ((float)i)*step_pivot;
 			Ui = add(U1, scalar_mult(dist, v21));
 			cur_xyz.position = Ui;
 			J_angles_new = xyz_to_J_angles(cur_xyz);
@@ -3825,7 +3908,9 @@ int MoveRobotStraight(struct XYZ xyz_2)
 			startSpeed_arcsec_per_sec = maxSpeed_arcsec_per_sec;
 			MoveRobot(J_angles_new.J1, J_angles_new.J2, J_angles_new.J3, J_angles_new.J4, J_angles_new.J5, BLOCKING_MOVE);
 		}
-	}
+	}else{
+        printf("diff_xyz: %i, diff_normal: %i", diff_xyz, diff_normal);
+    }
 	
 
 	//printf("cal_max_angular_velocity = %i", cal_max_angular_velocity);
@@ -3943,7 +4028,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							maxSpeed=a2 & 0b00000000000011111111111111111111;
 							mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
 							*/
-                            maxSpeed_arcsec_per_sec = a2;
+                            maxSpeed_arcsec_per_sec = a2 * arcsec_per_nbits; // Depricated. For backward compatibility with _nbits_cf from DDE.
                             return 0;
 						break;
 						case 1:
@@ -4070,7 +4155,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 						break;
 						case 25:
 							//mapped[START_SPEED]=1 ^ a2; //Replaced
-                            startSpeed_arcsec_per_sec = a2;
+                            startSpeed_arcsec_per_sec = a2 * arcsec_per_nbits; // Depricated. For backward compatibility with _nbits_cf from DDE.
 						break;
 						case 26:     // end speed todo not implemented
 						break;
@@ -4164,6 +4249,13 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 						break;
 						case 48:
 							CartesianPivotStepSize = a2;
+						break;
+
+                        case 49:
+							//EyeNumbers
+						break;
+                        case 50:
+							//CommandedAngles
 						break;
 
 
@@ -4624,7 +4716,7 @@ int ParseInput(char *iString)
 	FILE *fp;
 	char *token,*p1,*p2,*p3,*p4,*p5,*p6,*p7,*p8,*p9,*p10,*p11,*p12,*p13,*p14,*p15,*p16,*p17,*p18,*p19;
 	int BDH,BDL;
-
+    int angles_temp[5];
 
 	int i,j,Add,Start,Length,Delay,Axis,tokenVal;
 	int d3,d4,d5;
@@ -4713,6 +4805,7 @@ int ParseInput(char *iString)
 				case SET_PARAM :
 					p1=strtok (NULL, delimiters);
 					
+                    printf("SET_PARAM: %s\n", p1);
 					if (!strcmp("RunFile",p1)) {
 						p2 = strtok (NULL, delimiters);
 						fp = fopen(p2, "r");
@@ -4731,13 +4824,11 @@ int ParseInput(char *iString)
 								} while (p3);
 							fclose(fp);
 							printf("Done\n");
-							}
-						else { 
+						}else { 
 							printf("Failed to load %s Error # %d %s\n", p2, errno, strerror(errno)); 
 							return errno;
-							}
 						}
-					else if (!strcmp("Ctrl",p1)) {
+					}else if (!strcmp("Ctrl",p1)) {
 						while ((p1 = strtok(NULL,ctrldelims))) {
 							printf("key %s\n",p1);
 							if (!strcmp("Diff",p1)) {
@@ -4835,9 +4926,80 @@ int ParseInput(char *iString)
 						p6=strtok (NULL, delimiters);
 						fp=fopen("StartPosition.txt", "w");
 						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
-						fclose (fp);
-					}
-					else {
+						fclose (fp);   
+                    }else if (!strcmp("EyeNumbers",p1)){
+                        //Read new register
+                        p1=strtok (NULL, delimiters);
+                        p2=strtok (NULL, delimiters);
+                        p3=strtok (NULL, delimiters);
+                        p4=strtok (NULL, delimiters);
+                        p5=strtok (NULL, delimiters);
+
+                        angles_temp[0]=atoi(p1)^255;
+                        angles_temp[2]=atoi(p2)^255;
+                        angles_temp[1]=atoi(p3)^255;
+                        angles_temp[3]=atoi(p4)^255;
+                        angles_temp[4]=atoi(p5)^255;
+                        printf("EyeNumbers (after xor): %d %d %d %d %d\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+
+                        KeyholeSend(angles_temp, RAW_ECONDER_ANGLE_KEYHOLE_CMD, RAW_ECONDER_ANGLE_KEYHOLE_SIZE, RAW_ECONDER_ANGLE_KEYHOLE );
+                    }else if (!strcmp("CommandedAngles",p1)){
+                        //Read new register
+                        p1=strtok (NULL, delimiters);
+                        p2=strtok (NULL, delimiters);
+                        p3=strtok (NULL, delimiters);
+                        p4=strtok (NULL, delimiters);
+                        p5=strtok (NULL, delimiters);
+
+                        angles_temp[0]=atoi(p1);
+                        angles_temp[1]=atoi(p2);
+                        angles_temp[2]=atoi(p3);
+                        angles_temp[3]=atoi(p4);
+                        angles_temp[4]=atoi(p5);
+
+						LastGoal[0] = angles_temp[0];
+						LastGoal[1] = angles_temp[1];
+						LastGoal[2] = angles_temp[2];
+						LastGoal[3] = angles_temp[3];
+						LastGoal[4] = angles_temp[4];
+
+                        printf("CommandedAngles: %i %i %i %i %i\n", angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+
+                        //getNormalizedInput(mapped[BASE_POSITION_AT]) / JointsCal[0];
+
+                        /*
+                        angles_temp[0] = (int)((double)atoi(p1) * JointsCal[0]) + getNormalizedInput(BASE_POSITION_AT);
+                        angles_temp[1] = (int)((double)atoi(p3) * JointsCal[2]) + getNormalizedInput(END_POSITION_AT);
+                        angles_temp[2] = (int)((double)atoi(p2) * JointsCal[1]) + getNormalizedInput(PIVOT_POSITION_AT);
+                        angles_temp[3] = (int)((double)atoi(p4) * JointsCal[3]) + getNormalizedInput(ANGLE_POSITION_AT);
+                        angles_temp[4] = (int)((double)atoi(p5) * JointsCal[4]) + getNormalizedInput(ROT_POSITION_AT);
+                        */
+
+						angles_temp[0] = ((int)((double)atoi(p1) - getNormalizedInput(BASE_POSITION_AT)) * JointsCal[0]);
+                        angles_temp[1] = ((int)((double)atoi(p3) - getNormalizedInput(END_POSITION_AT)) * JointsCal[2]);
+                        angles_temp[2] = ((int)((double)atoi(p2) - getNormalizedInput(PIVOT_POSITION_AT)) * JointsCal[1]);
+                        angles_temp[3] = ((int)((double)atoi(p4) - getNormalizedInput(ANGLE_POSITION_AT)) * JointsCal[3]);
+                        angles_temp[4] = ((int)((double)atoi(p5) - getNormalizedInput(ROT_POSITION_AT)) * JointsCal[4]);
+
+
+
+
+                        /*
+                        angles_temp[0] = -(int)((double)atoi(p1) * JointsCal[0]);
+                        angles_temp[1] = -(int)((double)atoi(p3) * JointsCal[2]);
+                        angles_temp[2] = -(int)((double)atoi(p2) * JointsCal[1]);
+                        angles_temp[3] = -(int)((double)atoi(p4) * JointsCal[3]);
+                        angles_temp[4] = -(int)((double)atoi(p5) * JointsCal[4]);
+                        */
+
+                        printf("CommandedAngles: %i %i %i %i %i (steps)\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+                        mapped[COMMAND_REG]= CMD_MOVEEN | CmdVal;
+                        KeyholeSend(angles_temp, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
+                        mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0x80000000; //sets mux to read from commanded angles keyhole
+                        mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0xC0000000; //triggers the add
+                        mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal;
+
+					}else {
 						p2=strtok (NULL, delimiters);
 						p3=strtok (NULL, delimiters);
 						p4=strtok (NULL, delimiters);
@@ -5274,19 +5436,86 @@ int main(int argc, char *argv[]) {
 	else { printf("Failed to load LinkLengths.txt Error # %d\n", errno); }
 
 // Load StartPosition.txt file into SP array
-	wfp = fopen("/srv/samba/share/StartPosition.txt", "r");
+	int HexValue;
+	FILE *CentersFile;
+	CentersFile = fopen("AxisCal.txt", "rs");
+	if(CentersFile!=NULL)
+	{
+		fscanf(CentersFile, "%f", &JointsCal[0]);
+		fscanf(CentersFile, "%f", &JointsCal[1]);
+		fscanf(CentersFile, "%f", &JointsCal[2]);
+		fscanf(CentersFile, "%f", &JointsCal[3]);
+		fscanf(CentersFile, "%f", &JointsCal[4]);
+		fscanf(CentersFile, "%i", &HexValue);
+        //printf("Reading AxisCal.txt. HexValue = %d\n", HexValue);
+		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
+		fclose(CentersFile);
+	}
+
+
+    //Start Position code:
+    int reset_StartPosition = 1; // 1 = reset, 0 = do not reset
+
+	wfp = fopen("/srv/samba/share/StartPosition_CommandedAngles.txt", "r");
+
 	if (wfp) {
-		printf("Start Positions: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &SP[0], &SP[1], &SP[2], &SP[3], &SP[4]));
-		printf(" %lf, %lf, %lf, %lf, %lf \n", SP[0], SP[1], SP[2], SP[3], SP[4]);
+		printf("CommandedAngles Start Positions: Loaded %d. Values: ", fscanf(wfp, "[%i, %i, %i, %i, %i]", &SP_CommandedAngles[0], &SP_CommandedAngles[1], &SP_CommandedAngles[2], &SP_CommandedAngles[3], &SP_CommandedAngles[4]));
+		printf("[%i, %i, %i, %i, %i]\n", SP_CommandedAngles[0], SP_CommandedAngles[1], SP_CommandedAngles[2], SP_CommandedAngles[3], SP_CommandedAngles[4]);
 		fclose(wfp);
 		wfp = 0;
-		}
-	else { printf("Failed to load StartPosition.txt Error # %d\n", errno); }
+    }else {
+        printf("Failed to load StartPosition.txt Error # %d\n", errno);
+        reset_StartPosition = 0;
+    }
 
+
+    wfp = fopen("/srv/samba/share/StartPosition_EyeNumbers.txt", "r");
+	if (wfp) {
+		printf("EyeNumbers Start Positions: Loaded %d. Values: ", fscanf(wfp, "[%i, %i, %i, %i, %i]", &SP_EyeNumbers[0], &SP_EyeNumbers[1], &SP_EyeNumbers[2], &SP_EyeNumbers[3], &SP_EyeNumbers[4]));
+		printf("[%i, %i, %i, %i, %i]\n", SP_EyeNumbers[0], SP_EyeNumbers[1], SP_EyeNumbers[2], SP_EyeNumbers[3], SP_EyeNumbers[4]);
+		fclose(wfp);
+		wfp = 0;
+	}else {
+        printf("Failed to load StartPosition.txt Error # %d\n", errno);
+        reset_StartPosition = 0;
+    }
+
+    wfp = fopen("/srv/samba/share/StartPosition_RawEncoders.txt", "r");
+	if (wfp) {
+		printf("CommandedRawEncoders Angles Start Positions: Loaded %d. Values: ", fscanf(wfp, "[%i, %i, %i, %i, %i]", &SP_RawEncoders[0], &SP_RawEncoders[1], &SP_RawEncoders[2], &SP_RawEncoders[3], &SP_RawEncoders[4]));
+		printf("[%i, %i, %i, %i, %i]\n", SP_RawEncoders[0], SP_RawEncoders[1], SP_RawEncoders[2], SP_RawEncoders[3], SP_RawEncoders[4]);
+		fclose(wfp);
+		wfp = 0;
+	}else {
+        printf("Failed to load StartPosition.txt Error # %d\n", errno);
+        reset_StartPosition = 0;
+    }
+
+    if(reset_StartPosition){
+        printf("Resetting StartPosition\n");
+        sprintf(iString, "S, EyeNumbers, %d, %d, %d, %d, %d;", SP_EyeNumbers[0], SP_EyeNumbers[1], SP_EyeNumbers[2], SP_EyeNumbers[3], SP_EyeNumbers[4]);
+        ParseInput(iString);
+        //sprintf(iString, "F;");
+        //ParseInput(iString);
+        sprintf(iString, "w, 42, 256;");
+        ParseInput(iString);
+        sprintf(iString, "w, 42, 0;");
+        ParseInput(iString);
+        sprintf(iString, "S, CommandedAngles, %d, %d, %d, %d, %d;", SP_CommandedAngles[0], SP_CommandedAngles[1], SP_CommandedAngles[2], SP_CommandedAngles[3], SP_CommandedAngles[4]);
+        ParseInput(iString);
+    }else{
+        printf("Not resetting StartPosition: Could not find files.\n");
+    }
 
 //  Addr= = atoi(argv[3]);
 //  Dta= = atoi(argv[4]);
 //  mapped[Addr] = Dta;
+
+    wfp = fopen("/srv/samba/share/BootDance_IP_0.make_ins", "w");
+	fprintf(wfp, "; This dance is written by DexRun.c on bootup\n; The angles are set to the values in StartPosition_CommandedAngles.txt\na %d %d %d %d %d;",SP_CommandedAngles[0], SP_CommandedAngles[1], SP_CommandedAngles[2], SP_CommandedAngles[3], SP_CommandedAngles[4]);
+	fclose(wfp);
+	wfp = 0;
+
 	setDefaults(DefaultMode);
 	//strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
 	//printf("Starting %s returned %d\n",iString, ParseInput(iString));
