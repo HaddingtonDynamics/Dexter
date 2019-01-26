@@ -2104,7 +2104,7 @@ void UnloadUART(unsigned char* RxBuffer,int length)
 {
 	int i;
 	unsigned char RecData;
-	for(i = 0;i < length + 11; i++)
+	for(i = 0;i < length; i++)
 	{
 		mapped[UART1_XMIT_CNT] = 16; // generate next data pull
 		RecData = mapped[UART_DATA_IN];
@@ -2119,54 +2119,55 @@ void UnloadUART(unsigned char* RxBuffer,int length)
 void SendGoalSetPacket(int newPos, unsigned char servo)
 {
  	//int i;
-  	unsigned char RxBuf[20];
+  	unsigned char RxBuf[27];
   	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x03, 30, 0, newPos & 0x00ff, (newPos >> 8) & 0x00ff, 0, 0};
   	unsigned short crcVal;
+	//printf("Calculate CRC\n");
   	crcVal = update_crc(0, TxPacket, 12);
   	TxPacket[12]=crcVal & 0x00ff;
   	TxPacket[13]=(crcVal >> 8) & 0x00ff;
  
-
-	SendPacket(TxPacket, 14, CalcUartTimeout(14 + 14),RxBuf, 16);  // send time plus receive time in bytes transacted
+	//printf("Packet ready\n");
+	SendPacket(TxPacket, sizeof(TxPacket), CalcUartTimeout(14 + 14),RxBuf, sizeof(RxBuf));  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
 }
 void SendWrite2Packet(int WData, unsigned char servo, int WAddres)
 {
  	int i;
-  	unsigned char RxBuf[20];
+  	unsigned char RxBuf[27];
   	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x03, WAddres & 0x00ff, (WAddres >> 8) & 0x00ff, WData & 0x00ff, (WData >> 8) & 0x00ff, 0, 0};
   	unsigned short crcVal;
   	crcVal = update_crc(0, TxPacket, 12);
   	TxPacket[12]=crcVal & 0x00ff;
   	TxPacket[13]=(crcVal >> 8) & 0x00ff;
 
-	SendPacket(TxPacket, 14, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, sizeof(TxPacket), CalcUartTimeout(14 + 14),RxBuf, sizeof(RxBuf));  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
 }
 void SendWrite1Packet(unsigned char WData, unsigned char servo, int WAddres)
 {
  	int i;
-  	unsigned char RxBuf[20];
+  	unsigned char RxBuf[27];
   	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x06, 0x00, 0x03, WAddres & 0x00ff, (WAddres >> 8) & 0x00ff, WData, 0, 0};
   	unsigned short crcVal;
   	crcVal = update_crc(0, TxPacket, 11);
   	TxPacket[11]=crcVal & 0x00ff;
   	TxPacket[12]=(crcVal >> 8) & 0x00ff;
 
-	SendPacket(TxPacket, 13, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, sizeof(TxPacket), CalcUartTimeout(14 + 14),RxBuf, sizeof(RxBuf));  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
 }
 void RebootServo(unsigned char servo)
 {
  	int i;
-  	unsigned char RxBuf[20];
+  	unsigned char RxBuf[27];
   	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x03, 0x00, 0x08, 0, 0};
   	unsigned short crcVal;
   	crcVal = update_crc(0, TxPacket, 8);
   	TxPacket[8]=crcVal & 0x00ff;
   	TxPacket[9]=(crcVal >> 8) & 0x00ff;
 
-	SendPacket(TxPacket, 10, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, sizeof(TxPacket), CalcUartTimeout(14 + 14),RxBuf, sizeof(RxBuf));  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
 }
 
@@ -2223,7 +2224,7 @@ void SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int 
 
 #endif
 
-	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5),RxBuffer, length+7);  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5),RxBuffer, length);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,Length + 7); // TODO refine actual size
 }
 
@@ -2255,12 +2256,12 @@ void *RealtimeMonitor(void *arg)
 {
 	int* ExitState = arg;
 	int i,j,ForceDelta,disTime=0;
-	unsigned char ServoRx[64];
+	unsigned char ServoRx[39];
 	while(*ExitState)
 	{
 
 
-		SendReadPacket(ServoRx, 3,30,21);
+		SendReadPacket(ServoRx, 3,30,sizeof(ServoRx));
 		ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
 		ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
 		ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
@@ -2273,7 +2274,7 @@ void *RealtimeMonitor(void *arg)
 		//printf("Servo Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
 
 
-		SendReadPacket(ServoRx, 1,30,21);
+		SendReadPacket(ServoRx, 1,30,sizeof(ServoRx));
 		ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
 		ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
 		ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
@@ -3087,6 +3088,7 @@ void setDefaults(int State)
 		fscanf(CentersFile, "%f", &JointsCal[3]);
 		fscanf(CentersFile, "%f", &JointsCal[4]);
 		fscanf(CentersFile, "%i", &HexValue);
+        //printf("Reading AxisCal.txt. HexValue = %d\n", HexValue);
 		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
 		fclose(CentersFile);
 	}
@@ -3452,8 +3454,7 @@ void moverobotPID(int a1,int a2,int a3,int a4,int a5)
 	a3=(int)((double)a3 * JointsCal[2]);
 	a4=(int)((double)a4 * JointsCal[3]);
 	a5=(int)((double)a5 * JointsCal[4]);
-
-	printf("PID move %i %i %i %i %i %i \n",a1,a3,a2,a4,a5);
+	//printf("PID move %d %d %d %d %d %d \n",a1,a3,a2,a4,a5);
 
 	FineAdjust[0]=a1;
 	FineAdjust[1]=a3;
@@ -3486,7 +3487,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	a5=a5-b5;
 	//printf("\nPlayback position %d %d %d %d %d",b1,b2,b3,b4,b5);
 */
-	////printf("\nStart wait Goal");
+	//printf("Start wait Goal\n");
 //	332800
 //	166400
 //	0.25679012345679012345679012345679
@@ -3532,9 +3533,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
     };
 
     printf("major delta step: J%d delta: %f (abs steps)  delta: %f (abs deg)\n", j_step+1, cur_max_step, -cur_max_step / JointsCal[j_step] / 3600);
-	
 
-    
     test_angle_deg[0] = abs((double)(a1 - LastGoal[0]));
     if(test_angle_deg[0] > cur_max_deg){
         cur_max_deg = test_angle_deg[0];
@@ -3570,7 +3569,6 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	LastGoal[4]=a5;
 
 	//printf("LastGoal set: [%d, %d, %d, %d, %d]\n", LastGoal[0], LastGoal[1], LastGoal[2], LastGoal[3], LastGoal[4]);
-
 	a1=(int)((double)a1 * JointsCal[0]);
 	a2=(int)((double)a2 * JointsCal[1]);
 	a3=(int)((double)a3 * JointsCal[2]);
@@ -3587,8 +3585,8 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 
 	while((mapped[CMD_FIFO_STATE] & 0x01) != 0); //This was commented out for some reason in commit: https://github.com/HaddingtonDynamics/Dexter/commit/1ca9251b47468d9841713ec89b62e91050125188
 
-    
 
+	
 	//printf("Largest displacement: J%d, %f\n", j, cur_max);
     //Actually adding the speed change to the queue:
     int new_StartSpeed;
@@ -3598,7 +3596,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
     new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_deg] / JointsCal[j_step])));
     new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_deg] / JointsCal[j_step])));
     */
-    
+	
     /*
     new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_step] / JointsCal[j_deg])));
     new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle * (JointsCal[j_step] / JointsCal[j_deg])));
@@ -3626,7 +3624,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
         printf("j_step < 3 && j_deg > 2 is false\n");
     }
     */
-    
+	
 
     if(1 > new_StartSpeed){new_StartSpeed = 1;} //Anything less than 1 will cause infinite loop. Consider error code for this.
     mapped[START_SPEED] = 500 ^ new_StartSpeed; // Start speed is defaulted in the FPGA to 500   
@@ -3769,7 +3767,7 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	
 
 	printf("CartesianSpeed: %i\n", CartesianSpeed);
-	
+
 	int num_div_cart = 1;
 	int num_div_pivot = 1;
 	struct Vector U1 = xyz_1.position;
@@ -3911,7 +3909,7 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	}else{
         printf("diff_xyz: %i, diff_normal: %i", diff_xyz, diff_normal);
     }
-	
+
 
 	//printf("cal_max_angular_velocity = %i", cal_max_angular_velocity);
 	printf("\nMoveRobotStraight movement complete\n");
@@ -4249,8 +4247,6 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 						break;
 						case 48:
 							CartesianPivotStepSize = a2;
-						break;
-
                         case 49:
 							//EyeNumbers
 						break;
@@ -4278,7 +4274,7 @@ int MoveRobotRelative(int a1,int a2,int a3,int a4,int a5, int mode)
 	b4=getNormalizedInput(ANGLE_POSITION_AT);
 	b5=getNormalizedInput(ROT_POSITION_AT);
 	
-	printf("MoveRealative relative to %d %d %d %d %d",b1,b2,b3,b4,b5);
+	printf("Relative move relative to: %d %d %d %d %d\n",b1,b2,b3,b4,b5);
 	return MoveRobot(a1+b1,a2+b2,a3+b3,a4+b4,a5+b5,mode);
 }
 
@@ -4677,7 +4673,7 @@ void ReplayMovement(char *FileName)
 
 int getInput(void)
 {
-	if(gets(iString)!=NULL)
+	if(fgets(iString,sizeof(iString),stdin)!=NULL)
 	{
 		return ParseInput(iString);
 	}
@@ -4722,14 +4718,16 @@ int ParseInput(char *iString)
 	int d3,d4,d5;
 	float f1;
 	////printf("\nStart wait Goal");
-	printf("ParseInput: %s\n", iString);
+	//printf("ParseInput: %s\n", iString);
 	if(iString !=NULL)
 	{
 		token = strtok (iString, delimiters);
 		if (token !=NULL)
 		{
 			tokenVal=HashInputCMD(token);
-			////printf("Token %s TokenVal %i",token,tokenVal);
+#ifdef DEBUG_API
+			printf("Token %s TokenVal %i",token,tokenVal);
+#endif
 		}
 		else
 			return 1;
@@ -4804,8 +4802,7 @@ int ParseInput(char *iString)
 				break; 
 				case SET_PARAM :
 					p1=strtok (NULL, delimiters);
-					
-                    printf("SET_PARAM: %s\n", p1);
+					printf("SET_PARAM: %s\n", p1);
 					if (!strcmp("RunFile",p1)) {
 						p2 = strtok (NULL, delimiters);
 						fp = fopen(p2, "r");
@@ -4824,10 +4821,12 @@ int ParseInput(char *iString)
 								} while (p3);
 							fclose(fp);
 							printf("Done\n");
-						}else { 
+							}
+						else { 
 							printf("Failed to load %s Error # %d %s\n", p2, errno, strerror(errno)); 
 							return errno;
-						}
+							}
+                    
 					}else if (!strcmp("Ctrl",p1)) {
 						while ((p1 = strtok(NULL,ctrldelims))) {
 							printf("key %s\n",p1);
@@ -4926,7 +4925,7 @@ int ParseInput(char *iString)
 						p6=strtok (NULL, delimiters);
 						fp=fopen("StartPosition.txt", "w");
 						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
-						fclose (fp);   
+						fclose (fp);
                     }else if (!strcmp("EyeNumbers",p1)){
                         //Read new register
                         p1=strtok (NULL, delimiters);
@@ -5136,6 +5135,7 @@ int ParseInput(char *iString)
 					}
 				break;
 				case MOVEALL_CMD :
+					//printf("\nMOVEALL_CMD\n");
 					p1=strtok (NULL, delimiters);
 					p2=strtok (NULL, delimiters);
 					p3=strtok (NULL, delimiters);
@@ -5151,7 +5151,7 @@ int ParseInput(char *iString)
 					//if(p7 != NULL){ printf("p7 %s\n",p7); }
 					//else{ printf("p7 doesn't exist\n"); }
 					
-					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)						
+					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)	
 						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
 				break; 
 				
@@ -5160,7 +5160,7 @@ int ParseInput(char *iString)
 				/* Start Wigglesworth Code*/
 				
 				case MOVETO_CMD:
-					printf("\nMOVETO_CMD\n");
+					//printf("\nMOVETO_CMD\n");
 					//MoveRobot(36000, 36000, 36000, 36000, 36000, BLOCKING_MOVE);
 					
 					p1 = strtok(NULL, delimiters);
@@ -5468,7 +5468,7 @@ int main(int argc, char *argv[]) {
         reset_StartPosition = 0;
     }
 
-
+	
     wfp = fopen("/srv/samba/share/StartPosition_EyeNumbers.txt", "r");
 	if (wfp) {
 		printf("EyeNumbers Start Positions: Loaded %d. Values: ", fscanf(wfp, "[%i, %i, %i, %i, %i]", &SP_EyeNumbers[0], &SP_EyeNumbers[1], &SP_EyeNumbers[2], &SP_EyeNumbers[3], &SP_EyeNumbers[4]));
@@ -5523,46 +5523,48 @@ int main(int argc, char *argv[]) {
 //	if(DefaultMode ==2 )
 	if(ServerMode==1)
 	{
-	
+		printf("\nStarting raw socket");	
 		err = pthread_create(&(tid[0]), NULL, &StartServerSocket,  (void*)&ThreadsExit);
 		if (err != 0)
 		{
-			//printf("\ncan't create thread :[%s]", strerror(err));
+			printf("\ncan't create thread :[%s]", strerror(err));
 			return 1;
 		}
 		else
 		{
-			//printf("\n Begin Socket Server Thread\n");
+			printf("\n Begin Socket Server Thread\n");
 		}
 	}
 	else if(ServerMode==2)
 	{
-	
+		printf("\nStarting client socket");
 		err = pthread_create(&(tid[1]), NULL, &StartClientSocket, NULL);
 		if (err != 0)
 		{
-			//printf("\ncan't create thread :[%s]", strerror(err));
+			printf("\ncan't create thread :[%s]", strerror(err));
 			return 1;
 		}
 		else
 		{
-			//printf("\n Begin Socket Client Thread\n");
+			printf("\n Begin Socket Client Thread\n");
 		}
 	}
 	else if(ServerMode==3)
 	{
+		printf("Starting DDE socket\n");
 		if(mapped[SENT_BASE_POSITION]!=0)
 		{
 	   		munmap(map_addr, size);
 			munmap(map_addrCt, CalTblSize);
  			close(fd);
 			close(mfd);
+			printf("Sent base position NOT zero\n");
 			return 0;   
 		}
 		//mapped[BASE_POSITION]=1;
     	#ifndef NO_BOOT_DANCE
 		
-		
+		printf("Boot Dance\n");
 		/*
 		//Wigglesworth Code Start
 		int DEFAULT_MAXSPEED = 232642; // 30 (deg/s)
@@ -5599,6 +5601,8 @@ int main(int argc, char *argv[]) {
 		int ip_b = 0;
 		int ip_c = 0;
 		const char delimiters[] = " .\t";
+
+		printf("IP Dance\n");
 		wfp = fopen("/etc/network/interfaces", "r");
 		while(fgets(iString, ISTRING_LEN, wfp) != NULL && i < 20) {
 			if((strstr(iString, "address 192.168.")) != NULL) {
@@ -5648,11 +5652,11 @@ int main(int argc, char *argv[]) {
 
 				//printf("First: %i, Second: %i, Third: %i\n", ip_a, ip_b, ip_c);
 
-				/*
-				for(i = 0; i < 5; i++){
-					token = strtok(NULL, delimiters);
-					printf("%s\n", token);
-				}*/
+				
+				//for(i = 0; i < 5; i++){
+				//	token = strtok(NULL, delimiters);
+				//	printf("%s\n", token);
+				//}
 
 				break;
 
@@ -5684,10 +5688,11 @@ int main(int argc, char *argv[]) {
 		*/
 
 	    #endif	
+		printf("Start thread\n");
 		err = pthread_create(&(tid[0]), NULL, &StartServerSocketDDE,  (void*)&ThreadsExit);
 		if (err != 0)
 		{
-			//printf("\ncan't create thread :[%s]", strerror(err));
+			printf("can't create thread :[%s]\n", strerror(err));
 			return 1;
 		}
 		else
@@ -5699,15 +5704,16 @@ int main(int argc, char *argv[]) {
 	}
 	if(RunMode==1 || RunMode==2)
 	{
+		printf("start realtime monitor thread\n");
 		err = pthread_create(&(tid[2]), NULL, &RealtimeMonitor, (void*)&ThreadsExit );
 		if (err != 0)
 		{
-			//printf("\ncan't create thread :[%s]", strerror(err));
+			printf("\ncan't create thread :[%s]\n", strerror(err));
 			return 1;
 		}
 		else
 		{
-			//printf("\n Begin Realtime Monitor Thread\n");
+			printf("\n Begin Realtime Monitor Thread\n");
 		}		
 	}
 
@@ -5715,6 +5721,7 @@ int main(int argc, char *argv[]) {
 	
     if(ServerMode==3)
 	{
+		printf("Going to sleep\n");
 		while(1){sleep(1);} //loop forever TODO: Add a sleep in this loop
 	}
 	while(getInput()==0);
@@ -5722,7 +5729,7 @@ int main(int argc, char *argv[]) {
 	sleep(1);
 
 
-	//printf("\nExiting \n");
+	printf("\nExiting \n");
 
     munmap(map_addr, size);
     munmap(map_addrCt, CalTblSize);
