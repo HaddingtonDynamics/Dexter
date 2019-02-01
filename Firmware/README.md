@@ -1,3 +1,5 @@
+# Firmware
+
 For more information on the Firmware system, please see the [Firmware page on the Wiki](https://github.com/HaddingtonDynamics/Dexter/wiki/Firmware).
 
 Note that updated versions of DexRun.c may not be able to support new features in the Gateware unless the drive image is updated. For example, the 6 and 7th access (twist and grip of end effector on new tool interface) requires an interface to the servos which is implemented in the FPGAs and so needs an updated image. 
