@@ -2224,7 +2224,7 @@ void SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int 
 
 #endif
 
-	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5),RxBuffer, length);  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5),RxBuffer, length+7);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,Length + 7); // TODO refine actual size
 }
 
@@ -2256,12 +2256,12 @@ void *RealtimeMonitor(void *arg)
 {
 	int* ExitState = arg;
 	int i,j,ForceDelta,disTime=0;
-	unsigned char ServoRx[39];
+	unsigned char ServoRx[64];
 	while(*ExitState)
 	{
 
 
-		SendReadPacket(ServoRx, 3,30,sizeof(ServoRx));
+		SendReadPacket(ServoRx, 3,30,21);
 		ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
 		ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
 		ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
@@ -2274,7 +2274,7 @@ void *RealtimeMonitor(void *arg)
 		//printf("Servo Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
 
 
-		SendReadPacket(ServoRx, 1,30,sizeof(ServoRx));
+		SendReadPacket(ServoRx, 1,30,21);
 		ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
 		ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
 		ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
