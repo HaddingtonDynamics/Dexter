@@ -106,13 +106,23 @@ date -s "5mar18 21:30"			(change to current date)
 pkill DexRun
 ````
 
+You can check to see if DexRun is active with:
+````
+pgrep DexRun
+````
+if it returns a number, that's the program ID of DexRun. If no number is returned, then DexRun is not running.
 
 **Run the new program**
 <br>You can run it from the command line, or just restart Dexter to run it via the rc.local file.
 ```
-./DexRun 1 3 0
+./DexRun 1 3 1
 ```
+DefaultMode: The first digit controls default settings. A value of 1 loads the default speeds, PID_Ps, AdcCenters.txt, caltables form HiMem.dta, etc... 0 leaves those settings in an unknown state.
 
+ServerMode: The second digit controls where DexRun looks for commands. 1 = a socket connection on part 50000 expecting raw joint position data, 2 = the command line expecting oplets, 3 = a socket connection on port 50000 expecting commands from DDE with job, seq, start and ends times, an oplet, and a terminating ';'. 
+
+RunMode: The third digit enables a real time monitor. 1 or 2 will start the monitor. The monitor gets position data from the Joint 6 and 7 servos and enables force calculations. Without it, the actual positions of Joint 6 and 7 positions will not be sensed, although they can still be moved. 
+        
 **Debugging notes**
 <br>1. printf's used for debugging don't show up until a `\n` is sent. E.g. `printf("hello");` shows nothing at all. `printf(" world\n");` then shows "hello world"
 <br>2. printfs slow down network communications when DexRun is not running from the shell. e.g. When it is run on startup from rc.local, any printf's will cause a delay to replies while the system times out waiting for the message to print to nothing. Use sparingly and avoid in areas where speed is critical.
