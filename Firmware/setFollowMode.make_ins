@@ -1,0 +1,28 @@
+w, 55, 8; DIFF_FORCE_SPEED_FACTOR_ANGLE
+w, 56, 8; DIFF_FORCE_SPEED_FACTOR_ROT
+w, 20, 0; PID_P
+w, 21, 3; PID_ADDRESS
+w, 21, 4; PID_ADDRESS
+w, 21, 0; PID_ADDRESS
+w, 21, 1; PID_ADDRESS
+w, 21, 2; PID_ADDRESS
+w, 27, 30; SPEED_FACTORA
+S, J1Friction, 5;
+S, J2Friction, 5;
+S, J3Friction, 5;
+S, J4Friction, 15;
+S, J5Friction, 15;
+w, 67, 0; BASE_FORCE_DECAY
+w, 68, 0; END_FORCE_DECAY
+w, 69, 0; PIVOT_FORCE_DECAY
+w, 70, 0; ANGLE_FORCE_DECAY
+w, 71, 0; ROTATE_FORCE_DECAY
+w, 51, 140000; DIFF_FORCE_TIMEBASE
+w, 54, 200000; DIFF_FORCE_MAX_SPEED
+w, 79, 250; PID Timebase Divisor
+w, 80, 250; Physics J123 Timebase Divisor
+w, 81, 250; Physics J45 Timebase Divisor
+w, 42, 12448; COMMAND_REG: EnableLoop, CAL_RUN, AngleEnable, RotEnable
+S, ResetServo, 1; Reset Span Servo
+S, ResetServo, 3; Reset Roll Servo
+
