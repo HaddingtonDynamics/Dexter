@@ -1,7 +1,7 @@
 //#define NO_BOOT_DANCE
 //#define DEBUG_API
 //#define DEBUG_XL320_UART
-// this is the TinyDuinoIntegration
+// this is the SpeetsUpdate code
 
 
 #include <stddef.h>
@@ -2104,7 +2104,7 @@ void UnloadUART(unsigned char* RxBuffer,int length)
 {
 	int i;
 	unsigned char RecData;
-	for(i = 0;i < length; i++)
+	for(i = 0;i < length + 11; i++)
 	{
 		mapped[UART1_XMIT_CNT] = 16; // generate next data pull
 		RecData = mapped[UART_DATA_IN];
@@ -2128,7 +2128,7 @@ void SendGoalSetPacket(int newPos, unsigned char servo)
   	TxPacket[13]=(crcVal >> 8) & 0x00ff;
  
 	//printf("Packet ready\n");
-	SendPacket(TxPacket, sizeof(TxPacket), CalcUartTimeout(14 + 14),RxBuf, sizeof(RxBuf));  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + 14),RxBuf, 16);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
 }
 void SendWrite2Packet(int WData, unsigned char servo, int WAddres)
@@ -2141,7 +2141,7 @@ void SendWrite2Packet(int WData, unsigned char servo, int WAddres)
   	TxPacket[12]=crcVal & 0x00ff;
   	TxPacket[13]=(crcVal >> 8) & 0x00ff;
 
-	SendPacket(TxPacket, sizeof(TxPacket), CalcUartTimeout(14 + 14),RxBuf, sizeof(RxBuf));  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
 }
 void SendWrite1Packet(unsigned char WData, unsigned char servo, int WAddres)
@@ -2154,7 +2154,7 @@ void SendWrite1Packet(unsigned char WData, unsigned char servo, int WAddres)
   	TxPacket[11]=crcVal & 0x00ff;
   	TxPacket[12]=(crcVal >> 8) & 0x00ff;
 
-	SendPacket(TxPacket, sizeof(TxPacket), CalcUartTimeout(14 + 14),RxBuf, sizeof(RxBuf));  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, 13, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
 }
 void RebootServo(unsigned char servo)
@@ -2167,7 +2167,7 @@ void RebootServo(unsigned char servo)
   	TxPacket[8]=crcVal & 0x00ff;
   	TxPacket[9]=(crcVal >> 8) & 0x00ff;
 
-	SendPacket(TxPacket, sizeof(TxPacket), CalcUartTimeout(14 + 14),RxBuf, sizeof(RxBuf));  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, 10, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
 }
 
@@ -2267,11 +2267,9 @@ void *RealtimeMonitor(void *arg)
 		ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
 		ServoData[0].error = ServoRx[29];
 
-		//printf("\nRaw 16 %x %d \n",ServoRx[16],ServoRx[16]);
-		//printf("Raw 17 %x %d \n",ServoRx[17],ServoRx[17]);
-
-		
-		//printf("Servo Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
+		//printf("\nRaw 16:%x %d ",ServoRx[16],ServoRx[16]);
+		//printf(" 17:%x %d ",ServoRx[17],ServoRx[17]);
+		//printf(" Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
 
 
 		SendReadPacket(ServoRx, 1,30,21);
@@ -3265,7 +3263,7 @@ void setDefaults(int State)
 			#endif
 			*/
 			#ifndef NO_BOOT_DANCE
-			strlcpy(iString, "S RunFile BootDance_setDefaults_is_1.make_ins ;\0", ISTRING_LEN);
+			strlcpy(iString, "S RunFile BootDance_setDefaults.make_ins ;\0", ISTRING_LEN);
 			printf("Starting %s returned %d\n",iString, ParseInput(iString));
 			#endif
 		}
@@ -3454,6 +3452,7 @@ void moverobotPID(int a1,int a2,int a3,int a4,int a5)
 	a3=(int)((double)a3 * JointsCal[2]);
 	a4=(int)((double)a4 * JointsCal[3]);
 	a5=(int)((double)a5 * JointsCal[4]);
+
 	//printf("PID move %d %d %d %d %d %d \n",a1,a3,a2,a4,a5);
 
 	FineAdjust[0]=a1;
@@ -3534,6 +3533,8 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 
     printf("major delta step: J%d delta: %f (abs steps)  delta: %f (abs deg)\n", j_step+1, cur_max_step, -cur_max_step / JointsCal[j_step] / 3600);
 
+
+
     test_angle_deg[0] = abs((double)(a1 - LastGoal[0]));
     if(test_angle_deg[0] > cur_max_deg){
         cur_max_deg = test_angle_deg[0];
@@ -3569,6 +3570,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	LastGoal[4]=a5;
 
 	//printf("LastGoal set: [%d, %d, %d, %d, %d]\n", LastGoal[0], LastGoal[1], LastGoal[2], LastGoal[3], LastGoal[4]);
+
 	a1=(int)((double)a1 * JointsCal[0]);
 	a2=(int)((double)a2 * JointsCal[1]);
 	a3=(int)((double)a3 * JointsCal[2]);
@@ -4247,6 +4249,8 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 						break;
 						case 48:
 							CartesianPivotStepSize = a2;
+						break;
+
                         case 49:
 							//EyeNumbers
 						break;
@@ -4388,12 +4392,8 @@ int RestoreCalTables(char *FileName)
 			//printf(" size good %d %d",readSize ,Length);
 			#ifndef NO_BOOT_DANCE
 
-			/*
-			MoveRobot(50000,50000,50000,5000,5000,BLOCKING_MOVE);
-			MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
-			*/
-			//strlcpy(iString, "S RunFile BootDance_RestoreCalTable_Succesful.make_ins ;\0", ISTRING_LEN);
-			//printf("Starting %s returned %d\n",iString, ParseInput(iString));
+			strlcpy(iString, "S RunFile BootDance_RestoredCalTable.make_ins ;\0", ISTRING_LEN);
+			printf("Starting %s returned %d\n",iString, ParseInput(iString));
 
 			#endif
 		}
@@ -4718,7 +4718,9 @@ int ParseInput(char *iString)
 	int d3,d4,d5;
 	float f1;
 	////printf("\nStart wait Goal");
-	//printf("ParseInput: %s\n", iString);
+#ifdef DEBUG_API
+	printf("ParseInput: %s\n", iString);
+#endif
 	if(iString !=NULL)
 	{
 		token = strtok (iString, delimiters);
@@ -4802,6 +4804,7 @@ int ParseInput(char *iString)
 				break; 
 				case SET_PARAM :
 					p1=strtok (NULL, delimiters);
+
 					printf("SET_PARAM: %s\n", p1);
 					if (!strcmp("RunFile",p1)) {
 						p2 = strtok (NULL, delimiters);
@@ -5517,8 +5520,8 @@ int main(int argc, char *argv[]) {
 	wfp = 0;
 
 	setDefaults(DefaultMode);
-	//strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
-	//printf("Starting %s returned %d\n",iString, ParseInput(iString));
+	strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
+	printf("Starting %s returned %d\n",iString, ParseInput(iString));
 	
 //	if(DefaultMode ==2 )
 	if(ServerMode==1)
@@ -5591,8 +5594,8 @@ int main(int argc, char *argv[]) {
 	    MoveRobot(0,0,0,0,0,BLOCKING_MOVE);
 		*/
 
-		//strlcpy(iString, "S RunFile BootDance_ServerMode==3.make_ins ;\0", ISTRING_LEN);
-		//printf("Starting %s returned %d\n",iString, ParseInput(iString));
+		strlcpy(iString, "S RunFile BootDance_ServerMode3.make_ins ;\0", ISTRING_LEN);
+		printf("Starting %s returned %d\n",iString, ParseInput(iString));
 		char *token;
 		int i = 0;
 		int ip_last = 0;
@@ -5695,26 +5698,17 @@ int main(int argc, char *argv[]) {
 			printf("can't create thread :[%s]\n", strerror(err));
 			return 1;
 		}
-		else
-		{
-			//strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
-			//printf("Starting %s returned %d\n",iString, ParseInput(iString));
-			//printf("\n Begin Socket Server Thread For DDE\n");
-		}
+
 	}
 	if(RunMode==1 || RunMode==2)
 	{
-		printf("start realtime monitor thread\n");
+		printf("Start realtime monitor thread\n");
 		err = pthread_create(&(tid[2]), NULL, &RealtimeMonitor, (void*)&ThreadsExit );
 		if (err != 0)
 		{
 			printf("\ncan't create thread :[%s]\n", strerror(err));
 			return 1;
-		}
-		else
-		{
-			printf("\n Begin Realtime Monitor Thread\n");
-		}		
+		}	
 	}
 
 	
@@ -5733,9 +5727,6 @@ int main(int argc, char *argv[]) {
 
     munmap(map_addr, size);
     munmap(map_addrCt, CalTblSize);
-
-    strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
-    printf("Starting %s returned %d\n",iString, ParseInput(iString));
 
     close(fd);
     close(mfd);
