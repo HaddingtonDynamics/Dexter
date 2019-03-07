@@ -61,7 +61,7 @@ change "uiotest" to "DexRun" if you haven't already. It should look like this:
 #!/bin/sh
 echo "changing directory"
 cd /usr/src/xillinux/xillybus-lite/demo
-cp -f /srv/samba/share/DexRun.c .
+cp -f -p /srv/samba/share/DexRun.c .
 make
 cp -f DexRun /srv/samba/share/.
 ````
