@@ -1,11 +1,11 @@
 w, 55, 3; DIFF_FORCE_SPEED_FACTOR_ANGLE
 w, 56, 3; DIFF_FORCE_SPEED_FACTOR_ROT
 w, 27, 10; SPEED_FACTORA
-S, J1Friction, 5;
-S, J2Friction, 5;
-S, J3Friction, 5;
-S, J4Friction, 5;
-S, J5Friction, 5;
+S, J1Friction, 1;
+S, J2Friction, 1;
+S, J3Friction, 1;
+S, J4Friction, 1;
+S, J5Friction, 1;
 S, J1_PID_P, 0.2
 S, J2_PID_P, 0.2
 S, J3_PID_P, 0.2
