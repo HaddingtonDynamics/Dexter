@@ -1,0 +1,10 @@
+S, J1BoundryHigh, 540000;
+S, J1BoundryLow, -540000;
+S, J2BoundryHigh, 324000;
+S, J2BoundryLow, -324000;
+S, J3BoundryHigh, 540000;
+S, J3BoundryLow, -540000;
+S, J4BoundryHigh, 324000;
+S, J4BoundryLow, -324000;
+S, J5BoundryHigh, 504000;
+S, J5BoundryLow, -504000;
