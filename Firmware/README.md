@@ -112,7 +112,7 @@ pgrep DexRun
 ````
 if it returns a number, that's the program ID of DexRun. If no number is returned, then DexRun is not running.
 
-**Run the new program**
+#### Run the new program
 <br>You can run it from the command line, or just restart Dexter to run it via the rc.local file.
 ```
 ./DexRun 1 3 1
