@@ -1,7 +1,7 @@
 //#define NO_BOOT_DANCE
 //#define DEBUG_API
 //#define DEBUG_XL320_UART
-// this is the SpeetsUpdate code
+// this is the SpeedsUpdate code 
 
 
 #include <stddef.h>
@@ -306,25 +306,34 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define ANGLE_MEASURED_ANGLE 54 + INPUT_OFFSET
 #define ROT_MEASURED_ANGLE 55 + INPUT_OFFSET
 
+// For some reason, the joints are mapped out of order. e.g.
+// 1 -> 4
+// 2 -> 1
+// 3 -> 5
+// 4 -> 3
+// 5 -> 2
+// NOTE: THIS MAY CHANGE if the FPGA is updated
 
 // Encoder Angles (Integer portion only??)
-#define BASE_EYE_NUMBER 56 + INPUT_OFFSET
-#define END_EYE_NUMBER 57 + INPUT_OFFSET
-#define PIVOT_EYE_NUMBER 58 + INPUT_OFFSET
-#define ANGLE_EYE_NUMBER 59 + INPUT_OFFSET
-#define ROT_EYE_NUMBER 60 + INPUT_OFFSET
+#define BASE_EYE_NUMBER 59 + INPUT_OFFSET // was 56
+#define PIVOT_EYE_NUMBER 56 + INPUT_OFFSET// was 58 (not 57)
+#define END_EYE_NUMBER 60 + INPUT_OFFSET  // was 57 (not 58)
+#define ROT_EYE_NUMBER 58 + INPUT_OFFSET  // was 60
+#define ANGLE_EYE_NUMBER 57 + INPUT_OFFSET// was 59
 
-#define BASE_RAW_ENCODER_ANGLE_FXP 61 + INPUT_OFFSET
-#define END_RAW_ENCODER_ANGLE_FXP 62 + INPUT_OFFSET
-#define PIVOT_RAW_ENCODER_ANGLE_FXP 63 + INPUT_OFFSET
-#define ANGLE_RAW_ENCODER_ANGLE_FXP 64 + INPUT_OFFSET
-#define ROT_RAW_ENCODER_ANGLE_FXP 65 + INPUT_OFFSET
+#define BASE_RAW_ENCODER_ANGLE_FXP 64 + INPUT_OFFSET // was 61
+#define PIVOT_RAW_ENCODER_ANGLE_FXP 61 + INPUT_OFFSET// was 63 (not 62)
+#define END_RAW_ENCODER_ANGLE_FXP 65 + INPUT_OFFSET  // was 62 (not 63)
+#define ROT_RAW_ENCODER_ANGLE_FXP 63 + INPUT_OFFSET  // was 65
+#define ANGLE_RAW_ENCODER_ANGLE_FXP 62 + INPUT_OFFSET// was 64
 
-
-
-int OldMemMapInderection[90]={0,0,0,0,0,ACCELERATION_MAXSPEED,0,0,0,0,0,0,0,0,0,0,0,0,0,0,PID_P,PID_ADDRESS,0,0,0,0,0,SPEED_FACTORA,BETA_XYZ,0,0,0,0,0,MOVE_TRHESHOLD,F_FACTOR,MAX_ERROR,0,0,0,0,0,COMMAND_REG,
-	DMA_CONTROL,DMA_WRITE_DATA,DMA_WRITE_PARAMS,DMA_WRITE_ADDRESS,DMA_READ_PARAMS,DMA_READ_ADDRESS,REC_PLAY_CMD,REC_PLAY_TIMEBASE,MAXSPEED_XYZ,DIFF_FORCE_BETA,DIFF_FORCE_MOVE_THRESHOLD,
-	DIFF_FORCE_MAX_SPEED,DIFF_FORCE_SPEED_FACTOR_ANGLE,DIFF_FORCE_SPEED_FACTOR_ROT, EXTRUDER_CONTROL,0,0,0,0,0,0,0,0,0,    BASE_FORCE_DECAY,END_FORCE_DECAY,PIVOT_FORCE_DECAY,ANGLE_FORCE_DECAY,ROTATE_FORCE_DECAY  ,0,0,0,0,0,0,RESET_PID_AND_FLUSH_QUEUE,XYZ_FORCE_TIMEBASE,DIFFERENTIAL_FORCE_TIMEBASE,PID_TIMEBASE,0,0,0,0};
+int OldMemMapInderection[90]={0,0,0,0,0,ACCELERATION_MAXSPEED,0,0,0,0,0,0,0,0,0,0,0,0,0,0,PID_P,PID_ADDRESS,
+	0,0,0,0,0,SPEED_FACTORA,BETA_XYZ,0,0,0,0,0,MOVE_TRHESHOLD,F_FACTOR,MAX_ERROR,0,0,0,0,0,COMMAND_REG,
+	DMA_CONTROL,DMA_WRITE_DATA,DMA_WRITE_PARAMS,DMA_WRITE_ADDRESS,DMA_READ_PARAMS,DMA_READ_ADDRESS,
+	REC_PLAY_CMD,REC_PLAY_TIMEBASE,MAXSPEED_XYZ,DIFF_FORCE_BETA,DIFF_FORCE_MOVE_THRESHOLD,
+	DIFF_FORCE_MAX_SPEED,DIFF_FORCE_SPEED_FACTOR_ANGLE,DIFF_FORCE_SPEED_FACTOR_ROT, EXTRUDER_CONTROL,
+	0,0,0,0,0,0,0,0,0,BASE_FORCE_DECAY,END_FORCE_DECAY,PIVOT_FORCE_DECAY,ANGLE_FORCE_DECAY,ROTATE_FORCE_DECAY,
+	0,0,0,0,0,0,RESET_PID_AND_FLUSH_QUEUE,XYZ_FORCE_TIMEBASE,DIFFERENTIAL_FORCE_TIMEBASE,PID_TIMEBASE,0,0,0,0};
 
 
 int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
@@ -482,13 +491,14 @@ int LastGoal[5]={0,0,0,0,0};
 // Vector Library:
 #include <math.h>
 #define PI (3.141592653589793)
+//LinkLengths
 //double L[5] = { 0.1651, 0.320675, 0.3302, 0.0508, 0.08255 }; // (meters)
-double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
+//double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
+double L[5] = { 165100, 340320, 321032, 50800, 140000 }; // (microns) JW 20190312 for HD version with gripper
 //double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
 
 int SP_CommandedAngles[5] = { 0, 0, 0, 0, 0 }; // Starting Position Commanded (arcseconds)
 int SP_EyeNumbers[5] = { 0, 0, 0, 0, 0 }; // Starting Position EyeNumber (arcseconds)
-int SP_RawEncoders[5] = { 0, 0, 0, 0, 0 }; // Starting Position Raw Encoder (arcseconds)
 
 struct Vector {
 	double x, y, z;
@@ -1921,7 +1931,6 @@ struct SlaveBotPossiton{
 	int angle;
 	int rotate;	
 };
-float DiffCorrectionFactor;
 int AngleHIBoundry;
 int AngleLOWBoundry;
 int controlled=0;
@@ -1998,7 +2007,7 @@ const char* Params[] = {
 
     "EyeNumbers",
     "CommandedAngles",
-	
+	"LinkLengths"
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
@@ -2235,12 +2244,40 @@ void printPosition()
 {
 	int a1,a2,a3,a4,a5;
 	a1=getNormalizedInput(BASE_POSITION_AT)+getNormalizedInput(BASE_POSITION_FORCE_DELTA);
-	a2=getNormalizedInput(END_POSITION_AT)+getNormalizedInput(END_POSITION_FORCE_DELTA);
-	a3=getNormalizedInput(PIVOT_POSITION_AT)+getNormalizedInput(PIVOT_POSITION_FORCE_DELTA);
+	a2=getNormalizedInput(PIVOT_POSITION_AT)+getNormalizedInput(PIVOT_POSITION_FORCE_DELTA);
+	a3=getNormalizedInput(END_POSITION_AT)+getNormalizedInput(END_POSITION_FORCE_DELTA);
 	a4=getNormalizedInput(ANGLE_POSITION_AT)+getNormalizedInput(ANGLE_POSITION_FORCE_DELTA);
 	a5=getNormalizedInput(ROT_POSITION_AT)+getNormalizedInput(ROT_POSITION_FORCE_DELTA);
-	//printf(" %d,%d,%d,%d,%d\n",a1,a2,a3,a4,a5);
+	//Commanded angles
+	//printf(" %d,%d,%d,%d,%d                     \r",a1,a2,a3,a4,a5); // \r moves to start of same line
 
+	//raw encoder angles. Format is 18.14 bits fixed point. 
+	 printf("%f, %f, %f, %f, %f        \r", // \r moves to start of same line
+	 	((int)mapped[BASE_RAW_ENCODER_ANGLE_FXP] / pow(2,14)),
+	 	((int)mapped[PIVOT_RAW_ENCODER_ANGLE_FXP] / pow(2,14)),
+	 	((int)mapped[END_RAW_ENCODER_ANGLE_FXP] / pow(2,14)),
+	 	((int)mapped[ANGLE_RAW_ENCODER_ANGLE_FXP] / pow(2,14)),
+	 	((int)mapped[ROT_RAW_ENCODER_ANGLE_FXP] / pow(2,14))
+	 	);
+
+	//Eye numbers e.g. which slot is the disk at
+	// const int joints_slots[5] = {200, 184, 157, 115, 100};
+	// printf(" %i,%i,%i,%i,%i ",
+	// 	(int) (a1 * joints_slots[0] / (360 * 3600)),
+	// 	(int) (a2 * joints_slots[1] / (360 * 3600)),
+	// 	(int) (a3 * joints_slots[2] / (360 * 3600)),
+	// 	(int) (a4 * joints_slots[3] / (360 * 3600)),
+	// 	(int) (a5 * joints_slots[4] / (360 * 3600))
+	// 	); 
+	// printf("- %i,%i,%i,%i,%i              \r", // \r moves to start of same line
+	// 	mapped[BASE_EYE_NUMBER]-255, 
+	// 	mapped[PIVOT_EYE_NUMBER]-255, 
+	// 	mapped[END_EYE_NUMBER]-255, 
+	// 	mapped[ANGLE_EYE_NUMBER]-255, 
+	// 	mapped[ROT_EYE_NUMBER]-255
+	// 	);
+
+	fflush(stdout); //actually print the data despite no \n end of string.
 }
 
 int sign(int i)
@@ -2319,7 +2356,7 @@ void *RealtimeMonitor(void *arg)
 			}
 		}
 		disTime++;
-		if(disTime>100)
+		if(disTime>20)
 		{
 			//printPosition();
 			disTime = 0;
@@ -2327,7 +2364,7 @@ void *RealtimeMonitor(void *arg)
 
 		usleep(30000);
 	}
-	//printf("\nMonitor Thread Exiting\n");
+	printf("\nMonitor Thread Exiting\n");
     return NULL;
 }
 
@@ -3066,7 +3103,7 @@ void setDefaults(int State)
 	int i,ForceFelt,j,HiBoundry,LowBoundry,BoundryACC;
 	int KeyHoleData[10];
 	char c;
-    	FILE *CentersFile,*RemoteRobotAddress,*DiffFile;
+    	FILE *AxisFile, *CentersFile,*RemoteRobotAddress,*DiffFile;
 	int HexValue;
 
 	int IntFloat;
@@ -3074,60 +3111,41 @@ void setDefaults(int State)
 	mapped[COMMAND_REG]=64;  //shut off the servo system
 	mapped[COMMAND_REG]=0;  //shut off the servo system
 	CmdVal=0;
-	
-	CentersFile = fopen("AxisCal.txt", "rs");
 
-    	//read file into array
-	if(CentersFile!=NULL)
-	{
-		fscanf(CentersFile, "%f", &JointsCal[0]);
-		fscanf(CentersFile, "%f", &JointsCal[1]);
-		fscanf(CentersFile, "%f", &JointsCal[2]);
-		fscanf(CentersFile, "%f", &JointsCal[3]);
-		fscanf(CentersFile, "%f", &JointsCal[4]);
-		fscanf(CentersFile, "%i", &HexValue);
+/* Load AxisCal.txt file. This is calculated from from Gear Ratio and Microstepping as follows (in DDE) :
+//Input:
+var diff_pulley_small_num_teeth = 16
+var diff_pulley_large_num_teeth = 90
+var micro_step = 16
+var motor_steps = 400
+var gear_ratios = [
+	52,
+    52,
+    52,
+    diff_pulley_large_num_teeth / diff_pulley_small_num_teeth,
+    diff_pulley_large_num_teeth / diff_pulley_small_num_teeth
+]
+
+//Output:
+var AxisCal_string = ""
+for(let i = 0; i < 5; i++){
+	AxisCal_string += -(gear_ratios[i]*micro_step*motor_steps) / (3600*360) + "\n"
+}
+AxisCal_string += -Math.round(gear_ratios[3] / gear_ratios[1] * Math.pow(2, 24))
+*/
+
+	AxisFile = fopen("AxisCal.txt", "rs");
+	if(AxisFile!=NULL) {
+		fscanf(AxisFile, "%f", &JointsCal[0]);
+		fscanf(AxisFile, "%f", &JointsCal[1]);
+		fscanf(AxisFile, "%f", &JointsCal[2]);
+		fscanf(AxisFile, "%f", &JointsCal[3]);
+		fscanf(AxisFile, "%f", &JointsCal[4]);
+		fscanf(AxisFile, "%i", &HexValue);
         //printf("Reading AxisCal.txt. HexValue = %d\n", HexValue);
 		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
-		fclose(CentersFile);
+		fclose(AxisFile);
 	}
-	
-	
-	DiffFile = fopen("DiffCorrectionFactor.txt", "rs");
-	if(DiffFile!=NULL)
-	{
-		fscanf (DiffFile, "%f", &DiffCorrectionFactor);
-		fclose(DiffFile);
-	}
-	DiffFile = fopen("Boundaries.txt", "rs");
-	if(DiffFile!=NULL)
-	{
-
-		
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[0] = (int)((float)HexValue * fabs(JointsCal[0]));
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[1] = (int)((float)HexValue * fabs(JointsCal[0]));
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[2] = (int)((float)HexValue * fabs(JointsCal[1]));
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[3] = (int)((float)HexValue * fabs(JointsCal[1]));
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[4] = (int)((float)HexValue * fabs(JointsCal[2]));
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[5] = (int)((float)HexValue * fabs(JointsCal[2]));
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[6] = (int)((float)HexValue * fabs(JointsCal[3]));
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[7] = (int)((float)HexValue * fabs(JointsCal[3]));
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[8] = (int)((float)HexValue * fabs(JointsCal[4]));
-		fscanf(DiffFile, "%i", &HexValue);
-		Boundary[9] = (int)((float)HexValue * fabs(JointsCal[4]));
-		fclose(DiffFile);
-		KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-	}
-	printf("Boundary Keyhle set\n");
-
 	
 	RemoteRobotAddress = fopen("RemoteRobotAddress.txt", "rs");
 	if(RemoteRobotAddress!=NULL)
@@ -3530,6 +3548,10 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
         cur_max_step = test_angle_step[4];
         j_step = 4;
     };
+
+	if(0 == cur_max_step){
+		return 0;
+	}
 
     printf("major delta step: J%d delta: %f (abs steps)  delta: %f (abs deg)\n", j_step+1, cur_max_step, -cur_max_step / JointsCal[j_step] / 3600);
 
@@ -4257,6 +4279,9 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
                         case 50:
 							//CommandedAngles
 						break;
+                        case 51:
+							//LinkLengths (implemented in SET_PARAM)
+						break;
 
 
 						default:
@@ -4766,7 +4791,6 @@ int ParseInput(char *iString)
                                         fclose(wfp);
                                         wfp = 0;
                                         printf("...Finished writing.\n");
-						// TODO: re load LinkLinks.txt file into L array ?
 
                                         }
 						break;
@@ -4830,105 +4854,19 @@ int ParseInput(char *iString)
 							return errno;
 							}
                     
-					}else if (!strcmp("Ctrl",p1)) {
-						while ((p1 = strtok(NULL,ctrldelims))) {
-							printf("key %s\n",p1);
-							if (!strcmp("Diff",p1)) {
-								d3 = atoi(strtok(NULL, ctrldelims));
-								printf("Angle / Rot: %d\n",d3);
-								mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=d3;
-								mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=d3;
-							}
-							else if(!strcmp("FMul",p1)) {
-								d3 = atoi(strtok(NULL, ctrldelims));
-								printf("SPEED_FACTORA: %d\n",d3);
-								mapped[SPEED_FACTORA]=d3;
-							}
-							else if(!strcmp("PIDP",p1)) {
-								d3 = atoi(strtok(NULL, ctrldelims));
-								printf("Base: %d\n",d3);
-								mapped[PID_ADDRESS]=0;
-								mapped[PID_P]=d3;
-								d3 = atoi(strtok(NULL, ctrldelims));
-								printf("End / Pivot: %d\n",d3);
-								mapped[PID_ADDRESS]=1;
-								mapped[PID_P]=d3;
-								mapped[PID_ADDRESS]=2;
-								d3 = atoi(strtok(NULL, ctrldelims));
-								printf("Angle / Rot: %d\n",d3);
-								mapped[PID_ADDRESS]=3;
-								mapped[PID_P]=d3;
-								mapped[PID_ADDRESS]=4;
-							}
-/* Needs PID_I and PID_D added back to the mapped register from the FPGA
-							else if(!strcmp("PID",p1)) {
-								d3 = atoi(strtok(NULL, ctrldelims));
-								mapped[PID_ADDRESS]=i;
-								printf(" J%d:\n",d3);
-								d3 = atoi(strtok(NULL, ctrldelims));
-								printf(" P:%d\n",d3);
-								mapped[PID_P]=d3;
-								d3 = atoi(strtok(NULL, ctrldelims));
-								printf(" I:%d\n",d3);
-								mapped[PID_I]=d3;
-								d3 = atoi(strtok(NULL, ctrldelims));
-								printf(" D:%d\n",d3);
-								mapped[PID_D]=d3;
-							}
-*/
-							else if(!strcmp("Frict",p1)) {
-								for ( i = 0; i<5; i++) {
-									f1 = atof(strtok(NULL, ctrldelims));
-									d3=(int)f1;
-									d4=(d3<<8)+(f1-d3)*256;
-									Friction[i]=d4;
-									printf("Friction[%d]=%d\n",i,d4);
-								}
-								KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
-							}
-							else if (!strcmp("Decay",p1)) {
-								d3 = atoi(strtok(NULL, ctrldelims));
-								printf("All: %d\n",d3);
-								mapped[BASE_FORCE_DECAY]=d3;
-								mapped[END_FORCE_DECAY]=d3;
-								mapped[PIVOT_FORCE_DECAY]=d3;
-								mapped[ANGLE_FORCE_DECAY]=d3;
-								mapped[ROTATE_FORCE_DECAY]=d3;
-							}
-							else if (!strcmp("Cmd",p1)) {
-								d3 = atoi(strtok(NULL, ctrldelims));
-								CmdVal = d3;
-								mapped[COMMAND_REG] = CmdVal;
-								for (;d3;d3 >>= 1) printf("%d", d3 & 1);
-								printf(" : %d \n",CmdVal);
-							}
-							
-						}
-						mapped[DIFF_FORCE_MAX_SPEED] = 200000; //TODO: Is this needed? Ok for ALL?
-						// CmdVal 	= CMD_ENABLE_LOOP 
-						// 		| CMD_CALIBRATE_RUN 
-						// 		| CMD_RESET_FORCE 
-						// 		| CMD_ANGLE_ENABLE 
-						// 		| CMD_ROT_ENABLE
-						// 		;
 					}else if(!strcmp("LinkLengths",p1)){
 						p2=strtok (NULL, delimiters);
 						p3=strtok (NULL, delimiters);
 						p4=strtok (NULL, delimiters);
 						p5=strtok (NULL, delimiters);
 						p6=strtok (NULL, delimiters);
-						fp=fopen("LinkLengths.txt", "w");
-						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
-						fclose (fp);
-					}else if(!strcmp("StartPosition",p1)){
-						p2=strtok (NULL, delimiters);
-						p3=strtok (NULL, delimiters);
-						p4=strtok (NULL, delimiters);
-						p5=strtok (NULL, delimiters);
-						p6=strtok (NULL, delimiters);
-						fp=fopen("StartPosition.txt", "w");
-						fprintf(fp, "[%i, %i, %i, %i, %i]", atoi(p2),atoi(p3),atoi(p4),atoi(p5),atoi(p6));
-						fclose (fp);
+						if (p2!=NULL) L[4]=atof(p2); //Link 5 FIRST!
+						if (p3!=NULL) L[3]=atof(p3); // then Link 4
+						if (p4!=NULL) L[2]=atof(p4); // so that Link 3
+						if (p5!=NULL) L[1]=atof(p5); // and on become
+						if (p6!=NULL) L[0]=atof(p6); // optional. 
+						printf("LinkLengths: %lf, %lf, %lf, %lf, %lf \n", L[0], L[1], L[2], L[3], L[4]);
+
                     }else if (!strcmp("EyeNumbers",p1)){
                         //Read new register
                         p1=strtok (NULL, delimiters);
@@ -4943,8 +4881,8 @@ int ParseInput(char *iString)
                         angles_temp[3]=atoi(p4)^255;
                         angles_temp[4]=atoi(p5)^255;
                         printf("EyeNumbers (after xor): %d %d %d %d %d\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
-
                         KeyholeSend(angles_temp, RAW_ECONDER_ANGLE_KEYHOLE_CMD, RAW_ECONDER_ANGLE_KEYHOLE_SIZE, RAW_ECONDER_ANGLE_KEYHOLE );
+
                     }else if (!strcmp("CommandedAngles",p1)){
                         //Read new register
                         p1=strtok (NULL, delimiters);
@@ -5343,7 +5281,7 @@ int ParseInput(char *iString)
 					Boundary[6]=(int)((float)atoi(p8) * fabs(JointsCal[3]));
 					Boundary[9]=(int)((float)atoi(p9) * fabs(JointsCal[4]));
 					Boundary[8]=(int)((float)atoi(p10) * fabs(JointsCal[4]));
-					//printf(" Boundary set %d %d %d %d %d %d %d %d %d %d \n", Boundary[0],Boundary[1],Boundary[2],Boundary[3],Boundary[4],Boundary[5],Boundary[6],Boundary[7],Boundary[8],Boundary[9]);
+					printf(" Boundary set %d %d %d %d %d %d %d %d %d %d \n", Boundary[0],Boundary[1],Boundary[2],Boundary[3],Boundary[4],Boundary[5],Boundary[6],Boundary[7],Boundary[8],Boundary[9]);
 					KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 					
 				break;
@@ -5428,17 +5366,7 @@ int main(int argc, char *argv[]) {
   }
   CalTables = map_addrCt;
 
-// Load LinkLengths.txt file into L array
-	wfp = fopen("/srv/samba/share/LinkLengths.txt", "r");
-	if (wfp) {
-		printf("Link Lengths: Loaded %d. Values ", fscanf(wfp, "[ %lf, %lf, %lf, %lf, %lf ]", &L[0], &L[1], &L[2], &L[3], &L[4]));
-		printf(" %lf, %lf, %lf, %lf, %lf \n", L[0], L[1], L[2], L[3], L[4]);
-		fclose(wfp);
-		wfp = 0;
-		}
-	else { printf("Failed to load LinkLengths.txt Error # %d\n", errno); }
-
-// Load StartPosition.txt file into SP array
+// Load AxisCal data into JointsCal array
 	int HexValue;
 	FILE *CentersFile;
 	CentersFile = fopen("AxisCal.txt", "rs");
@@ -5467,7 +5395,7 @@ int main(int argc, char *argv[]) {
 		fclose(wfp);
 		wfp = 0;
     }else {
-        printf("Failed to load StartPosition.txt Error # %d\n", errno);
+        printf("Failed to load StartPosition_CommandedAngles.txt Error # %d\n", errno);
         reset_StartPosition = 0;
     }
 
@@ -5479,18 +5407,7 @@ int main(int argc, char *argv[]) {
 		fclose(wfp);
 		wfp = 0;
 	}else {
-        printf("Failed to load StartPosition.txt Error # %d\n", errno);
-        reset_StartPosition = 0;
-    }
-
-    wfp = fopen("/srv/samba/share/StartPosition_RawEncoders.txt", "r");
-	if (wfp) {
-		printf("CommandedRawEncoders Angles Start Positions: Loaded %d. Values: ", fscanf(wfp, "[%i, %i, %i, %i, %i]", &SP_RawEncoders[0], &SP_RawEncoders[1], &SP_RawEncoders[2], &SP_RawEncoders[3], &SP_RawEncoders[4]));
-		printf("[%i, %i, %i, %i, %i]\n", SP_RawEncoders[0], SP_RawEncoders[1], SP_RawEncoders[2], SP_RawEncoders[3], SP_RawEncoders[4]);
-		fclose(wfp);
-		wfp = 0;
-	}else {
-        printf("Failed to load StartPosition.txt Error # %d\n", errno);
+        printf("Failed to load StartPosition_EyeNumbers.txt Error # %d\n", errno);
         reset_StartPosition = 0;
     }
 
