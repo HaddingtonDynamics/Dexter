@@ -1,6 +1,11 @@
 //#define NO_BOOT_DANCE
 //#define DEBUG_API
 //#define DEBUG_XL320_UART
+#define DEBUG_MONITOR
+#define DEG_ARCSEC 3600
+#define MONITOR_MAX_ERROR (1.5*DEG_ARCSEC) //arcseconds 
+#define MONITOR_MAX_VELOCITY (50*DEG_ARCSEC)
+//actual max angular velocity should never be more than 50 degress per second. JW
 // this is the SpeedsUpdate code 
 
 
@@ -44,6 +49,9 @@ int CalcUartTimeout(int size);
 
 #define MAX_CONTENT_CHARS 62
 //maybe could be 112, 4 * 32 bit integers and then 128 bytes in the socket
+
+#define NUM_JOINTS 5
+//how many standard joints are there? e.g. with encoders / drives / etc.. not including tool interface.
 
 #define L1_TABLE 0x600000
 #define L1_TABLE_LENGTH 0xa8000
@@ -306,14 +314,6 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define ANGLE_MEASURED_ANGLE 54 + INPUT_OFFSET
 #define ROT_MEASURED_ANGLE 55 + INPUT_OFFSET
 
-// For some reason, the joints are mapped out of order. e.g.
-// 1 -> 4
-// 2 -> 1
-// 3 -> 5
-// 4 -> 3
-// 5 -> 2
-// NOTE: THIS MAY CHANGE if the FPGA is updated
-
 // Encoder Angles (Integer portion only??)
 #define BASE_EYE_NUMBER 59 + INPUT_OFFSET // was 56
 #define PIVOT_EYE_NUMBER 56 + INPUT_OFFSET// was 58 (not 57)
@@ -321,11 +321,11 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define ROT_EYE_NUMBER 58 + INPUT_OFFSET  // was 60
 #define ANGLE_EYE_NUMBER 57 + INPUT_OFFSET// was 59
 
-#define BASE_RAW_ENCODER_ANGLE_FXP 64 + INPUT_OFFSET // was 61
-#define PIVOT_RAW_ENCODER_ANGLE_FXP 61 + INPUT_OFFSET// was 63 (not 62)
-#define END_RAW_ENCODER_ANGLE_FXP 65 + INPUT_OFFSET  // was 62 (not 63)
-#define ROT_RAW_ENCODER_ANGLE_FXP 63 + INPUT_OFFSET  // was 65
-#define ANGLE_RAW_ENCODER_ANGLE_FXP 62 + INPUT_OFFSET// was 64
+#define BASE_RAW_ENCODER_ANGLE_FXP 61 + INPUT_OFFSET // was 64 //was 61
+#define PIVOT_RAW_ENCODER_ANGLE_FXP 63 + INPUT_OFFSET// was 61 //was 63 (not 62)
+#define END_RAW_ENCODER_ANGLE_FXP 62 + INPUT_OFFSET  // was 65 //was 62 (not 63)
+#define ANGLE_RAW_ENCODER_ANGLE_FXP 64 + INPUT_OFFSET// was 62 //was 64
+#define ROT_RAW_ENCODER_ANGLE_FXP 65 + INPUT_OFFSET  // was 63 //was 65
 
 int OldMemMapInderection[90]={0,0,0,0,0,ACCELERATION_MAXSPEED,0,0,0,0,0,0,0,0,0,0,0,0,0,0,PID_P,PID_ADDRESS,
 	0,0,0,0,0,SPEED_FACTORA,BETA_XYZ,0,0,0,0,0,MOVE_TRHESHOLD,F_FACTOR,MAX_ERROR,0,0,0,0,0,COMMAND_REG,
@@ -460,8 +460,8 @@ int startSpeed_arcsec_per_sec = 3600;
 int maxSpeed_arcsec_per_sec = 30*3600;
 
 
-int AngularSpeed = 30*3600; 				// (arcsec/s)
-int AngularSpeedStartAndEnd = 360; 			// (arcsec/s)
+//int AngularSpeed = 30*3600; 				// (arcsec/s)
+//int AngularSpeedStartAndEnd = 360; 			// (arcsec/s)
 int AngularAcceleration = 1;				// (arcsec/s^2)
 
 int CartesianSpeed = 300000; 				// (micron/s)
@@ -1863,6 +1863,7 @@ struct ellipse v_ellipse_fit(struct eye_data eye, int start_idx, int end_idx) {
 
 
 FILE *wfp = 0; //File handle to write data into via socket 'W' command
+bool reloadDefaults = false;
 int XLowBound[5]={BASE_COS_LOW,END_COS_LOW,PIVOT_COS_LOW,ANGLE_COS_LOW,ROT_COS_LOW};
 int XHighBound[5]={BASE_COS_HIGH,END_COS_HIGH,PIVOT_COS_HIGH,ANGLE_COS_HIGH,ROT_COS_HIGH};
 int YLowBound[5]={BASE_SIN_LOW,END_SIN_LOW,PIVOT_SIN_LOW,ANGLE_SIN_LOW,ROT_SIN_LOW};
@@ -1954,60 +1955,58 @@ struct CaptureArgs CptA,CptMove;
 //#define PARAM_LENGTH 20
 //char Params[MAX_PARAMS][PARAM_LENGTH+1] = {
 const char* Params[] = {
-	"MaxSpeed", 
-	"Acceleration", 
-	"J1Force",
-	"J3Force",
-	"J2Force",
-	"J4Force",
-	"J5Force",
-	"J1Friction",
-	"J3Friction",
-	"J2Friction",
-	"J4Friction",
-	"J5Friction",
-	"J1BoundryHigh",
-	"J1BoundryLow",
-	"J3BoundryHigh",
-	"J3BoundryLow",
-	"J2BoundryHigh",
-	"J2BoundryLow",
-	"J4BoundryHigh",
-	"J4BoundryLow",
-	"J5BoundryHigh",
-	"J5BoundryLow",
-	"GripperMotor",
-	"EERoll",
-	"EESpan",
-	"StartSpeed",
-	"EndSpeed",
-	"ServoSet2X",
-	"ServoSet",
-	"RebootServo",
-	"Ctrl", //not actually detected from this list.
-	"J1_PID_P",
-	"J2_PID_P",
-	"J3_PID_P",
-	"J4_PID_P",
-	"J5_PID_P",
-
-	"AngularSpeed",
-	"AngularSpeedStartAndEnd",
-	"AngularAcceleration",
-
-	"CartesianSpeed",
-	"CartesianSpeedStart",
-	"CartesianSpeedEnd",
-	"CartesianAcceleration",
-	"CartesianStepSize",
-	"CartesianPivotSpeed",
-	"CartesianPivotSpeedStart",
-	"CartesianPivotSpeedEnd",
-	"CartesianPivotAcceleration",
-
-    "EyeNumbers",
-    "CommandedAngles",
-	"LinkLengths"
+	"MaxSpeed", 	// 0
+	"Acceleration", // 1
+	"J1Force",		// 2
+	"J3Force",		// 3
+	"J2Force",		// 4
+	"J4Force",		// 5
+	"J5Force",		// 6
+	"J1Friction",	// 7
+	"J3Friction",	// 8
+	"J2Friction",	// 9
+	"J4Friction",	//10
+	"J5Friction",	//11
+	"J1BoundryHigh",//12
+	"J1BoundryLow",	//13
+	"J3BoundryHigh",//14
+	"J3BoundryLow",	//15
+	"J2BoundryHigh",//16
+	"J2BoundryLow",	//17
+	"J4BoundryHigh",//18
+	"J4BoundryLow",	//19
+	"J5BoundryHigh",//20
+	"J5BoundryLow",	//21
+	"GripperMotor",	//22
+	"EERoll",   	//23
+	"EESpan",   	//24
+	"StartSpeed",	//25
+	"EndSpeed", 	//26
+	"ServoSet2X",	//27
+	"ServoSet", 	//28
+	"RebootServo",	//29
+	"RunFile",     	//30 Not actually detected from this list. (was "Ctrl" - Depreciated)
+	"J1_PID_P", 	//31
+	"J2_PID_P", 	//32
+	"J3_PID_P", 	//33
+	"J4_PID_P", 	//34
+	"J5_PID_P", 	//35
+	"AngularSpeed",	//36
+	"AngularSpeedStartAndEnd",	//37
+	"AngularAcceleration",  	//38
+	"CartesianSpeed",        	//39
+	"CartesianSpeedStart",  	//40
+	"CartesianSpeedEnd",    	//41
+	"CartesianAcceleration",	//42
+	"CartesianStepSize",    	//43
+	"CartesianPivotSpeed",  	//44
+	"CartesianPivotSpeedStart",	//45
+	"CartesianPivotSpeedEnd",	//46
+	"CartesianPivotAcceleration",//47
+	"CartesianPivotStepSize",	//48
+    "EyeNumbers",           	//49
+    "CommandedAngles",      	//50
+	"LinkLengths",          	//51 Not actually detected from this list.
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
@@ -2040,7 +2039,7 @@ struct ServoRealTimeData ServoData[NUM_SERVOS];
 
 
 float JointsCal[5];
-int SoftBoundries[5];
+//int SoftBoundries[5];
 
 struct UARTTransactionPacket{
 	unsigned short ServoNum;
@@ -2237,8 +2236,12 @@ void SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int 
   	//UnloadUART(RxBuf,Length + 7); // TODO refine actual size
 }
 
-
-
+struct monitorbot {
+	int enc_position[NUM_JOINTS]; //last known joint position. Maybe raw or calibrated.
+	int enc_velocity[NUM_JOINTS]; //last known joint velocity (e.g. last position - current position)
+	bool start; //is this the first read?
+	int joints_off[NUM_JOINTS]; //offset for raw joint positions
+	} bot_state;
 
 void printPosition()
 {
@@ -2249,17 +2252,56 @@ void printPosition()
 	a4=getNormalizedInput(ANGLE_POSITION_AT)+getNormalizedInput(ANGLE_POSITION_FORCE_DELTA);
 	a5=getNormalizedInput(ROT_POSITION_AT)+getNormalizedInput(ROT_POSITION_FORCE_DELTA);
 	//Commanded angles
-	//printf(" %d,%d,%d,%d,%d                     \r",a1,a2,a3,a4,a5); // \r moves to start of same line
+	printf(" %d,%d,%d,%d,%d                     \r",a1,a2,a3,a4,a5); // \r moves to start of same line
+	fflush(stdout); //actually print the data despite no \n end of string.
+}
 
-	//raw encoder angles. Format is 18.14 bits fixed point. 
-	 printf("%f, %f, %f, %f, %f        \r", // \r moves to start of same line
-	 	((int)mapped[BASE_RAW_ENCODER_ANGLE_FXP] / pow(2,14)),
-	 	((int)mapped[PIVOT_RAW_ENCODER_ANGLE_FXP] / pow(2,14)),
-	 	((int)mapped[END_RAW_ENCODER_ANGLE_FXP] / pow(2,14)),
-	 	((int)mapped[ANGLE_RAW_ENCODER_ANGLE_FXP] / pow(2,14)),
-	 	((int)mapped[ROT_RAW_ENCODER_ANGLE_FXP] / pow(2,14))
-	 	);
-
+void monitorTorque() {
+	int err_arc = 0; //amount of error in arc seconds
+	int err_at_arc = 0; //actual position where error occured
+	const int pos_at[NUM_JOINTS] = {BASE_POSITION_AT,PIVOT_POSITION_AT,END_POSITION_AT,ANGLE_POSITION_AT,ROT_POSITION_AT};
+	const int pos_force_delta[NUM_JOINTS] = {BASE_POSITION_FORCE_DELTA, PIVOT_POSITION_FORCE_DELTA, 
+			END_POSITION_FORCE_DELTA, ANGLE_POSITION_FORCE_DELTA, ROT_POSITION_FORCE_DELTA};
+	const int pos_raw_enc[NUM_JOINTS] = {BASE_RAW_ENCODER_ANGLE_FXP, PIVOT_RAW_ENCODER_ANGLE_FXP,
+			END_RAW_ENCODER_ANGLE_FXP, ANGLE_RAW_ENCODER_ANGLE_FXP, ROT_RAW_ENCODER_ANGLE_FXP};
+	const int joints_slots[NUM_JOINTS] = {200, 184, 157, 115, 100};
+ 	//const int joints_corr[NUM_JOINTS] = {1938, 1909, 1946, 1657, 1783};
+	const int joints_corr[] = {2063, 2095, 2055, 2141, 2242};
+	// printf("pos_at is %i long\n", sizeof(pos_at)/sizeof(pos_at[0]));
+	// printf("%i = %i\n", BASE_POSITION_AT, pos_at[0]);
+	// printf("%i = %i\n", BASE_POSITION_FORCE_DELTA, pos_force_delta[0]);
+	for (int i = 0; i < NUM_JOINTS; i++) {
+		//printf("J%i, ",i+1);
+		//Commanded angles
+		int pos_cmd = getNormalizedInput(pos_at[i])+getNormalizedInput(pos_force_delta[i]);
+		//raw encoder angles. Format is 18.14 bits fixed point. 
+		int pos_raw = ( (float)((int)mapped[ pos_raw_enc[i] ])  /  ( pow(2,14) * joints_slots[i])  ) * joints_corr[i];
+		if (bot_state.start) bot_state.joints_off[i] = pos_raw; //if this is the first time, record this offset
+		pos_raw -= bot_state.joints_off[i]; //apply the inital offset from zero. 
+		//int pos_raw = ( (float)((int)mapped[ pos_raw_enc[i] ])  /  ( pow(2,14) * 40 * (360/joints_slots[i]*3600) ) );
+		//TODO: Why 40? And is the slots array correct?
+		//int pos_raw = ( (int)mapped[ pos_raw_enc[i] ]  / pow(2,14) ) * 2000/joints_slots[i];
+		int pos_vel = bot_state.enc_position[i] - pos_raw;
+		//printf("%d ", pos_vel);
+		// TODO: Compare to maxSpeed_arcsec_per_sec once timebase is better known.
+		// if (abs(pos_vel) > MONITOR_MAX_VELOCITY) { 
+		// 	printf("\nJoint %i velocity %d\n", i, pos_vel);
+		// }
+		bot_state.enc_velocity[i] = pos_vel;
+		bot_state.enc_position[i] = pos_raw;
+		//JointCal is arcseconds per microstep. 
+		//6th line in AxisCal is the ratio between joint 4 and joint 3
+		//err_arc = pos_cmd - pos_raw;
+		//printf("%d, ", pos_cmd);
+		//printf("%d, \t", pos_raw);
+		//printf(" %d, ", err_arc);
+		if (abs(err_arc) > MONITOR_MAX_ERROR) {
+			printf("\nJoint %i off by %i at %i\n", i+1, err_arc, pos_raw);
+			}
+		}
+	printf("      \r" );// \r moves to start of same line, needs fflush.
+	fflush(stdout); //actually print the data despite no \n end of string.
+	bot_state.start = false;
 	//Eye numbers e.g. which slot is the disk at
 	// const int joints_slots[5] = {200, 184, 157, 115, 100};
 	// printf(" %i,%i,%i,%i,%i ",
@@ -2277,7 +2319,6 @@ void printPosition()
 	// 	mapped[ROT_EYE_NUMBER]-255
 	// 	);
 
-	fflush(stdout); //actually print the data despite no \n end of string.
 }
 
 int sign(int i)
@@ -2315,53 +2356,43 @@ void *RealtimeMonitor(void *arg)
 		ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
 		ServoData[1].error = ServoRx[29];
 
-		if(FroceMoveMode==1)
-		{
-	
-	
-			
-			// do force based movement
-			for(i=0;i<5;i++)
-			{
-				ForceDelta=ForcePossition[i]-getNormalizedInput(BASE_POSITION_FORCE_DELTA+i);
-				/*if(abs(ForceDelta)>500)
-				{
-					ForceDelta=(abs(ForceDelta)-500)*sign(ForceDelta);
-				}*/
-				//ForceDelta=ForceDelta;//+MyBotForce[i];
-				if(disTime==90)
-				{
-					//for(j=0;j<5;j++)
-					//printf(" Force %d ",ForceDelta);
-				}
-/*
-				if(abs(ForceDelta)<ForceLimit[i])
-				{
-					mapped[FORCE_BIAS_BASE+i]=ForceDelta;
-				}
-				else
-				{
-					mapped[FORCE_BIAS_BASE+i]=sign(ForceDelta)*ForceLimit[i];
-				}
-*/
-				//ForcePossition[i]=ForcePossition[i]+(int)((float)ForceDelta*ForceAdjustPossition[i]);
-				/*if(ForceDestination[i]>ForcePossition[i])
-				{
-					ForcePossition[i]=ForcePossition[i]+10;
-				}
-				else
-				{
-					ForcePossition[i]=ForcePossition[i]-10;
-				}*/
-			}
-		}
+		// if(FroceMoveMode==1) {
+		// 	// do force based movement
+		// 	for(i=0;i<5;i++) {
+		// 		ForceDelta=ForcePossition[i]-getNormalizedInput(BASE_POSITION_FORCE_DELTA+i);
+		// 		if(abs(ForceDelta)>500) {
+		// 			ForceDelta=(abs(ForceDelta)-500)*sign(ForceDelta);
+		// 		}
+		// 		//ForceDelta=ForceDelta;//+MyBotForce[i];
+		// 		if(disTime==90) {
+		// 			//for(j=0;j<5;j++)
+		// 			//printf(" Force %d ",ForceDelta);
+		// 		}
+
+		// 		if(abs(ForceDelta)<ForceLimit[i]) {
+		// 			mapped[FORCE_BIAS_BASE+i]=ForceDelta;
+		// 		}
+		// 		else {
+		// 			mapped[FORCE_BIAS_BASE+i]=sign(ForceDelta)*ForceLimit[i];
+		// 		}
+
+		// 		//ForcePossition[i]=ForcePossition[i]+(int)((float)ForceDelta*ForceAdjustPossition[i]);
+		// 		if(ForceDestination[i]>ForcePossition[i]) {
+		// 			ForcePossition[i]=ForcePossition[i]+10;
+		// 		}
+		// 		else 				{
+		// 			ForcePossition[i]=ForcePossition[i]-10;
+		// 		}
+		// 	}
+		// }
+#ifdef DEBUG_MONITOR
 		disTime++;
-		if(disTime>20)
-		{
+		if(disTime>20) {
 			//printPosition();
+			monitorTorque();
 			disTime = 0;
 		}
-
+#endif
 		usleep(30000);
 	}
 	printf("\nMonitor Thread Exiting\n");
@@ -2394,10 +2425,10 @@ void SetGripperSpan(int Possition)
 */	
 }
 void SetGripperMotor(int state)
-{
+{ // pin 7 of connector J19 on bottom of PCB. TODO make ON and OFF widths parameters. 
 	mapped[GRIPPER_MOTOR_ON_WIDTH]=12000;
 	mapped[GRIPPER_MOTOR_OFF_WIDTH]=0;
-	mapped[GRIPPER_MOTOR_CONTROL]=state;
+	mapped[GRIPPER_MOTOR_CONTROL]=state; //Pulse Width
 }
 void *StartServerSocketDDE(void *arg)
 {
@@ -2623,10 +2654,10 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 	char *token;
 	char oplet;
 	float timeStart=0;
-    float timeNormal = 1494640000000;
-	long iTimeNormal = 1494628400;
-	int iTime=0;
-	int iElTime=0;
+    //float timeNormal = 1494640000000;
+	//long iTimeNormal = 1494628400;
+	//int iTime=0;
+	//int iElTime=0;
 	long            ms; // Millisecondski
     time_t          s;  // Seconds
 	long lTime;
@@ -2638,12 +2669,11 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 
     ms = spec.tv_nsec / 1.0e3; // Convert nanoseconds to milliseconds
 	lTime = (long)s;
-	timeStart = (float)(lTime - iTimeNormal);
-	timeStart = timeStart + (float)ms/1000000.0;
-	iElTime=timeStart*1000;
-	
-	
-	
+	//printf("\nAT %ld local (lTime)\n",lTime);
+	//timeStart = (float)(lTime - iTimeNormal); //no longer used
+	//timeStart = timeStart + (float)ms/1000000.0;
+	//iElTime=timeStart*1000; //no longer used
+	//printf("\n at %d normalized (iElTime)\n",iElTime);
     //printf("\n %li %li %li",spec.tv_nsec ,spec.tv_sec, iElTime);
 	//fLastTime = timeStart;
 	
@@ -2652,10 +2682,8 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		//printf("%c",recBuff[i]);
 	}*/
 //	if(recBuff[0]=="g")
-	
 
 	token = strtok (recBuff, delimiters); //Job ID?
-
 	////printf("returning heartbeat\n");
 	sendBuffReTyped=(int *)sendBuff;
 	sendBuffReTyped[0]=atoi(token);
@@ -2664,8 +2692,18 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 	sendBuffReTyped[1]=atoi(token);
 	token = strtok (NULL, delimiters); //Start Time?
 	//printf("\n %s \n",token);
-	timeStart = atof(token) - timeNormal;
-	iTime = timeStart; 
+	timeStart = atof(token);
+	lTime = timeStart / 1000; //convert ms to s
+	//printf("\n at %ld raw DDE (lTime)\n",lTime);
+	if (lTime - (long)s > 60*60*24*7*52) { //our clock is more than a year behind the PC
+		printf("\nUpdating sys time from %ld to %ld (from DDE)\n",s,lTime);
+		spec.tv_sec = (time_t)lTime; //set our clock to the PC clock
+		if (-1 == clock_settime(CLOCK_REALTIME, &spec)) { //try to set
+			printf("failed to set time\n");
+		}
+	}
+	//iTime = timeStart - timeNormal; //no longer used
+	//printf("\n at %d normalized (iTime)\n",iTime);
 
 	sendBuffReTyped[2] = spec.tv_sec;//iTime;//   this shoud be start_time_internal broken into 2 words atoi(token);
 	token = strtok (NULL, delimiters); //End time?
@@ -3096,6 +3134,42 @@ int forceBias[5];
 int Friction[5];
 int FineAdjust[5];
 
+void readAdcCenters() {
+	int KeyHoleData[10];
+	int HexValue;
+    FILE *CentersFile;
+    CentersFile = fopen("AdcCenters.txt", "rs");
+    //read file into array
+	if(CentersFile!=NULL) {
+		fscanf(CentersFile, "%x", &HexValue);
+		//printf("%x \n",HexValue);
+		KeyHoleData[0] = HexValue;
+		fscanf(CentersFile, "%x", &HexValue);
+		KeyHoleData[1] = HexValue;
+		fscanf(CentersFile, "%x", &HexValue);
+		KeyHoleData[2] = HexValue;
+		fscanf(CentersFile, "%x", &HexValue);
+		KeyHoleData[3] = HexValue;
+		fscanf(CentersFile, "%x", &HexValue);
+		KeyHoleData[4] = HexValue;
+		fscanf(CentersFile, "%x", &HexValue);
+		KeyHoleData[5] = HexValue;
+		fscanf(CentersFile, "%x", &HexValue);
+		KeyHoleData[6] = HexValue;
+		fscanf(CentersFile, "%x", &HexValue);
+		KeyHoleData[7] = HexValue;
+		fscanf(CentersFile, "%x", &HexValue);
+		KeyHoleData[8] = HexValue;
+		fscanf(CentersFile, "%x", &HexValue);
+		KeyHoleData[9] = HexValue;
+		fclose(CentersFile);
+		KeyholeSend(KeyHoleData, ADC_CENTERS_KEYHOLE_CMD, ADC_CENTERS_KEYHOLE_SIZE, ADC_CENTERS_KEYHOLE );
+		printf("Centers Keyhle set\n");
+	} else {
+		printf("Cant read AdcCenters.txt file! Centers Keyhle NOT set\n");
+	}
+}
+
 void setDefaults(int State)
 {
 
@@ -3103,7 +3177,7 @@ void setDefaults(int State)
 	int i,ForceFelt,j,HiBoundry,LowBoundry,BoundryACC;
 	int KeyHoleData[10];
 	char c;
-    	FILE *AxisFile, *CentersFile,*RemoteRobotAddress,*DiffFile;
+    FILE *AxisFile, *RemoteRobotAddress,*DiffFile;
 	int HexValue;
 
 	int IntFloat;
@@ -3111,7 +3185,7 @@ void setDefaults(int State)
 	mapped[COMMAND_REG]=64;  //shut off the servo system
 	mapped[COMMAND_REG]=0;  //shut off the servo system
 	CmdVal=0;
-
+	bot_state.start = true;
 /* Load AxisCal.txt file. This is calculated from from Gear Ratio and Microstepping as follows (in DDE) :
 //Input:
 var diff_pulley_small_num_teeth = 16
@@ -3205,40 +3279,7 @@ AxisCal_string += -Math.round(gear_ratios[3] / gear_ratios[1] * Math.pow(2, 24))
 
 		mapped[REC_PLAY_TIMEBASE]=5;
 		
-    CentersFile = fopen("AdcCenters.txt", "rs");
-
-    //read file into array
-	if(CentersFile!=NULL)
-	{
-		fscanf(CentersFile, "%x", &HexValue);
-		//printf("%x \n",HexValue);
-		KeyHoleData[0] = HexValue;
-		fscanf(CentersFile, "%x", &HexValue);
-		KeyHoleData[1] = HexValue;
-		fscanf(CentersFile, "%x", &HexValue);
-		KeyHoleData[2] = HexValue;
-		fscanf(CentersFile, "%x", &HexValue);
-		KeyHoleData[3] = HexValue;
-		fscanf(CentersFile, "%x", &HexValue);
-		KeyHoleData[4] = HexValue;
-		fscanf(CentersFile, "%x", &HexValue);
-		KeyHoleData[5] = HexValue;
-		fscanf(CentersFile, "%x", &HexValue);
-		KeyHoleData[6] = HexValue;
-		fscanf(CentersFile, "%x", &HexValue);
-		KeyHoleData[7] = HexValue;
-		fscanf(CentersFile, "%x", &HexValue);
-		KeyHoleData[8] = HexValue;
-		fscanf(CentersFile, "%x", &HexValue);
-		KeyHoleData[9] = HexValue;
-		fclose(CentersFile);
-		KeyholeSend(KeyHoleData, ADC_CENTERS_KEYHOLE_CMD, ADC_CENTERS_KEYHOLE_SIZE, ADC_CENTERS_KEYHOLE );
-	printf("Centers Keyhle set\n");
-
-	}
-	
- 
-    
+		readAdcCenters();    
 
 		mapped[DIFF_FORCE_BETA ]=0x0102;
 		mapped[BETA_XYZ ]=0x0002;
@@ -3553,7 +3594,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 		return 0;
 	}
 
-    printf("major delta step: J%d delta: %f (abs steps)  delta: %f (abs deg)\n", j_step+1, cur_max_step, -cur_max_step / JointsCal[j_step] / 3600);
+    //printf("major delta step: J%d delta: %f (abs steps)  delta: %f (abs deg)\n", j_step+1, cur_max_step, -cur_max_step / JointsCal[j_step] / 3600);
 
 
 
@@ -3583,7 +3624,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
         j_deg = 4;
     };
 
-    printf("major delta deg:  J%d delta: %f (abs steps)  delta: %f (abs deg)\n", j_deg+1, -cur_max_deg * JointsCal[j_deg], cur_max_deg / 3600);
+    //printf("major delta deg:  J%d delta: %f (abs steps)  delta: %f (abs deg)\n", j_deg+1, -cur_max_deg * JointsCal[j_deg], cur_max_deg / 3600);
 
 	LastGoal[0]=a1;
 	LastGoal[1]=a2;
@@ -4025,22 +4066,23 @@ int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5)
  	return 0;
 }
 
-int SetParam(char *a1,float fa2,int a3,int a4,int a5)
+int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 {
 	int i,BDH,BDL,Axis;
 	int a2=(int)fa2;
 	int fxa2=(a2<<8)+(fa2-a2)*256;
 	unsigned int *uia2 = *(unsigned int*)&fa2;
-
+    int angles_temp[5];
 
 	
-	////printf("%s %s %d %d \n",Params[i],a1,a2,i);
+	//printf("SetParam: %s %f \n",a1,fa2);
 
 	for(i=0;i<MAX_PARAMS;i++)
 	{
 		////printf("%s %s %d %d \n",Params[i],a1,a2,i);
 		if(strcmp(a1,Params[i])==0)
 		{
+				//printf("%s %s %d %d \n",Params[i],a1,a2,i);
 				switch(i)
 				{
 						case 0:
@@ -4178,23 +4220,28 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 						case 25:
 							//mapped[START_SPEED]=1 ^ a2; //Replaced
                             startSpeed_arcsec_per_sec = a2 * arcsec_per_nbits; // Depricated. For backward compatibility with _nbits_cf from DDE.
+							return 0;
 						break;
 						case 26:     // end speed todo not implemented
+							return 0;
 						break;
 						case 27:     // ServoSet2X
 							//printf("Write Packet %d %d %d \n", a2,a3,a4);
 							SendWrite2Packet(a4, a2, a3);
-
+							return 0;
 						break;
 						case 28:     // ServoSet
 							SendWrite1Packet((unsigned char)a4, a2, a3);
+							return 0;
 						break;
 						case 29:     // ServoReset
 							//printf("Servo Reboot %d",a2);
 							RebootServo(a2); 
+							return 0;
 						break;
 						case 30:     // Ctrl
 							//This is implimented at a higher level because of the atof on the second argument 
+							return 0;
 						break;
 						case 31:     // J1_PID_P							
 							mapped[PID_ADDRESS]=0;
@@ -4202,6 +4249,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							// printf("\nSetting J1_PID_P to:\n");
 							// printf("  Float: %f\n", fa2);
 							// printf("  Hex: %x\n", uia2);
+							return 0;
 						break;
 						case 32:     // J2_PID_P
 							mapped[PID_ADDRESS]=2;
@@ -4209,6 +4257,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							// printf("\nSetting J2_PID_P to:\n");
 							// printf("  Float: %f\n", fa2);
 							// printf("  Hex: %x\n", uia2);
+							return 0;
 						break;
 						case 33:     // J3_PID_P
 							mapped[PID_ADDRESS]=1;
@@ -4216,6 +4265,8 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							// printf("\nSetting J3_PID_P to:\n");
 							// printf("  Float: %f\n", fa2);
 							// printf("  Hex: %x\n", uia2);
+							return 0;
+							return 0;
 						break;
 						case 34:     // J4_PID_P
 							mapped[PID_ADDRESS]=3;
@@ -4223,6 +4274,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							// printf("\nSetting J4_PID_P to:\n");
 							// printf("  Float: %f\n", fa2);
 							// printf("  Hex: %x\n", uia2);
+							return 0;
 						break;
 						case 35:     // J5_PID_P
 							mapped[PID_ADDRESS]=4;
@@ -4230,67 +4282,133 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5)
 							// printf("\nSetting J5_PID_P to:\n");
 							// printf("  Float: %f\n", fa2);
 							// printf("  Hex: %x\n", uia2);
+							return 0;
 						break;
-
 						case 36:
-							AngularSpeed = a2;
+							//AngularSpeed = a2;
+							maxSpeed_arcsec_per_sec = a2;
+							return 0;
 						break;
 						case 37:
-							AngularSpeedStartAndEnd = a2;
+							//AngularSpeedStartAndEnd = a2;
+							startSpeed_arcsec_per_sec = a2;
+							return 0;
 						break;
 						case 38:
 							AngularAcceleration = a2;
+							return 0;
 						break;
-
 						case 39:
 							CartesianSpeed = a2;
+							return 0;
 						break;
 						case 40:
 							CartesianSpeedStart = a2;
+							return 0;
 						break;
 						case 41:
 							CartesianSpeedEnd = a2;
+							return 0;
 						break;
 						case 42:
 							CartesianAcceleration = a2;
+							return 0;
 						break;
 						case 43:
 							CartesianStepSize = a2;
+							return 0;
 						break;
 						case 44:
 							CartesianPivotSpeed = a2;
+							return 0;
 						break;
 						case 45:
 							CartesianPivotSpeedStart = a2;
+							return 0;
 						break;
 						case 46:
 							CartesianPivotSpeedEnd = a2;
+							return 0;
 						break;
 						case 47:
 							CartesianPivotAcceleration = a2;
+							return 0;
 						break;
 						case 48:
 							CartesianPivotStepSize = a2;
+							return 0;
 						break;
-
                         case 49:
 							//EyeNumbers
+							angles_temp[0]=a2^255; 
+							angles_temp[2]=a3^255; 
+							angles_temp[1]=a4^255; 
+							angles_temp[3]=a5^255; 
+							angles_temp[4]=a6^255; 
+							printf("EyeNumbers (after xor): %d %d %d %d %d\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+							KeyholeSend(angles_temp, RAW_ECONDER_ANGLE_KEYHOLE_CMD, RAW_ECONDER_ANGLE_KEYHOLE_SIZE, RAW_ECONDER_ANGLE_KEYHOLE );
+							return 0;
 						break;
                         case 50:
 							//CommandedAngles
+							angles_temp[0]=a2; //atoi(p1); //a2
+							angles_temp[1]=a3; //atoi(p2); //a3
+							angles_temp[2]=a4; //atoi(p3); //a4
+							angles_temp[3]=a5; //atoi(p4); //a5
+							angles_temp[4]=a6; //atoi(p5); //a6
+							LastGoal[0] = angles_temp[0];
+							LastGoal[1] = angles_temp[1];
+							LastGoal[2] = angles_temp[2];
+							LastGoal[3] = angles_temp[3];
+							LastGoal[4] = angles_temp[4];
+							printf("CommandedAngles: %i %i %i %i %i\n", angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+
+							//getNormalizedInput(mapped[BASE_POSITION_AT]) / JointsCal[0];
+
+							/*
+							angles_temp[0] = (int)((double)a2 * JointsCal[0]) + getNormalizedInput(BASE_POSITION_AT);
+							angles_temp[1] = (int)((double)a4 * JointsCal[2]) + getNormalizedInput(END_POSITION_AT);
+							angles_temp[2] = (int)((double)a3 * JointsCal[1]) + getNormalizedInput(PIVOT_POSITION_AT);
+							angles_temp[3] = (int)((double)a5 * JointsCal[3]) + getNormalizedInput(ANGLE_POSITION_AT);
+							angles_temp[4] = (int)((double)a6 * JointsCal[4]) + getNormalizedInput(ROT_POSITION_AT);
+							*/
+
+							angles_temp[0] = ((int)((double)a2 - getNormalizedInput(BASE_POSITION_AT)) * JointsCal[0]);
+							angles_temp[1] = ((int)((double)a4 - getNormalizedInput(END_POSITION_AT)) * JointsCal[2]);
+							angles_temp[2] = ((int)((double)a3 - getNormalizedInput(PIVOT_POSITION_AT)) * JointsCal[1]);
+							angles_temp[3] = ((int)((double)a5 - getNormalizedInput(ANGLE_POSITION_AT)) * JointsCal[3]);
+							angles_temp[4] = ((int)((double)a6 - getNormalizedInput(ROT_POSITION_AT)) * JointsCal[4]);
+
+							/*
+							angles_temp[0] = -(int)((double)a2 * JointsCal[0]);
+							angles_temp[1] = -(int)((double)a4 * JointsCal[2]);
+							angles_temp[2] = -(int)((double)a3 * JointsCal[1]);
+							angles_temp[3] = -(int)((double)a5 * JointsCal[3]);
+							angles_temp[4] = -(int)((double)a6 * JointsCal[4]);
+							*/
+
+							printf("CommandedAngles: %i %i %i %i %i (steps)\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+							mapped[COMMAND_REG]= CMD_MOVEEN | CmdVal;
+							KeyholeSend(angles_temp, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
+							mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0x80000000; //sets mux to read from commanded angles keyhole
+							mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0xC0000000; //triggers the add
+							mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal;
+							return 0;
 						break;
                         case 51:
 							//LinkLengths (implemented in SET_PARAM)
-						break;
+							return 0;
+							break;
 
 
 						default:
-						break;
-				}
+							return 1;
+							break;
+				} //switch
 		
-		}
-	}
-	return 0;
+		} // if (strcmp)
+	} //for
+	return 1; //return an error, because we should have already returned 0
 
 }
 
@@ -4737,11 +4855,10 @@ int ParseInput(char *iString)
 	FILE *fp;
 	char *token,*p1,*p2,*p3,*p4,*p5,*p6,*p7,*p8,*p9,*p10,*p11,*p12,*p13,*p14,*p15,*p16,*p17,*p18,*p19;
 	int BDH,BDL;
-    int angles_temp[5];
 
 	int i,j,Add,Start,Length,Delay,Axis,tokenVal;
-	int d3,d4,d5;
 	float f1;
+	int d2,d3,d4,d5;
 	////printf("\nStart wait Goal");
 #ifdef DEBUG_API
 	printf("ParseInput: %s\n", iString);
@@ -4771,28 +4888,30 @@ int ParseInput(char *iString)
 						p2=strtok(NULL, delimiters);//filename
 						if(wfp>0) fclose(wfp);
 						wfp = fopen(p2, "w");
+						reloadDefaults = false;
+						if (!strcmp(p2,"/srv/samba/share/AdcCenters.txt")) reloadDefaults = true; 
                         printf("\nWriting file to %s as handle %d...\n",p2,fileno(wfp));
 						break;
 					    case 's': //start
 					    case 'm': //middle
 					    case 'e': //end
 						p2=strtok(NULL, delimiters);//bytes
-                                    Length=atoi(p2);
-                                    //printf("Length: %d bytes. \n", Length);
-                                    if (0<Length) {
-                                        p3=strtok(NULL, "");//remaining data
-                                        //printf("Found: %d bytes. ", strlen(p3));
-                                        Length = unescape(p3, Length);
-                                        //printf(" %d bytes after unescape",Length);
-                                        i=fwrite(p3, 1, Length, wfp);
-                                        //printf("Wrote %d bytes. ",i);
-                                        }
+							Length=atoi(p2);
+							//printf("Length: %d bytes. \n", Length);
+							if (0<Length) {
+								p3=strtok(NULL, "");//remaining data
+								//printf("Found: %d bytes. ", strlen(p3));
+								Length = unescape(p3, Length);
+								//printf(" %d bytes after unescape",Length);
+								i=fwrite(p3, 1, Length, wfp);
+								//printf("Wrote %d bytes. ",i);
+								}
 						if('e'==Add && (wfp>0)) {
-                                        fclose(wfp);
-                                        wfp = 0;
-                                        printf("...Finished writing.\n");
-
-                                        }
+							fclose(wfp);
+							wfp = 0;
+							printf("...Finished writing.\n");
+							if (reloadDefaults) readAdcCenters();
+							}
 						break;
 				          default : 
 		              		printf("\nunrecognized subcommand");
@@ -4829,7 +4948,7 @@ int ParseInput(char *iString)
 				case SET_PARAM :
 					p1=strtok (NULL, delimiters);
 
-					printf("SET_PARAM: %s\n", p1);
+					//printf("SET_PARAM: %s\n", p1);
 					if (!strcmp("RunFile",p1)) {
 						p2 = strtok (NULL, delimiters);
 						fp = fopen(p2, "r");
@@ -4867,97 +4986,21 @@ int ParseInput(char *iString)
 						if (p6!=NULL) L[0]=atof(p6); // optional. 
 						printf("LinkLengths: %lf, %lf, %lf, %lf, %lf \n", L[0], L[1], L[2], L[3], L[4]);
 
-                    }else if (!strcmp("EyeNumbers",p1)){
-                        //Read new register
-                        p1=strtok (NULL, delimiters);
-                        p2=strtok (NULL, delimiters);
-                        p3=strtok (NULL, delimiters);
-                        p4=strtok (NULL, delimiters);
-                        p5=strtok (NULL, delimiters);
-
-                        angles_temp[0]=atoi(p1)^255;
-                        angles_temp[2]=atoi(p2)^255;
-                        angles_temp[1]=atoi(p3)^255;
-                        angles_temp[3]=atoi(p4)^255;
-                        angles_temp[4]=atoi(p5)^255;
-                        printf("EyeNumbers (after xor): %d %d %d %d %d\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
-                        KeyholeSend(angles_temp, RAW_ECONDER_ANGLE_KEYHOLE_CMD, RAW_ECONDER_ANGLE_KEYHOLE_SIZE, RAW_ECONDER_ANGLE_KEYHOLE );
-
-                    }else if (!strcmp("CommandedAngles",p1)){
-                        //Read new register
-                        p1=strtok (NULL, delimiters);
-                        p2=strtok (NULL, delimiters);
-                        p3=strtok (NULL, delimiters);
-                        p4=strtok (NULL, delimiters);
-                        p5=strtok (NULL, delimiters);
-
-                        angles_temp[0]=atoi(p1);
-                        angles_temp[1]=atoi(p2);
-                        angles_temp[2]=atoi(p3);
-                        angles_temp[3]=atoi(p4);
-                        angles_temp[4]=atoi(p5);
-
-						LastGoal[0] = angles_temp[0];
-						LastGoal[1] = angles_temp[1];
-						LastGoal[2] = angles_temp[2];
-						LastGoal[3] = angles_temp[3];
-						LastGoal[4] = angles_temp[4];
-
-                        printf("CommandedAngles: %i %i %i %i %i\n", angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
-
-                        //getNormalizedInput(mapped[BASE_POSITION_AT]) / JointsCal[0];
-
-                        /*
-                        angles_temp[0] = (int)((double)atoi(p1) * JointsCal[0]) + getNormalizedInput(BASE_POSITION_AT);
-                        angles_temp[1] = (int)((double)atoi(p3) * JointsCal[2]) + getNormalizedInput(END_POSITION_AT);
-                        angles_temp[2] = (int)((double)atoi(p2) * JointsCal[1]) + getNormalizedInput(PIVOT_POSITION_AT);
-                        angles_temp[3] = (int)((double)atoi(p4) * JointsCal[3]) + getNormalizedInput(ANGLE_POSITION_AT);
-                        angles_temp[4] = (int)((double)atoi(p5) * JointsCal[4]) + getNormalizedInput(ROT_POSITION_AT);
-                        */
-
-						angles_temp[0] = ((int)((double)atoi(p1) - getNormalizedInput(BASE_POSITION_AT)) * JointsCal[0]);
-                        angles_temp[1] = ((int)((double)atoi(p3) - getNormalizedInput(END_POSITION_AT)) * JointsCal[2]);
-                        angles_temp[2] = ((int)((double)atoi(p2) - getNormalizedInput(PIVOT_POSITION_AT)) * JointsCal[1]);
-                        angles_temp[3] = ((int)((double)atoi(p4) - getNormalizedInput(ANGLE_POSITION_AT)) * JointsCal[3]);
-                        angles_temp[4] = ((int)((double)atoi(p5) - getNormalizedInput(ROT_POSITION_AT)) * JointsCal[4]);
-
-
-
-
-                        /*
-                        angles_temp[0] = -(int)((double)atoi(p1) * JointsCal[0]);
-                        angles_temp[1] = -(int)((double)atoi(p3) * JointsCal[2]);
-                        angles_temp[2] = -(int)((double)atoi(p2) * JointsCal[1]);
-                        angles_temp[3] = -(int)((double)atoi(p4) * JointsCal[3]);
-                        angles_temp[4] = -(int)((double)atoi(p5) * JointsCal[4]);
-                        */
-
-                        printf("CommandedAngles: %i %i %i %i %i (steps)\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
-                        mapped[COMMAND_REG]= CMD_MOVEEN | CmdVal;
-                        KeyholeSend(angles_temp, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
-                        mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0x80000000; //sets mux to read from commanded angles keyhole
-                        mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0xC0000000; //triggers the add
-                        mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal;
-
 					}else {
+						//printf("generic %s\n",p1);
 						p2=strtok (NULL, delimiters);
 						p3=strtok (NULL, delimiters);
 						p4=strtok (NULL, delimiters);
 						p5=strtok (NULL, delimiters);
-						if(p3!=NULL)
-									d3=atoi(p3);
-						else
-							d3=0;
-						if(p4!=NULL)
-									d4=atoi(p4);
-						else
-							d4=0;
-						if(p5!=NULL)
-									d5=atoi(p5);
-						else
-							d5=0;
-						
-						SetParam(p1,atof(p2),d3,d4,d5);
+						p6=strtok (NULL, delimiters);
+						f1=0;
+						d2=d3=d4=d5=0;
+						if(p2!=NULL) f1=atoi(p2);
+						if(p3!=NULL) d2=atoi(p3);
+						if(p4!=NULL) d3=atoi(p4);
+						if(p5!=NULL) d4=atoi(p5);
+						if(p6!=NULL) d5=atoi(p6);
+						return SetParam(p1,f1,d2,d3,d4,d5);
 					}
 				break; 
 				case MOVEALL_RELATIVE :
@@ -5368,19 +5411,19 @@ int main(int argc, char *argv[]) {
 
 // Load AxisCal data into JointsCal array
 	int HexValue;
-	FILE *CentersFile;
-	CentersFile = fopen("AxisCal.txt", "rs");
-	if(CentersFile!=NULL)
+	FILE *AxisFile;
+	AxisFile = fopen("AxisCal.txt", "rs");
+	if(AxisFile!=NULL)
 	{
-		fscanf(CentersFile, "%f", &JointsCal[0]);
-		fscanf(CentersFile, "%f", &JointsCal[1]);
-		fscanf(CentersFile, "%f", &JointsCal[2]);
-		fscanf(CentersFile, "%f", &JointsCal[3]);
-		fscanf(CentersFile, "%f", &JointsCal[4]);
-		fscanf(CentersFile, "%i", &HexValue);
+		fscanf(AxisFile, "%f", &JointsCal[0]);
+		fscanf(AxisFile, "%f", &JointsCal[1]);
+		fscanf(AxisFile, "%f", &JointsCal[2]);
+		fscanf(AxisFile, "%f", &JointsCal[3]);
+		fscanf(AxisFile, "%f", &JointsCal[4]);
+		fscanf(AxisFile, "%i", &HexValue);
         //printf("Reading AxisCal.txt. HexValue = %d\n", HexValue);
 		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
-		fclose(CentersFile);
+		fclose(AxisFile);
 	}
 
 
