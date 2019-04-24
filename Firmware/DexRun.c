@@ -2007,6 +2007,8 @@ const char* Params[] = {
     "EyeNumbers",           	//49
     "CommandedAngles",      	//50
 	"LinkLengths",          	//51 Not actually detected from this list.
+	"RawEncoderErrorLimits",   	//52
+	"RawVelocityLimits",       	//53
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
@@ -2239,6 +2241,8 @@ void SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int 
 struct monitorbot {
 	int enc_position[NUM_JOINTS]; //last known joint position. Maybe raw or calibrated.
 	int enc_velocity[NUM_JOINTS]; //last known joint velocity (e.g. last position - current position)
+	int enc_velocity_limit[NUM_JOINTS]; //maximum allowed raw encoder velocity
+	int enc_error_limit[NUM_JOINTS]; //maximum allowed error between raw encoder and commanded position
 	bool start; //is this the first read?
 	int joints_off[NUM_JOINTS]; //offset for raw joint positions
 	} bot_state;
@@ -2284,18 +2288,18 @@ void monitorTorque() {
 		int pos_vel = bot_state.enc_position[i] - pos_raw;
 		//printf("%d ", pos_vel);
 		// TODO: Compare to maxSpeed_arcsec_per_sec once timebase is better known.
-		// if (abs(pos_vel) > MONITOR_MAX_VELOCITY) { 
-		// 	printf("\nJoint %i velocity %d\n", i, pos_vel);
-		// }
+		if (abs(pos_vel) > bot_state.enc_velocity_limit[i]) { 
+			printf("\nJoint %i velocity %d\n", i, pos_vel);
+		}
 		bot_state.enc_velocity[i] = pos_vel;
 		bot_state.enc_position[i] = pos_raw;
 		//JointCal is arcseconds per microstep. 
 		//6th line in AxisCal is the ratio between joint 4 and joint 3
-		//err_arc = pos_cmd - pos_raw;
+		err_arc = pos_cmd - pos_raw; //compute the error
 		//printf("%d, ", pos_cmd);
 		//printf("%d, \t", pos_raw);
 		//printf(" %d, ", err_arc);
-		if (abs(err_arc) > MONITOR_MAX_ERROR) {
+		if (abs(err_arc) > bot_state.enc_error_limit[i]) {
 			printf("\nJoint %i off by %i at %i\n", i+1, err_arc, pos_raw);
 			}
 		}
@@ -3186,6 +3190,10 @@ void setDefaults(int State)
 	mapped[COMMAND_REG]=0;  //shut off the servo system
 	CmdVal=0;
 	bot_state.start = true;
+	for (i=0; i<NUM_JOINTS; i++) {
+		bot_state.enc_error_limit[i] = MONITOR_MAX_ERROR;
+		bot_state.enc_velocity_limit[i] = MONITOR_MAX_VELOCITY;
+	}
 /* Load AxisCal.txt file. This is calculated from from Gear Ratio and Microstepping as follows (in DDE) :
 //Input:
 var diff_pulley_small_num_teeth = 16
@@ -4399,7 +4407,24 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 							//LinkLengths (implemented in SET_PARAM)
 							return 0;
 							break;
-
+						case 52:
+							//RawEncoderErrorLimits
+							bot_state.enc_error_limit[0] = a2;
+							bot_state.enc_error_limit[1] = a3;
+							bot_state.enc_error_limit[2] = a4;
+							bot_state.enc_error_limit[3] = a5;
+							bot_state.enc_error_limit[4] = a6;
+							return 0;
+							break;
+						case 53:
+							//RawVelocityLimits
+							bot_state.enc_velocity_limit[0] = a2;
+							bot_state.enc_velocity_limit[1] = a3;
+							bot_state.enc_velocity_limit[2] = a4;
+							bot_state.enc_velocity_limit[3] = a5;
+							bot_state.enc_velocity_limit[4] = a6;
+							return 0;
+							break;
 
 						default:
 							return 1;
