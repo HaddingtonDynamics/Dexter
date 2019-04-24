@@ -6,11 +6,11 @@ S, J2Friction, 1;
 S, J3Friction, 1;
 S, J4Friction, 1;
 S, J5Friction, 1;
-S, J1_PID_P, 0.2
-S, J2_PID_P, 0.2
-S, J3_PID_P, 0.2
-S, J4_PID_P, 0.03
-S, J5_PID_P, 0.03
+S, J1_PID_P, 0.2;
+S, J2_PID_P, 0.2;
+S, J3_PID_P, 0.2;
+S, J4_PID_P, 0.03;
+S, J5_PID_P, 0.03;
 w, 67, 9000; BASE_FORCE_DECAY
 w, 68, 9000; END_FORCE_DECAY
 w, 69, 9000; PIVOT_FORCE_DECAY
