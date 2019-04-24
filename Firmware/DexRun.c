@@ -5018,9 +5018,9 @@ int ParseInput(char *iString)
 						p4=strtok (NULL, delimiters);
 						p5=strtok (NULL, delimiters);
 						p6=strtok (NULL, delimiters);
-						f1=0;
+						f1=0.0;
 						d2=d3=d4=d5=0;
-						if(p2!=NULL) f1=atoi(p2);
+						if(p2!=NULL) f1=atof(p2);
 						if(p3!=NULL) d2=atoi(p3);
 						if(p4!=NULL) d3=atoi(p4);
 						if(p5!=NULL) d4=atoi(p5);
