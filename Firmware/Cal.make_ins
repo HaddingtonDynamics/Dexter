@@ -1,10 +1,10 @@
 
-w, 42, 832;,
-w, 42, 512;,
+w, 42, 832;
+w, 42, 512;
 w, 79, 86;
 w, 80, 86;
 w, 81, 172;
-J1BoundryHigh: 670010;
+S, J1BoundryHigh, 670010;
 S, J1BoundryLow, -670010;
 S, J2BoundryLow, -350010;
 S, J2BoundryHigh, 350010;
