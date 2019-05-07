@@ -3,9 +3,9 @@
 //#define DEBUG_XL320_UART
 #define DEBUG_MONITOR
 #define DEG_ARCSEC 3600
-#define MONITOR_MAX_ERROR (1.5*DEG_ARCSEC) //arcseconds 
 #define MONITOR_MAX_VELOCITY (50*DEG_ARCSEC)
 //actual max angular velocity should never be more than 50 degress per second. JW
+#define MONITOR_ERROR_CODE 666
 // this is the SpeedsUpdate code 
 
 
@@ -24,6 +24,7 @@
 #include <pthread.h>
 #include <termios.h>
 #include <inttypes.h>
+#include <ctype.h>
 //#include "test.h" //TODO: Make that work
 
 #include <sys/socket.h>
@@ -1954,6 +1955,7 @@ struct CaptureArgs CptA,CptMove;
 
 //#define PARAM_LENGTH 20
 //char Params[MAX_PARAMS][PARAM_LENGTH+1] = {
+//NEVER ADD A NAME STARTING WITH A NUMERICAL DIGIT!
 const char* Params[] = {
 	"MaxSpeed", 	// 0
 	"Acceleration", // 1
@@ -2260,7 +2262,25 @@ void printPosition()
 	fflush(stdout); //actually print the data despite no \n end of string.
 }
 
+void setOpenLoop() {
+	mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE] = 0;
+	mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE] = 0;
+	mapped[DIFF_FORCE_SPEED_FACTOR_ROT] = 0;
+	mapped[SPEED_FACTORA] = 0;
+	mapped[PID_ADDRESS] = 0;
+	mapped[PID_P] = 0;
+	mapped[PID_ADDRESS] = 1;
+	mapped[PID_P] = 0;
+	mapped[PID_ADDRESS] = 2;
+	mapped[PID_P] = 0;
+	mapped[PID_ADDRESS] = 3;
+	mapped[PID_ADDRESS] = 4;
+	mapped[COMMAND_REG] = 12960;
+	printf("\nOpen Loop mode set\n");
+	}
+
 void monitorTorque() {
+	char iString[ISTRING_LEN];
 	int err_arc = 0; //amount of error in arc seconds
 	int err_at_arc = 0; //actual position where error occured
 	const int pos_at[NUM_JOINTS] = {BASE_POSITION_AT,PIVOT_POSITION_AT,END_POSITION_AT,ANGLE_POSITION_AT,ROT_POSITION_AT};
@@ -2271,6 +2291,7 @@ void monitorTorque() {
 	const int joints_slots[NUM_JOINTS] = {200, 184, 157, 115, 100};
  	//const int joints_corr[NUM_JOINTS] = {1938, 1909, 1946, 1657, 1783};
 	const int joints_corr[] = {2063, 2095, 2055, 2141, 2242};
+	//const int joints_corr[] = {2000, 2000, 2000, 2100, 2100};
 	// printf("pos_at is %i long\n", sizeof(pos_at)/sizeof(pos_at[0]));
 	// printf("%i = %i\n", BASE_POSITION_AT, pos_at[0]);
 	// printf("%i = %i\n", BASE_POSITION_FORCE_DELTA, pos_force_delta[0]);
@@ -2278,6 +2299,7 @@ void monitorTorque() {
 		//printf("J%i, ",i+1);
 		//Commanded angles
 		int pos_cmd = getNormalizedInput(pos_at[i])+getNormalizedInput(pos_force_delta[i]);
+		//TODO: 
 		//raw encoder angles. Format is 18.14 bits fixed point. 
 		int pos_raw = ( (float)((int)mapped[ pos_raw_enc[i] ])  /  ( pow(2,14) * joints_slots[i])  ) * joints_corr[i];
 		if (bot_state.start) bot_state.joints_off[i] = pos_raw; //if this is the first time, record this offset
@@ -2289,7 +2311,12 @@ void monitorTorque() {
 		//printf("%d ", pos_vel);
 		// TODO: Compare to maxSpeed_arcsec_per_sec once timebase is better known.
 		if (abs(pos_vel) > bot_state.enc_velocity_limit[i]) { 
-			printf("\nJoint %i velocity %d\n", i, pos_vel);
+			printf("\nJoint %i velocity %d. \n",i+1, pos_vel);
+			DexError = MONITOR_ERROR_CODE;
+			// strlcpy(iString, "S RunFile ErrorRawVelocity.make_ins ;\0", ISTRING_LEN);
+			// printf("\nJoint %i velocity %d. Starting %s returned %d\n",i+1, pos_vel, iString, ParseInput(iString));
+			// the above crashes if any other commands are sent at the same time. e.g. from DDE. 
+			setOpenLoop();
 		}
 		bot_state.enc_velocity[i] = pos_vel;
 		bot_state.enc_position[i] = pos_raw;
@@ -2300,12 +2327,25 @@ void monitorTorque() {
 		//printf("%d, \t", pos_raw);
 		//printf(" %d, ", err_arc);
 		if (abs(err_arc) > bot_state.enc_error_limit[i]) {
-			printf("\nJoint %i off by %i at %i\n", i+1, err_arc, pos_raw);
+			printf("\nJoint %i off by %i at %i vs %d\n",i+1, err_arc, pos_raw, pos_cmd);
+			DexError = MONITOR_ERROR_CODE;
+			//strlcpy(iString, "S RunFile ErrorRawPosition.make_ins ;\0", ISTRING_LEN);
+			//printf("\nStarting %s returned %d\n", iString, ParseInput(iString));
+			// the above crashes if any other commands are sent at the same time. e.g. from DDE. 
 			}
 		}
-	printf("      \r" );// \r moves to start of same line, needs fflush.
+	// printf("J2 AT:%8d, m:%8d, d:%8d, pd:%8d, fd:%8d", //\r moves to start of same line
+	// 	getNormalizedInput(PIVOT_POSITION_AT), // 
+	// 	getNormalizedInput(PIVOT_MEASURED_ANGLE), // 
+	// 	getNormalizedInput(PIVOT_POSITION_DELTA), // 
+	// 	getNormalizedInput(PIVOT_POSITION_PID_DELTA), // 
+	// 	getNormalizedInput(PIVOT_POSITION_FORCE_DELTA) // 
+	// 	);
+	printf("        \r" );// \r moves to start of same line, needs fflush.
 	fflush(stdout); //actually print the data despite no \n end of string.
 	bot_state.start = false;
+
+	
 	//Eye numbers e.g. which slot is the disk at
 	// const int joints_slots[5] = {200, 184, 157, 115, 100};
 	// printf(" %i,%i,%i,%i,%i ",
@@ -2324,6 +2364,7 @@ void monitorTorque() {
 	// 	);
 
 }
+
 
 int sign(int i)
 {
@@ -3190,10 +3231,17 @@ void setDefaults(int State)
 	mapped[COMMAND_REG]=0;  //shut off the servo system
 	CmdVal=0;
 	bot_state.start = true;
+
 	for (i=0; i<NUM_JOINTS; i++) {
-		bot_state.enc_error_limit[i] = MONITOR_MAX_ERROR;
+		//bot_state.enc_error_limit[i] = MONITOR_MAX_ERROR;
 		bot_state.enc_velocity_limit[i] = MONITOR_MAX_VELOCITY;
 	}
+
+	bot_state.enc_error_limit[1-1] = 4.8 * DEG_ARCSEC;
+	bot_state.enc_error_limit[2-1] = 5.0 * DEG_ARCSEC;
+	bot_state.enc_error_limit[3-1] = 5.5 * DEG_ARCSEC;
+	bot_state.enc_error_limit[4-1] = 7.2 * DEG_ARCSEC;
+	bot_state.enc_error_limit[5-1] = 7.2 * DEG_ARCSEC;
 /* Load AxisCal.txt file. This is calculated from from Gear Ratio and Microstepping as follows (in DDE) :
 //Input:
 var diff_pulley_small_num_teeth = 16
@@ -4084,357 +4132,358 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 
 	
 	//printf("SetParam: %s %f \n",a1,fa2);
-
-	for(i=0;i<MAX_PARAMS;i++)
+	//Use isdigit to test if a1 is a number, and if so, atoi and set i to that value. 
+	if (isdigit(a1[0])) {
+		printf("%s = %d \n",a1,i);
+		i = atoi(a1);
+		}
+	else {
+		for(i=0;i<MAX_PARAMS;i++) {
+			//printf("%s %s %d %d \n",Params[i],a1,a2,i);
+			if(strcmp(a1,Params[i])==0) break;
+			}
+		}
+	//printf("%s %s %d %d \n",Params[i],a1,a2,i);
+	switch(i)
 	{
-		////printf("%s %s %d %d \n",Params[i],a1,a2,i);
-		if(strcmp(a1,Params[i])==0)
-		{
-				//printf("%s %s %d %d \n",Params[i],a1,a2,i);
-				switch(i)
-				{
-						case 0:
-						////printf("Set Speed\n");
-							//set Max Speed
-                            /*
-							maxSpeed=a2 & 0b00000000000011111111111111111111;
-							mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
-							*/
-                            maxSpeed_arcsec_per_sec = a2 * arcsec_per_nbits; // Depricated. For backward compatibility with _nbits_cf from DDE.
-                            return 0;
-						break;
-						case 1:
-							//set Acceleration
-							coupledAcceleration=a2 & 0b111111;
-							mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
-							return 0;
-						break;
-						case 2:
-							forceBias[0]=a2;
-							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
+		case 0:
+		////printf("Set Speed\n");
+			//set Max Speed
+			/*
+			maxSpeed=a2 & 0b00000000000011111111111111111111;
+			mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
+			*/
+			maxSpeed_arcsec_per_sec = a2 * arcsec_per_nbits; // Depricated. For backward compatibility with _nbits_cf from DDE.
+			return 0;
+		break;
+		case 1:
+			//set Acceleration
+			coupledAcceleration=a2 & 0b111111;
+			mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
+			return 0;
+		break;
+		case 2:
+			forceBias[0]=a2;
+			KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
 
-							return 0;
-						case 3:
-							forceBias[1]=a2;
-							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
-							return 0;
-						break;
-						case 4:
-							forceBias[2]=a2;
-							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
-							return 0;
-						break;
-						case 5:
-							forceBias[3]=a2;
-							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
-							return 0;
-						break;
-						case 6:
-							forceBias[4]=a2;
-							KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
-							return 0;
-						break;
-						case 7:
-							Friction[0]=fxa2;
-							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
-							return 0;
-						break;
-						case 8:
-							Friction[1]=fxa2;
-							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
-							return 0;
-						break;
-						case 9:
-							Friction[2]=fxa2;
-							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
-							return 0;
-						break;
-						case 10:
-							Friction[3]=fxa2;
-							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
-							return 0;
-						break;
-						case 11:
-							Friction[4]=fxa2;
-							KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
-							return 0;
-						break;
-						case 12:
-							Boundary[1]=(int)((float)a2 * fabs(JointsCal[0]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		case 3:
+			forceBias[1]=a2;
+			KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
+			return 0;
+		break;
+		case 4:
+			forceBias[2]=a2;
+			KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
+			return 0;
+		break;
+		case 5:
+			forceBias[3]=a2;
+			KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
+			return 0;
+		break;
+		case 6:
+			forceBias[4]=a2;
+			KeyholeSend(forceBias, FORCE_BIAS_KEYHOLE_CMD, FORCE_BIAS_KEYHOLE_SIZE, FORCE_BIAS_KEYHOLE );
+			return 0;
+		break;
+		case 7:
+			Friction[0]=fxa2;
+			KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
+			return 0;
+		break;
+		case 8:
+			Friction[1]=fxa2;
+			KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
+			return 0;
+		break;
+		case 9:
+			Friction[2]=fxa2;
+			KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
+			return 0;
+		break;
+		case 10:
+			Friction[3]=fxa2;
+			KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
+			return 0;
+		break;
+		case 11:
+			Friction[4]=fxa2;
+			KeyholeSend(Friction, FRICTION_KEYHOLE_CMD, FRICTION_KEYHOLE_SIZE, FRICTION_KEYHOLE );
+			return 0;
+		break;
+		case 12:
+			Boundary[1]=(int)((float)a2 * fabs(JointsCal[0]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
 
-							return 0;
-						break;
-						case 13:
-							Boundary[0]=(int)((float)a2 * fabs(JointsCal[0]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-							return 0;
-						break;
-						case 14:
-							Boundary[3]=(int)((float)a2 * fabs(JointsCal[2]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-							return 0;
-						break;
-						case 15:
-							Boundary[2]=(int)((float)a2 * fabs(JointsCal[2]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-							return 0;
-						break;
-						case 16:
-							Boundary[5]=(int)((float)a2 * fabs(JointsCal[1]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-							return 0;
-						break;
-						case 17:
-							Boundary[4]=(int)((float)a2 * fabs(JointsCal[1]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-							return 0;
-						break;
-						case 18:
-							Boundary[7]=(int)((float)a2 * fabs(JointsCal[3]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-							return 0;
-						break;
-						case 19:
-							Boundary[6]=(int)((float)a2 * fabs(JointsCal[3]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-							return 0;
-						break;
-						case 20:
-							Boundary[9]=(int)((float)a2 * fabs(JointsCal[4]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-							return 0;
-						break;
-						case 21:
-							Boundary[8]=(int)((float)a2 * fabs(JointsCal[4]));
-							KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
-							return 0;
-						break;
-						case 22:
-							SetGripperMotor(a2);
-							//printf("Gripper Motor Set\n");
-							return 0;
-						break;
-						case 23:
-							SetGripperRoll(a2);
-							//printf("Gripper Roll Set\n");
-							return 0;
-						break;
-						case 24:
-							SetGripperSpan(a2);
-							//printf("Gripper Span Set\n");
-							return 0;
-						break;
-						case 25:
-							//mapped[START_SPEED]=1 ^ a2; //Replaced
-                            startSpeed_arcsec_per_sec = a2 * arcsec_per_nbits; // Depricated. For backward compatibility with _nbits_cf from DDE.
-							return 0;
-						break;
-						case 26:     // end speed todo not implemented
-							return 0;
-						break;
-						case 27:     // ServoSet2X
-							//printf("Write Packet %d %d %d \n", a2,a3,a4);
-							SendWrite2Packet(a4, a2, a3);
-							return 0;
-						break;
-						case 28:     // ServoSet
-							SendWrite1Packet((unsigned char)a4, a2, a3);
-							return 0;
-						break;
-						case 29:     // ServoReset
-							//printf("Servo Reboot %d",a2);
-							RebootServo(a2); 
-							return 0;
-						break;
-						case 30:     // Ctrl
-							//This is implimented at a higher level because of the atof on the second argument 
-							return 0;
-						break;
-						case 31:     // J1_PID_P							
-							mapped[PID_ADDRESS]=0;
-							mapped[PID_P]=(int)uia2;
-							// printf("\nSetting J1_PID_P to:\n");
-							// printf("  Float: %f\n", fa2);
-							// printf("  Hex: %x\n", uia2);
-							return 0;
-						break;
-						case 32:     // J2_PID_P
-							mapped[PID_ADDRESS]=2;
-							mapped[PID_P]=(int)uia2;
-							// printf("\nSetting J2_PID_P to:\n");
-							// printf("  Float: %f\n", fa2);
-							// printf("  Hex: %x\n", uia2);
-							return 0;
-						break;
-						case 33:     // J3_PID_P
-							mapped[PID_ADDRESS]=1;
-							mapped[PID_P]=(int)uia2;
-							// printf("\nSetting J3_PID_P to:\n");
-							// printf("  Float: %f\n", fa2);
-							// printf("  Hex: %x\n", uia2);
-							return 0;
-							return 0;
-						break;
-						case 34:     // J4_PID_P
-							mapped[PID_ADDRESS]=3;
-							mapped[PID_P]=(int)uia2;
-							// printf("\nSetting J4_PID_P to:\n");
-							// printf("  Float: %f\n", fa2);
-							// printf("  Hex: %x\n", uia2);
-							return 0;
-						break;
-						case 35:     // J5_PID_P
-							mapped[PID_ADDRESS]=4;
-							mapped[PID_P]=(int)uia2;
-							// printf("\nSetting J5_PID_P to:\n");
-							// printf("  Float: %f\n", fa2);
-							// printf("  Hex: %x\n", uia2);
-							return 0;
-						break;
-						case 36:
-							//AngularSpeed = a2;
-							maxSpeed_arcsec_per_sec = a2;
-							return 0;
-						break;
-						case 37:
-							//AngularSpeedStartAndEnd = a2;
-							startSpeed_arcsec_per_sec = a2;
-							return 0;
-						break;
-						case 38:
-							AngularAcceleration = a2;
-							return 0;
-						break;
-						case 39:
-							CartesianSpeed = a2;
-							return 0;
-						break;
-						case 40:
-							CartesianSpeedStart = a2;
-							return 0;
-						break;
-						case 41:
-							CartesianSpeedEnd = a2;
-							return 0;
-						break;
-						case 42:
-							CartesianAcceleration = a2;
-							return 0;
-						break;
-						case 43:
-							CartesianStepSize = a2;
-							return 0;
-						break;
-						case 44:
-							CartesianPivotSpeed = a2;
-							return 0;
-						break;
-						case 45:
-							CartesianPivotSpeedStart = a2;
-							return 0;
-						break;
-						case 46:
-							CartesianPivotSpeedEnd = a2;
-							return 0;
-						break;
-						case 47:
-							CartesianPivotAcceleration = a2;
-							return 0;
-						break;
-						case 48:
-							CartesianPivotStepSize = a2;
-							return 0;
-						break;
-                        case 49:
-							//EyeNumbers
-							angles_temp[0]=a2^255; 
-							angles_temp[2]=a3^255; 
-							angles_temp[1]=a4^255; 
-							angles_temp[3]=a5^255; 
-							angles_temp[4]=a6^255; 
-							printf("EyeNumbers (after xor): %d %d %d %d %d\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
-							KeyholeSend(angles_temp, RAW_ECONDER_ANGLE_KEYHOLE_CMD, RAW_ECONDER_ANGLE_KEYHOLE_SIZE, RAW_ECONDER_ANGLE_KEYHOLE );
-							return 0;
-						break;
-                        case 50:
-							//CommandedAngles
-							angles_temp[0]=a2; //atoi(p1); //a2
-							angles_temp[1]=a3; //atoi(p2); //a3
-							angles_temp[2]=a4; //atoi(p3); //a4
-							angles_temp[3]=a5; //atoi(p4); //a5
-							angles_temp[4]=a6; //atoi(p5); //a6
-							LastGoal[0] = angles_temp[0];
-							LastGoal[1] = angles_temp[1];
-							LastGoal[2] = angles_temp[2];
-							LastGoal[3] = angles_temp[3];
-							LastGoal[4] = angles_temp[4];
-							printf("CommandedAngles: %i %i %i %i %i\n", angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+			return 0;
+		break;
+		case 13:
+			Boundary[0]=(int)((float)a2 * fabs(JointsCal[0]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		break;
+		case 14:
+			Boundary[3]=(int)((float)a2 * fabs(JointsCal[2]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		break;
+		case 15:
+			Boundary[2]=(int)((float)a2 * fabs(JointsCal[2]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		break;
+		case 16:
+			Boundary[5]=(int)((float)a2 * fabs(JointsCal[1]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		break;
+		case 17:
+			Boundary[4]=(int)((float)a2 * fabs(JointsCal[1]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		break;
+		case 18:
+			Boundary[7]=(int)((float)a2 * fabs(JointsCal[3]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		break;
+		case 19:
+			Boundary[6]=(int)((float)a2 * fabs(JointsCal[3]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		break;
+		case 20:
+			Boundary[9]=(int)((float)a2 * fabs(JointsCal[4]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		break;
+		case 21:
+			Boundary[8]=(int)((float)a2 * fabs(JointsCal[4]));
+			KeyholeSend(Boundary, BOUNDRY_KEYHOLE_CMD, BOUNDRY_KEYHOLE_SIZE, BOUNDRY_KEYHOLE );
+			return 0;
+		break;
+		case 22:
+			SetGripperMotor(a2);
+			//printf("Gripper Motor Set\n");
+			return 0;
+		break;
+		case 23:
+			SetGripperRoll(a2);
+			//printf("Gripper Roll Set\n");
+			return 0;
+		break;
+		case 24:
+			SetGripperSpan(a2);
+			//printf("Gripper Span Set\n");
+			return 0;
+		break;
+		case 25:
+			//mapped[START_SPEED]=1 ^ a2; //Replaced
+			startSpeed_arcsec_per_sec = a2 * arcsec_per_nbits; // Depricated. For backward compatibility with _nbits_cf from DDE.
+			return 0;
+		break;
+		case 26:     // end speed todo not implemented
+			return 0;
+		break;
+		case 27:     // ServoSet2X
+			//printf("Write Packet %d %d %d \n", a2,a3,a4);
+			SendWrite2Packet(a4, a2, a3);
+			return 0;
+		break;
+		case 28:     // ServoSet
+			SendWrite1Packet((unsigned char)a4, a2, a3);
+			return 0;
+		break;
+		case 29:     // ServoReset
+			//printf("Servo Reboot %d",a2);
+			RebootServo(a2); 
+			return 0;
+		break;
+		case 30:     // Ctrl
+			//This is implimented at a higher level because of the atof on the second argument 
+			return 0;
+		break;
+		case 31:     // J1_PID_P							
+			mapped[PID_ADDRESS]=0;
+			mapped[PID_P]=(int)uia2;
+			// printf("\nSetting J1_PID_P to:\n");
+			// printf("  Float: %f\n", fa2);
+			// printf("  Hex: %x\n", uia2);
+			return 0;
+		break;
+		case 32:     // J2_PID_P
+			mapped[PID_ADDRESS]=2;
+			mapped[PID_P]=(int)uia2;
+			// printf("\nSetting J2_PID_P to:\n");
+			// printf("  Float: %f\n", fa2);
+			// printf("  Hex: %x\n", uia2);
+			return 0;
+		break;
+		case 33:     // J3_PID_P
+			mapped[PID_ADDRESS]=1;
+			mapped[PID_P]=(int)uia2;
+			// printf("\nSetting J3_PID_P to:\n");
+			// printf("  Float: %f\n", fa2);
+			// printf("  Hex: %x\n", uia2);
+			return 0;
+		break;
+		case 34:     // J4_PID_P
+			mapped[PID_ADDRESS]=3;
+			mapped[PID_P]=(int)uia2;
+			// printf("\nSetting J4_PID_P to:\n");
+			// printf("  Float: %f\n", fa2);
+			// printf("  Hex: %x\n", uia2);
+			return 0;
+		break;
+		case 35:     // J5_PID_P
+			mapped[PID_ADDRESS]=4;
+			mapped[PID_P]=(int)uia2;
+			// printf("\nSetting J5_PID_P to:\n");
+			// printf("  Float: %f\n", fa2);
+			// printf("  Hex: %x\n", uia2);
+			return 0;
+		break;
+		case 36:
+			//AngularSpeed = a2;
+			maxSpeed_arcsec_per_sec = a2;
+			return 0;
+		break;
+		case 37:
+			//AngularSpeedStartAndEnd = a2;
+			startSpeed_arcsec_per_sec = a2;
+			return 0;
+		break;
+		case 38:
+			AngularAcceleration = a2;
+			return 0;
+		break;
+		case 39:
+			CartesianSpeed = a2;
+			return 0;
+		break;
+		case 40:
+			CartesianSpeedStart = a2;
+			return 0;
+		break;
+		case 41:
+			CartesianSpeedEnd = a2;
+			return 0;
+		break;
+		case 42:
+			CartesianAcceleration = a2;
+			return 0;
+		break;
+		case 43:
+			CartesianStepSize = a2;
+			return 0;
+		break;
+		case 44:
+			CartesianPivotSpeed = a2;
+			return 0;
+		break;
+		case 45:
+			CartesianPivotSpeedStart = a2;
+			return 0;
+		break;
+		case 46:
+			CartesianPivotSpeedEnd = a2;
+			return 0;
+		break;
+		case 47:
+			CartesianPivotAcceleration = a2;
+			return 0;
+		break;
+		case 48:
+			CartesianPivotStepSize = a2;
+			return 0;
+		break;
+		case 49:
+			//EyeNumbers
+			angles_temp[0]=a2^255; 
+			angles_temp[2]=a3^255; 
+			angles_temp[1]=a4^255; 
+			angles_temp[3]=a5^255; 
+			angles_temp[4]=a6^255; 
+			printf("EyeNumbers (after xor): %d %d %d %d %d\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+			KeyholeSend(angles_temp, RAW_ECONDER_ANGLE_KEYHOLE_CMD, RAW_ECONDER_ANGLE_KEYHOLE_SIZE, RAW_ECONDER_ANGLE_KEYHOLE );
+			return 0;
+		break;
+		case 50:
+			//CommandedAngles
+			angles_temp[0]=a2; //atoi(p1); //a2
+			angles_temp[1]=a3; //atoi(p2); //a3
+			angles_temp[2]=a4; //atoi(p3); //a4
+			angles_temp[3]=a5; //atoi(p4); //a5
+			angles_temp[4]=a6; //atoi(p5); //a6
+			LastGoal[0] = angles_temp[0];
+			LastGoal[1] = angles_temp[1];
+			LastGoal[2] = angles_temp[2];
+			LastGoal[3] = angles_temp[3];
+			LastGoal[4] = angles_temp[4];
+			printf("CommandedAngles: %i %i %i %i %i\n", angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
 
-							//getNormalizedInput(mapped[BASE_POSITION_AT]) / JointsCal[0];
+			//getNormalizedInput(mapped[BASE_POSITION_AT]) / JointsCal[0];
 
-							/*
-							angles_temp[0] = (int)((double)a2 * JointsCal[0]) + getNormalizedInput(BASE_POSITION_AT);
-							angles_temp[1] = (int)((double)a4 * JointsCal[2]) + getNormalizedInput(END_POSITION_AT);
-							angles_temp[2] = (int)((double)a3 * JointsCal[1]) + getNormalizedInput(PIVOT_POSITION_AT);
-							angles_temp[3] = (int)((double)a5 * JointsCal[3]) + getNormalizedInput(ANGLE_POSITION_AT);
-							angles_temp[4] = (int)((double)a6 * JointsCal[4]) + getNormalizedInput(ROT_POSITION_AT);
-							*/
+			/*
+			angles_temp[0] = (int)((double)a2 * JointsCal[0]) + getNormalizedInput(BASE_POSITION_AT);
+			angles_temp[1] = (int)((double)a4 * JointsCal[2]) + getNormalizedInput(END_POSITION_AT);
+			angles_temp[2] = (int)((double)a3 * JointsCal[1]) + getNormalizedInput(PIVOT_POSITION_AT);
+			angles_temp[3] = (int)((double)a5 * JointsCal[3]) + getNormalizedInput(ANGLE_POSITION_AT);
+			angles_temp[4] = (int)((double)a6 * JointsCal[4]) + getNormalizedInput(ROT_POSITION_AT);
+			*/
 
-							angles_temp[0] = ((int)((double)a2 - getNormalizedInput(BASE_POSITION_AT)) * JointsCal[0]);
-							angles_temp[1] = ((int)((double)a4 - getNormalizedInput(END_POSITION_AT)) * JointsCal[2]);
-							angles_temp[2] = ((int)((double)a3 - getNormalizedInput(PIVOT_POSITION_AT)) * JointsCal[1]);
-							angles_temp[3] = ((int)((double)a5 - getNormalizedInput(ANGLE_POSITION_AT)) * JointsCal[3]);
-							angles_temp[4] = ((int)((double)a6 - getNormalizedInput(ROT_POSITION_AT)) * JointsCal[4]);
+			angles_temp[0] = ((int)((double)a2 - getNormalizedInput(BASE_POSITION_AT)) * JointsCal[0]);
+			angles_temp[1] = ((int)((double)a4 - getNormalizedInput(END_POSITION_AT)) * JointsCal[2]);
+			angles_temp[2] = ((int)((double)a3 - getNormalizedInput(PIVOT_POSITION_AT)) * JointsCal[1]);
+			angles_temp[3] = ((int)((double)a5 - getNormalizedInput(ANGLE_POSITION_AT)) * JointsCal[3]);
+			angles_temp[4] = ((int)((double)a6 - getNormalizedInput(ROT_POSITION_AT)) * JointsCal[4]);
 
-							/*
-							angles_temp[0] = -(int)((double)a2 * JointsCal[0]);
-							angles_temp[1] = -(int)((double)a4 * JointsCal[2]);
-							angles_temp[2] = -(int)((double)a3 * JointsCal[1]);
-							angles_temp[3] = -(int)((double)a5 * JointsCal[3]);
-							angles_temp[4] = -(int)((double)a6 * JointsCal[4]);
-							*/
+			/*
+			angles_temp[0] = -(int)((double)a2 * JointsCal[0]);
+			angles_temp[1] = -(int)((double)a4 * JointsCal[2]);
+			angles_temp[2] = -(int)((double)a3 * JointsCal[1]);
+			angles_temp[3] = -(int)((double)a5 * JointsCal[3]);
+			angles_temp[4] = -(int)((double)a6 * JointsCal[4]);
+			*/
 
-							printf("CommandedAngles: %i %i %i %i %i (steps)\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
-							mapped[COMMAND_REG]= CMD_MOVEEN | CmdVal;
-							KeyholeSend(angles_temp, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
-							mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0x80000000; //sets mux to read from commanded angles keyhole
-							mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0xC0000000; //triggers the add
-							mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal;
-							return 0;
-						break;
-                        case 51:
-							//LinkLengths (implemented in SET_PARAM)
-							return 0;
-							break;
-						case 52:
-							//RawEncoderErrorLimits
-							bot_state.enc_error_limit[0] = a2;
-							bot_state.enc_error_limit[1] = a3;
-							bot_state.enc_error_limit[2] = a4;
-							bot_state.enc_error_limit[3] = a5;
-							bot_state.enc_error_limit[4] = a6;
-							return 0;
-							break;
-						case 53:
-							//RawVelocityLimits
-							bot_state.enc_velocity_limit[0] = a2;
-							bot_state.enc_velocity_limit[1] = a3;
-							bot_state.enc_velocity_limit[2] = a4;
-							bot_state.enc_velocity_limit[3] = a5;
-							bot_state.enc_velocity_limit[4] = a6;
-							return 0;
-							break;
+			printf("CommandedAngles: %i %i %i %i %i (steps)\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
+			mapped[COMMAND_REG]= CMD_MOVEEN | CmdVal;
+			KeyholeSend(angles_temp, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
+			mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0x80000000; //sets mux to read from commanded angles keyhole
+			mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0xC0000000; //triggers the add
+			mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal;
+			return 0;
+		break;
+		case 51:
+			//LinkLengths (implemented in SET_PARAM)
+			return 0;
+			break;
+		case 52:
+			//RawEncoderErrorLimits
+			bot_state.enc_error_limit[0] = a2;
+			bot_state.enc_error_limit[1] = a3;
+			bot_state.enc_error_limit[2] = a4;
+			bot_state.enc_error_limit[3] = a5;
+			bot_state.enc_error_limit[4] = a6;
+			return 0;
+			break;
+		case 53:
+			//RawVelocityLimits
+			bot_state.enc_velocity_limit[0] = a2;
+			bot_state.enc_velocity_limit[1] = a3;
+			bot_state.enc_velocity_limit[2] = a4;
+			bot_state.enc_velocity_limit[3] = a5;
+			bot_state.enc_velocity_limit[4] = a6;
+			return 0;
+			break;
 
-						default:
-							return 1;
-							break;
-				} //switch
+		default:
+			return 1;
+			break;
+	} //switch
 		
-		} // if (strcmp)
-	} //for
-	return 1; //return an error, because we should have already returned 0
-
+	return 1;
 }
 
 int MoveRobotRelative(int a1,int a2,int a3,int a4,int a5, int mode)
@@ -5319,6 +5368,8 @@ int ParseInput(char *iString)
 					//printf("\n %d %d %d \n",OldMemMapInderection[i],i,j);
 					if(OldMemMapInderection[i]==COMMAND_REG)
 						CmdVal=j;
+					//printf("\n  mapped[%d] = %d;\n",OldMemMapInderection[i],j);
+					//to build up a set of FPGA commands, just use the above printf and copy the result into your code.
 					mapped[OldMemMapInderection[i]]=j;
 					if(i==ACCELERATION_MAXSPEED)
 					{
