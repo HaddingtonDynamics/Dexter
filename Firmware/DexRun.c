@@ -495,7 +495,9 @@ int LastGoal[5]={0,0,0,0,0};
 //LinkLengths
 //double L[5] = { 0.1651, 0.320675, 0.3302, 0.0508, 0.08255 }; // (meters)
 //double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
-double L[5] = { 165100, 340320, 321032, 50800, 140000 }; // (microns) JW 20190312 for HD version with gripper
+//double L[5] = { 165100, 340320, 321032, 50800, 140000 }; // (microns) JW 20190312 for HD version with gripper
+double L[5] = { 228600, 339700, 309600, 94600, 112200 }; // JW / JF 20190523 better for HD from Monty
+
 //double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
 
 int SP_CommandedAngles[5] = { 0, 0, 0, 0, 0 }; // Starting Position Commanded (arcseconds)
