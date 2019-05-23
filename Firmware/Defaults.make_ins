@@ -1,7 +1,7 @@
 ; These values describe the physical robot to the firmware and set the default operational values.
 ; Edit this file to accomodate the exact physical makeup of the arm.
 ; Length of each link in the robot, in microns. L5 is first, L1 last.
-S, LinkLengths, 228600, 339700, 309600, 94600, 112200;
+S, LinkLengths, 82551, 50801, 330201, 320676, 228600;
 ; Limits to the motion of each joint, in arcseconds from center
 S, J1BoundryHigh, 540000;
 S, J1BoundryLow, -540000;
