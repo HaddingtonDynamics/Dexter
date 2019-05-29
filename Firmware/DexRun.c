@@ -316,11 +316,11 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define ROT_MEASURED_ANGLE 55 + INPUT_OFFSET
 
 // Encoder Angles (Integer portion only??)
-#define BASE_EYE_NUMBER 59 + INPUT_OFFSET // was 56
-#define PIVOT_EYE_NUMBER 56 + INPUT_OFFSET// was 58 (not 57)
-#define END_EYE_NUMBER 60 + INPUT_OFFSET  // was 57 (not 58)
-#define ROT_EYE_NUMBER 58 + INPUT_OFFSET  // was 60
-#define ANGLE_EYE_NUMBER 57 + INPUT_OFFSET// was 59
+#define BASE_EYE_NUMBER 56 + INPUT_OFFSET // 
+#define PIVOT_EYE_NUMBER 58 + INPUT_OFFSET// (not 57)
+#define END_EYE_NUMBER 57 + INPUT_OFFSET  // (not 58)
+#define ANGLE_EYE_NUMBER 59 + INPUT_OFFSET// 
+#define ROT_EYE_NUMBER 60 + INPUT_OFFSET  // 
 
 #define BASE_RAW_ENCODER_ANGLE_FXP 61 + INPUT_OFFSET // was 64 //was 61
 #define PIVOT_RAW_ENCODER_ANGLE_FXP 63 + INPUT_OFFSET// was 61 //was 63 (not 62)
