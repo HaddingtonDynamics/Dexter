@@ -1,10 +1,14 @@
 //#define NO_BOOT_DANCE
 //#define DEBUG_API
 //#define DEBUG_XL320_UART
-#define DEBUG_MONITOR
+#define DEBUG_MONITOR 
+//
 #define DEG_ARCSEC 3600
-#define MONITOR_MAX_VELOCITY (50*DEG_ARCSEC)
+#define MONITOR_MAX_VELOCITY (100*DEG_ARCSEC)
 //actual max angular velocity should never be more than 50 degress per second. JW
+#define MONITOR_MAX_ERROR 180
+//multiplier for the number of degrees of error the raw encoder can be off. 
+//180 basically disables it
 #define MONITOR_ERROR_CODE 666
 // this is the SpeedsUpdate code 
 
@@ -497,7 +501,6 @@ int LastGoal[5]={0,0,0,0,0};
 //double L[5] = { 165100, 320675, 330200, 50800, 82550 }; // (microns)
 //double L[5] = { 165100, 340320, 321032, 50800, 140000 }; // (microns) JW 20190312 for HD version with gripper
 double L[5] = { 228600, 320676, 330201, 50801, 82551 }; // JW / JF 20190523 better for HD from Monty
-
 //double SP[5] = { 0, 0, 0, 0, 0 }; // (arcseconds)
 
 int SP_CommandedAngles[5] = { 0, 0, 0, 0, 0 }; // Starting Position Commanded (arcseconds)
@@ -2246,6 +2249,8 @@ struct monitorbot {
 	int enc_position[NUM_JOINTS]; //last known joint position. Maybe raw or calibrated.
 	int enc_velocity[NUM_JOINTS]; //last known joint velocity (e.g. last position - current position)
 	int enc_velocity_limit[NUM_JOINTS]; //maximum allowed raw encoder velocity
+	int enc_velocity_count; //number of velocity errors seen
+	int enc_velocity_count_limit; 
 	int enc_error_limit[NUM_JOINTS]; //maximum allowed error between raw encoder and commanded position
 	bool start; //is this the first read?
 	int joints_off[NUM_JOINTS]; //offset for raw joint positions
@@ -2297,6 +2302,9 @@ void monitorTorque() {
 	// printf("pos_at is %i long\n", sizeof(pos_at)/sizeof(pos_at[0]));
 	// printf("%i = %i\n", BASE_POSITION_AT, pos_at[0]);
 	// printf("%i = %i\n", BASE_POSITION_FORCE_DELTA, pos_force_delta[0]);
+	FILE *err_file;
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
 	for (int i = 0; i < NUM_JOINTS; i++) {
 		//printf("J%i, ",i+1);
 		//Commanded angles
@@ -2313,12 +2321,33 @@ void monitorTorque() {
 		//printf("%d ", pos_vel);
 		// TODO: Compare to maxSpeed_arcsec_per_sec once timebase is better known.
 		if (abs(pos_vel) > bot_state.enc_velocity_limit[i]) { 
-			printf("\nJoint %i velocity %d. \n",i+1, pos_vel);
+			bot_state.enc_velocity_count += NUM_JOINTS;
+			err_file = fopen("errors.log", "a");
+			if (err_file) {
+				tm = *localtime(&t);
+				fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+				fprintf(err_file, ", Joint %i velocity %d. \n", i+1, pos_vel);
+				fclose(err_file);
+				printf("Joint %i velocity %d. \n", i+1, pos_vel);
+				}
 			DexError = MONITOR_ERROR_CODE;
-			// strlcpy(iString, "S RunFile ErrorRawVelocity.make_ins ;\0", ISTRING_LEN);
-			// printf("\nJoint %i velocity %d. Starting %s returned %d\n",i+1, pos_vel, iString, ParseInput(iString));
-			// the above crashes if any other commands are sent at the same time. e.g. from DDE. 
-			setOpenLoop();
+			if (bot_state.enc_velocity_count > bot_state.enc_velocity_count_limit) {
+				// strlcpy(iString, "S RunFile ErrorRawVelocity.make_ins ;\0", ISTRING_LEN);
+				// printf("\nJoint %i velocity %d. Starting %s returned %d\n",i+1, pos_vel, iString, ParseInput(iString));
+				// the above crashes if any other commands are sent at the same time. e.g. from DDE. 
+				err_file = fopen("errors.log", "a");
+				if (err_file) {
+					tm = *localtime(&t);
+					fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+					fprintf(err_file, ", Joint %i velocity errors: Set open loop mode \n", i+1);
+					fclose(err_file);
+					printf("Joint %i velocity errors: Set open loop mode \n", i+1);
+					}
+				setOpenLoop();
+				}
+			}
+		else {
+			if (bot_state.enc_velocity_count > 0) bot_state.enc_velocity_count--;
 		}
 		bot_state.enc_velocity[i] = pos_vel;
 		bot_state.enc_position[i] = pos_raw;
@@ -2329,7 +2358,14 @@ void monitorTorque() {
 		//printf("%d, \t", pos_raw);
 		//printf(" %d, ", err_arc);
 		if (abs(err_arc) > bot_state.enc_error_limit[i]) {
-			printf("\nJoint %i off by %i at %i vs %d\n",i+1, err_arc, pos_raw, pos_cmd);
+			err_file = fopen("errors.log", "a");
+			if (err_file) {
+				tm = *localtime(&t);
+				fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+				fprintf(err_file, ", Joint %i off by %i at %i vs %d\n",i+1, err_arc, pos_raw, pos_cmd);
+				fclose(err_file);
+				printf("Joint %i off by %i at %i vs %d\n",i+1, err_arc, pos_raw, pos_cmd);
+				}
 			DexError = MONITOR_ERROR_CODE;
 			//strlcpy(iString, "S RunFile ErrorRawPosition.make_ins ;\0", ISTRING_LEN);
 			//printf("\nStarting %s returned %d\n", iString, ParseInput(iString));
@@ -2471,10 +2507,10 @@ void SetGripperSpan(int Possition)
 //	mapped[SERVO_SETPOINT_B]=Possition;
 */	
 }
-void SetGripperMotor(int state)
+void SetGripperMotor(int state, int on_width, int off_width)
 { // pin 7 of connector J19 on bottom of PCB. TODO make ON and OFF widths parameters. 
-	mapped[GRIPPER_MOTOR_ON_WIDTH]=12000;
-	mapped[GRIPPER_MOTOR_OFF_WIDTH]=0;
+	mapped[GRIPPER_MOTOR_ON_WIDTH]=on_width; //12000;
+	mapped[GRIPPER_MOTOR_OFF_WIDTH]=off_width; //0;
 	mapped[GRIPPER_MOTOR_CONTROL]=state; //Pulse Width
 }
 void *StartServerSocketDDE(void *arg)
@@ -2937,12 +2973,14 @@ bool ProcessServerReceiveDataDDE(char *recBuff)
 	////printf("\n%s \n",recBuff);
 	#ifdef DEBUG_API
 	if(CmdString[0]!='g')
-	printf("\n%s  \n %d",CmdString,cmditer++);
+	printf("\n%d : %s ",cmditer++,CmdString);
+	fflush(stdout);
 	#endif
 	DexError=ParseInput(CmdString); 
 	#ifdef DEBUG_API
-	if(CmdString[0]!='g')
-	printf("\n Error %d",DexError);
+	if(CmdString[0]!='g' && DexError > 0)
+	printf(" Error %d",DexError);
+	fflush(stdout);
 	#endif
 	return TRUE;
 }
@@ -3238,12 +3276,15 @@ void setDefaults(int State)
 		//bot_state.enc_error_limit[i] = MONITOR_MAX_ERROR;
 		bot_state.enc_velocity_limit[i] = MONITOR_MAX_VELOCITY;
 	}
-
-	bot_state.enc_error_limit[1-1] = 4.8 * DEG_ARCSEC;
-	bot_state.enc_error_limit[2-1] = 5.0 * DEG_ARCSEC;
-	bot_state.enc_error_limit[3-1] = 5.5 * DEG_ARCSEC;
-	bot_state.enc_error_limit[4-1] = 7.2 * DEG_ARCSEC;
-	bot_state.enc_error_limit[5-1] = 7.2 * DEG_ARCSEC;
+	//increasing error tolerance as the joints become less stiff 
+	bot_state.enc_error_limit[1-1] = 5.0 * MONITOR_MAX_ERROR * DEG_ARCSEC;
+	bot_state.enc_error_limit[2-1] = 5.0 * MONITOR_MAX_ERROR * DEG_ARCSEC;
+	bot_state.enc_error_limit[3-1] = 6.0 * MONITOR_MAX_ERROR * DEG_ARCSEC;
+	bot_state.enc_error_limit[4-1] = 7.4 * MONITOR_MAX_ERROR * DEG_ARCSEC;
+	bot_state.enc_error_limit[5-1] = 7.4 * MONITOR_MAX_ERROR * DEG_ARCSEC;
+	bot_state.enc_velocity_count = 0;
+	bot_state.enc_velocity_count_limit = 10; //we can jerk 100 times before we error.
+	
 /* Load AxisCal.txt file. This is calculated from from Gear Ratio and Microstepping as follows (in DDE) :
 //Input:
 var diff_pulley_small_num_teeth = 16
@@ -3562,7 +3603,7 @@ int WaitMoveGoal(int a1,int a2,int a3,int a4,int a5,int timeout)
 
 void moverobotPID(int a1,int a2,int a3,int a4,int a5)
 {
-	//CheckBoundry(&a1,&a2,&a3,&a4,&a5);
+	CheckBoundry(&a1,&a2,&a3,&a4,&a5);
 	
 	a1=(int)((double)a1 * JointsCal[0]);
 	a2=(int)((double)a2 * JointsCal[1]);
@@ -3587,7 +3628,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 {
 	int KeyHoleArray[5];
 
-	//CheckBoundry(&a1,&a2,&a3,&a4,&a5);
+	CheckBoundry(&a1,&a2,&a3,&a4,&a5);
 
 
 /*	int b1,b2,b3,b4,b5;
@@ -3749,8 +3790,9 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
     */
 	
 
-    if(1 > new_StartSpeed){new_StartSpeed = 1;} //Anything less than 1 will cause infinite loop. Consider error code for this.
+    if(1 > new_StartSpeed){new_StartSpeed = 1;DexError = 1;} //Anything less than 1 will cause infinite loop. Consider error code for this.
     mapped[START_SPEED] = 500 ^ new_StartSpeed; // Start speed is defaulted in the FPGA to 500   
+    if(2 > new_MaxSpeed){new_MaxSpeed = 2;DexError = 1;} //Must be higher than minimum StartSpeed. Consider error code for this.
 	maxSpeed=(new_MaxSpeed) & 0b00000000000011111111111111111111;
 	mapped[ACCELERATION_MAXSPEED]= maxSpeed + (coupledAcceleration << 20);
     //printf("new_StartSpeed: %d\n", new_StartSpeed);
@@ -4064,8 +4106,23 @@ int MoveRobotStraight(struct XYZ xyz_2)
 	return 0;
 }
 
-int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5)
-{
+int JointAngleBoundErr(char ejoint, int eangle, int eboundry) {
+	FILE *err_file;
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
+	err_file = fopen("errors.log", "a");
+	if (err_file) {
+		tm = *localtime(&t);
+		fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+		fprintf(err_file, ", Joint %i angle %i exceeded boundary %d. \n", ejoint, eangle, eboundry);
+		fclose(err_file);
+		printf ("Joint %i angle %i exceeded boundary %d. \n", ejoint, eangle, eboundry);
+		}
+	return 665;
+	}
+
+int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5) {
+	int err = 0; // Error number to return, default to zero
 	int h1,h2,h3,h4,h5,l1,l2,l3,l4,l5;
 	h1=(int)((float)Boundary[0] / fabs(JointsCal[0]));
 	h2=(int)((float)Boundary[2] / fabs(JointsCal[1]));
@@ -4078,50 +4135,49 @@ int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5)
 	l4=(int)((float)Boundary[7] / fabs(JointsCal[3]));
 	l5=(int)((float)Boundary[9] / fabs(JointsCal[4]));
 	
-	if(*(j1) >= h1)
-	{
+	if(*(j1) >= h1) {
+		err = JointAngleBoundErr(1, *(j1), h1);
 		*(j1) = h1;
-	}
+		}
 	
-	if(*(j1) <= l1)
-	{
+	if(*(j1) <= l1) {
+		err = JointAngleBoundErr(1, *(j1), l1);
 		*(j1) = l1;
-	}
-	if(*(j2) >= h2)
-	{
+		}
+	if(*(j2) >= h2) {
+		err = JointAngleBoundErr(2, *(j2), h2);
 		*(j2) = h2;
-	}
-	if(*(j2) <= l2)
-	{
+		}
+	if(*(j2) <= l2) {
+		err = JointAngleBoundErr(2, *(j2), l2);
 		*(j2) = l2;
-	}
-	if(*(j3) >= h3)
-	{
+		}
+	if(*(j3) >= h3) {
+		err = JointAngleBoundErr(3, *(j3), h3);
 		*(j3) = h3;
-	}
-	if(*(j3) <= l3)
-	{
+		}
+	if(*(j3) <= l3) {
+		err = JointAngleBoundErr(3, *(j3), l3);
 		*(j3) = l3;
-	}
-	if(*(j4) >= h4)
-	{
+		}
+	if(*(j4) >= h4) {
+		err = JointAngleBoundErr(4, *(j4), h4);
 		*(j4) = h4;
-	}
-	if(*(j4) <= l4)
-	{
+		}
+	if(*(j4) <= l4) {
+		err = JointAngleBoundErr(4, *(j4), l4);
 		*(j4) = l4;
-	}
-	if(*(j5) >= h5)
-	{
+		}
+	if(*(j5) >= h5) {
+		err = JointAngleBoundErr(5, *(j5), h5);
 		*(j5) = h5;
-	}
-	if(*(j5) <= l5)
-	{
+		}
+	if(*(j5) <= l5) {
+		err = JointAngleBoundErr(5, *(j5), l5);
 		*(j5) = l5;
-	}
-	 if(*(j1)==0)
-		 *(j1)=1;
- 	return 0;
+		}
+	// if(*(j1)==0) *(j1)=1;  //why was this here?
+ 	return err;
 }
 
 int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
@@ -4132,12 +4188,14 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 	unsigned int *uia2 = *(unsigned int*)&fa2;
     int angles_temp[5];
 
-	
 	//printf("SetParam: %s %f \n",a1,fa2);
 	//Use isdigit to test if a1 is a number, and if so, atoi and set i to that value. 
 	if (isdigit(a1[0])) {
-		printf("%s = %d \n",a1,i);
 		i = atoi(a1);
+#ifdef DEBUG_API
+		printf("parm no: %s = %d \n",a1,i);
+		fflush(stdout);
+#endif
 		}
 	else {
 		for(i=0;i<MAX_PARAMS;i++) {
@@ -4145,7 +4203,11 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			if(strcmp(a1,Params[i])==0) break;
 			}
 		}
-	//printf("%s %s %d %d \n",Params[i],a1,a2,i);
+#ifdef DEBUG_API
+	printf("%s = %s %f (%d) %d %d %d %d %d\n",Params[i],a1,fa2,a2,i,a3,a4,a5,a6); 
+	//will segfault if i=MAX_PARAMS (not found)
+	fflush(stdout);
+#endif
 	switch(i)
 	{
 		case 0:
@@ -4266,8 +4328,8 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			return 0;
 		break;
 		case 22:
-			SetGripperMotor(a2);
-			//printf("Gripper Motor Set\n");
+			SetGripperMotor(a2, a3, a4);
+			printf("Gripper Motor Set state: %d, on: %d, off: %d\n", a2, a3, a4);
 			return 0;
 		break;
 		case 23:
@@ -4947,6 +5009,7 @@ int ParseInput(char *iString)
 			tokenVal=HashInputCMD(token);
 #ifdef DEBUG_API
 			printf("Token %s TokenVal %i",token,tokenVal);
+			fflush(stdout);
 #endif
 		}
 		else
