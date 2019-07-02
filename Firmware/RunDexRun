@@ -22,6 +22,11 @@ pkill -e -x DexRun
 		fi
 #	fi
 
+# date -r /srv/samba/share/DexRun "+%Y/%m/%d %H:%M:%S"
+sed -i "s/DexRun modified.*/DexRun modified $(date -r /srv/samba/share/DexRun +%Y-%m-%dT%H:%M:%SZ)/g" Defaults.make_ins
+sed -i "s/xillydemo modified.*/xillydemo modified $(date -r /srv/samba/share/xillydemo.bit +%Y-%m-%dT%H:%M:%SZ)/g" Defaults.make_ins
+sed -i "s/OS version.*/OS version $(lsb_release -d -s)/g" Defaults.make_ins
+
 cd /srv/samba/share
 #echo "running">>/srv/samba/share/DexRun.log
 ./DexRun 1 3 1 &
