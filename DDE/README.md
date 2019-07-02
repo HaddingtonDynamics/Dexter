@@ -8,7 +8,7 @@ https://github.com/cfry/dde/releases/tag/v2.5.13
 Newer development releases of DDE can be found on the releases tab at:<br>
 https://github.com/cfry/dde
 
-BETA version [3.0.7](https://github.com/cfry/dde/releases/tag/v3.0.7) is known to passes most test suites, it can move the robot in open loop modes, and the calibration system works well for closed loop modes. 
+BETA version [3.0.7](https://github.com/cfry/dde/releases/tag/v3.0.7) is known to passes most tests on the internal test suite, it can move the robot in open loop modes, and the calibration system works well for closed loop modes. 
 
 The current DDE documentation (precedded by some previously written articles) is available online here:
 http://hdrobotic.com/software/
