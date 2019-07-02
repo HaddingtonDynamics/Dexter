@@ -3214,7 +3214,8 @@ void CvrtBoundary_CenterMag_to_HILOW(int Center, int Magnitude, int *ResultHi, i
 
 //unsigned int CvrtBoundary_HILOW_to_CenterMag(int High, int Low){}
 
-int Boundary[10];
+// Boundary is low first, then high, for joints 1 thru 5
+int Boundary[10] = {-670010, 670010, -350010, 350010, -570010, 570010, -390010, 390010, -684010, 684010};
 int forceBias[5];
 int Friction[5];
 int FineAdjust[5];
@@ -4124,16 +4125,16 @@ int JointAngleBoundErr(char ejoint, int eangle, int eboundry) {
 int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5) {
 	int err = 0; // Error number to return, default to zero
 	int h1,h2,h3,h4,h5,l1,l2,l3,l4,l5;
-	h1=(int)((float)Boundary[0] / fabs(JointsCal[0]));
-	h2=(int)((float)Boundary[2] / fabs(JointsCal[1]));
-	h3=(int)((float)Boundary[4] / fabs(JointsCal[2]));
-	h4=(int)((float)Boundary[6] / fabs(JointsCal[3]));
-	h5=(int)((float)Boundary[8] / fabs(JointsCal[4]));
-	l1=(int)((float)Boundary[1] / fabs(JointsCal[0]));
-	l2=(int)((float)Boundary[3] / fabs(JointsCal[1]));
-	l3=(int)((float)Boundary[5] / fabs(JointsCal[2]));
-	l4=(int)((float)Boundary[7] / fabs(JointsCal[3]));
-	l5=(int)((float)Boundary[9] / fabs(JointsCal[4]));
+	l1=(int)((float)Boundary[0] / fabs(JointsCal[0]));
+	l2=(int)((float)Boundary[2] / fabs(JointsCal[1]));
+	l3=(int)((float)Boundary[4] / fabs(JointsCal[2]));
+	l4=(int)((float)Boundary[6] / fabs(JointsCal[3]));
+	l5=(int)((float)Boundary[8] / fabs(JointsCal[4]));
+	h1=(int)((float)Boundary[1] / fabs(JointsCal[0]));
+	h2=(int)((float)Boundary[3] / fabs(JointsCal[1]));
+	h3=(int)((float)Boundary[5] / fabs(JointsCal[2]));
+	h4=(int)((float)Boundary[7] / fabs(JointsCal[3]));
+	h5=(int)((float)Boundary[9] / fabs(JointsCal[4]));
 	
 	if(*(j1) >= h1) {
 		err = JointAngleBoundErr(1, *(j1), h1);
@@ -5455,8 +5456,8 @@ int ParseInput(char *iString)
 					p8=strtok (NULL, delimiters);
 					p9=strtok (NULL, delimiters);
 					p10=strtok (NULL, delimiters);
-					Boundary[1] =(int)((float)atoi(p1) * fabs(JointsCal[0]));
-					Boundary[0] =(int)((float)atoi(p2) * fabs(JointsCal[0]));
+					Boundary[1]=(int)((float)atoi(p1) * fabs(JointsCal[0])); //high
+					Boundary[0]=(int)((float)atoi(p2) * fabs(JointsCal[0])); //low
 					Boundary[3]=(int)((float)atoi(p5) * fabs(JointsCal[2]));
 					Boundary[2]=(int)((float)atoi(p6) * fabs(JointsCal[2]));
 					Boundary[5]=(int)((float)atoi(p3) * fabs(JointsCal[1]));
@@ -5614,11 +5615,6 @@ int main(int argc, char *argv[]) {
 //  Addr= = atoi(argv[3]);
 //  Dta= = atoi(argv[4]);
 //  mapped[Addr] = Dta;
-
-    wfp = fopen("/srv/samba/share/BootDance_IP_0.make_ins", "w");
-	fprintf(wfp, "; This dance is written by DexRun.c on bootup\n; The angles are set to the values in StartPosition_CommandedAngles.txt\na %d %d %d %d %d;",SP_CommandedAngles[0], SP_CommandedAngles[1], SP_CommandedAngles[2], SP_CommandedAngles[3], SP_CommandedAngles[4]);
-	fclose(wfp);
-	wfp = 0;
 
 	setDefaults(DefaultMode);
 	strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
