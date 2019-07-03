@@ -4127,54 +4127,54 @@ int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5) {
 	int err = 0; // Error number to return, default to zero
 	int h1,h2,h3,h4,h5,l1,l2,l3,l4,l5;
 	l1=(int)((float)Boundary[0] / fabs(JointsCal[0]));
-	l2=(int)((float)Boundary[2] / fabs(JointsCal[1]));
-	l3=(int)((float)Boundary[4] / fabs(JointsCal[2]));
+	l3=(int)((float)Boundary[2] / fabs(JointsCal[1]));
+	l2=(int)((float)Boundary[4] / fabs(JointsCal[2]));
 	l4=(int)((float)Boundary[6] / fabs(JointsCal[3]));
 	l5=(int)((float)Boundary[8] / fabs(JointsCal[4]));
 	h1=(int)((float)Boundary[1] / fabs(JointsCal[0]));
-	h2=(int)((float)Boundary[3] / fabs(JointsCal[1]));
-	h3=(int)((float)Boundary[5] / fabs(JointsCal[2]));
+	h3=(int)((float)Boundary[3] / fabs(JointsCal[1]));
+	h2=(int)((float)Boundary[5] / fabs(JointsCal[2]));
 	h4=(int)((float)Boundary[7] / fabs(JointsCal[3]));
 	h5=(int)((float)Boundary[9] / fabs(JointsCal[4]));
 	
-	if(*(j1) >= h1) {
+	if(*(j1) > h1) {
 		err = JointAngleBoundErr(1, *(j1), h1);
 		*(j1) = h1;
 		}
 	
-	if(*(j1) <= l1) {
+	if(*(j1) < l1) {
 		err = JointAngleBoundErr(1, *(j1), l1);
 		*(j1) = l1;
 		}
-	if(*(j2) >= h2) {
+	if(*(j2) > h2) {
 		err = JointAngleBoundErr(2, *(j2), h2);
 		*(j2) = h2;
 		}
-	if(*(j2) <= l2) {
+	if(*(j2) < l2) {
 		err = JointAngleBoundErr(2, *(j2), l2);
 		*(j2) = l2;
 		}
-	if(*(j3) >= h3) {
+	if(*(j3) > h3) {
 		err = JointAngleBoundErr(3, *(j3), h3);
 		*(j3) = h3;
 		}
-	if(*(j3) <= l3) {
+	if(*(j3) < l3) {
 		err = JointAngleBoundErr(3, *(j3), l3);
 		*(j3) = l3;
 		}
-	if(*(j4) >= h4) {
+	if(*(j4) > h4) {
 		err = JointAngleBoundErr(4, *(j4), h4);
 		*(j4) = h4;
 		}
-	if(*(j4) <= l4) {
+	if(*(j4) < l4) {
 		err = JointAngleBoundErr(4, *(j4), l4);
 		*(j4) = l4;
 		}
-	if(*(j5) >= h5) {
+	if(*(j5) > h5) {
 		err = JointAngleBoundErr(5, *(j5), h5);
 		*(j5) = h5;
 		}
-	if(*(j5) <= l5) {
+	if(*(j5) < l5) {
 		err = JointAngleBoundErr(5, *(j5), l5);
 		*(j5) = l5;
 		}
