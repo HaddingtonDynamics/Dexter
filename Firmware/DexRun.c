@@ -9,7 +9,7 @@
 #define MONITOR_MAX_ERROR 180
 //multiplier for the number of degrees of error the raw encoder can be off. 
 //180 basically disables it
-#define MONITOR_ERROR_CODE 666
+
 // this is the SpeedsUpdate code 
 
 
@@ -439,7 +439,8 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define SERVO_HI_BOUND 1355000
 
 
-
+#define MONITOR_ERROR_CODE 666
+#define BOUNDARY_ERROR_CODE 665
 
 
 
@@ -3604,7 +3605,7 @@ int WaitMoveGoal(int a1,int a2,int a3,int a4,int a5,int timeout)
 
 void moverobotPID(int a1,int a2,int a3,int a4,int a5)
 {
-	CheckBoundry(&a1,&a2,&a3,&a4,&a5);
+	DexError = CheckBoundry(&a1,&a2,&a3,&a4,&a5);
 	
 	a1=(int)((double)a1 * JointsCal[0]);
 	a2=(int)((double)a2 * JointsCal[1]);
@@ -3629,7 +3630,7 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 {
 	int KeyHoleArray[5];
 
-	CheckBoundry(&a1,&a2,&a3,&a4,&a5);
+	DexError = CheckBoundry(&a1,&a2,&a3,&a4,&a5);
 
 
 /*	int b1,b2,b3,b4,b5;
@@ -4115,11 +4116,11 @@ int JointAngleBoundErr(char ejoint, int eangle, int eboundry) {
 	if (err_file) {
 		tm = *localtime(&t);
 		fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-		fprintf(err_file, ", Joint %i angle %i exceeded boundary %d. \n", ejoint, eangle, eboundry);
+		fprintf(err_file, ", Joint %i angle %i exceeded boundary %i. \n", ejoint, eangle, eboundry);
 		fclose(err_file);
-		printf ("Joint %i angle %i exceeded boundary %d. \n", ejoint, eangle, eboundry);
+		printf ("Joint %i angle %i exceeded boundary %i. \n", ejoint, eangle, eboundry);
 		}
-	return 665;
+	return BOUNDARY_ERROR_CODE;
 	}
 
 int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5) {
