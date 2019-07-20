@@ -7,7 +7,7 @@ Note that updated versions of DexRun.c may not be able to support new features i
 If your SD Card Image is old, you may need to take a series of steps to get the system updated to the point where you can update the firmware. For most users, you shouldn't need to do that. If the following fails to work, you can revert to [doing it the old, manual, way](https://github.com/HaddingtonDynamics/Dexter/blob/5874064c494af0c98758fe08ea924fbc6244261e/Firmware/README.md#dexrunc-manual-update) or better yet, just request an updated SD Card image. 
 
 ## DexRun.c Update via DDE
-**Write New DexRun.c into /srv/samba/share/**
+**Write New DexRun.c into /srv/samba/share/ and Restart Robot.**
 
 To update DexRun.c:
 1. Use write_to_robot from DDE to put DexRun.c into the default folder (/srv/samba/share) on the robot. 
