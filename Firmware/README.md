@@ -32,15 +32,3 @@ This will show you the printfs with debugging data from the DexRun side.
 
 The updated RunDexRun script checks the modified date of the DexRun.c file against the modified date of the compiled DexRun file and if it's newer, it copies the new DexRun.c to the /usr/src/xillinux/xillybus-lite/demo folder, cd's there, makes, and copies the resulting DexRun executable back to /srv/samba/share, then updates the modified date on the executable to match the source, so that won't happen again.
 
-**Back in DDE:**
-
-Format of MOVETO:
-<br>`make_ins("M", x(microns), y(microns), z(microns), dir_x, dir_y, dir_z, config_right_left, elbow_up_down, wrist_in_out)`
-<br>Example:
-<br>`make_ins("M", 0, 0.5/_um, 0.075/_um, 0, 0, -1, 1, 1, 1)`
-
-Format of MOVETOSTRAIGHT:
-<br>`make_ins("T", cartesian_speed(micron/sec), x1(microns), y1(microns), z1(microns), dir_x1, dir_y1, dir_z1, config_right_left1, elbow_up_down1, wrist_in_out1, x2, y2, z2, dir_x2, dir_y2, dir_z2, config_right_left2, elbow_up_down2, wrist_in_out2)`
-<br>Example:
-<br>`make_ins("T", 50000, .1 /_um, 0.5 /_um, 0.075 /_um, 0, 0, -1, 1, 1, 1, -.1/_um, 0.5/_um, 0.075/_um, 0, 0, -1, 1, 1, 1)`
-
