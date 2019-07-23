@@ -1,0 +1,38 @@
+function wiggleJoint( joint, wiggle ) {
+	var joints = [0, 0, 0, 0, 0];
+    joints[joint] = wiggle;
+	return [
+	Dexter.move_all_joints(joints[0], joints[1], joints[2], joints[3], joints[4]),
+	Dexter.move_all_joints(-joints[0], -joints[1], -joints[2], -joints[3], -joints[4]),
+    Dexter.move_all_joints(0, 0, 0, 0, 0)
+    ]
+	}
+
+var wiggles = []
+wiggles.push(wiggleJoint(0, 10))
+wiggles.push(wiggleJoint(1, 20))
+wiggles.push(wiggleJoint(2, 30))
+wiggles.push(wiggleJoint(3, 50))
+wiggles.push(wiggleJoint(4, 50))
+
+wiggles.push(Dexter.move_all_joints(50, -50, 50, -50, 50))
+wiggles.push(Dexter.move_all_joints(-50, 50, -50, 50, -50))
+wiggles.push(Dexter.move_all_joints(0, 0, 0, 0, 0))
+
+wiggles.push(Dexter.move_all_joints(50, 50, 50, 50, 50))
+wiggles.push(Dexter.move_all_joints(-50, -50, -50, -50, -50))
+wiggles.push(Dexter.move_all_joints(0, 0, 0, 0, 0))
+
+
+new Job({name: "j1", keep_history: false,
+	do_list: [
+    	//Dexter.label("start"), 
+        wiggles, 
+        //Dexter.go_to("start")
+        ]})
+
+
+Job.j1.start()
+
+
+

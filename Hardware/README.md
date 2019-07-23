@@ -2,9 +2,10 @@ Future home of Dexter hardware design files. Currently, you can find these files
 - Motor board:<br>
 https://github.com/kgallspark/Dexter/tree/master/MotorControl (see updated schematic PDF in this folder)<br>
 - Opto interruptors:<br>
-https://github.com/kgallspark/Dexter/tree/master/OPTO<br>
+https://github.com/kgallspark/Dexter/tree/master/OPTO (see updated schematic and BOM in the Opto folder here)<br>
 LEDs: https://www.digikey.com/product-detail/en/lite-on-inc/LTE-4206/160-1028-ND/121704 <br>
 Phototransistors: https://www.digikey.com/product-detail/en/lite-on-inc/LTR-4206E/160-1030-ND/121710 <br>
+Harmonic Drives: www.hanzh.com/ but you need the number 14 component set. This is not listed in their site but they do reply quickly. The problem here is that the lead time is 9-12 weeks. We do not sell them directly. The gear ratio is 52:1.
 
 - STL files:<br>
 https://www.thingiverse.com/thing:2108244 Dexter version 1<br>
