@@ -1,0 +1,12 @@
+w, 55, 0; DIFF_FORCE_SPEED_FACTOR_ANGLE
+w, 56, 0; DIFF_FORCE_SPEED_FACTOR_ROT
+w, 56, 0;
+w, 56, 0;
+S, J1_PID_P, 0.1;
+S, J2_PID_P, 0.1;
+S, J3_PID_P, 0.5;
+S, J4_PID_P, 0.05;
+S, J5_PID_P, 0.05;
+w, 27, 0; SPEED_FACTORA
+w, 42, 12960; COMMAND_REG EnableLoop CAL_RUN ResetForce AngleEnable RotEnable
+F;

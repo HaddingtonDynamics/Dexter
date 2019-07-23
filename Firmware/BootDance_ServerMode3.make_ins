@@ -1,0 +1,7 @@
+; This dance happens if the second arg to ./DexRun is a 3 
+; which makes Dexter look for a network connection on port 50000
+; Setting this argument to a 2 allows commands to be sent via the console after SSHing in.
+a 0 0 0 50000 50000;
+a 0 0 0 0 0;
+a 0 0 0 50000 -50000;
+a 0 0 0 0 0;

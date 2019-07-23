@@ -1,0 +1,20 @@
+; These values describe the physical robot to the firmware and set the default operational values.
+; Edit this file to accommodate the exact physical makeup of the arm.
+; DexRun modified TBD
+; xillydemo modified TBD
+; OS version TBD
+
+; Length of each link in the robot, in microns. L5 is first, L1 last.
+S, LinkLengths, 82551, 50801, 330201, 320676, 228600;
+
+; Limits to the motion of each joint, in arcseconds from center
+S, J1BoundryHigh, 684010; 186
+S, J1BoundryLow, -684010;
+S, J2BoundryHigh, 350010; 97
+S, J2BoundryLow, -350010;
+S, J3BoundryHigh, 570010; 158
+S, J3BoundryLow, -570010;
+S, J4BoundryHigh, 390010; 108
+S, J4BoundryLow, -390010;
+S, J5BoundryHigh, 684010; 190
+S, J5BoundryLow, -684010;
