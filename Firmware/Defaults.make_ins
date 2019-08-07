@@ -1,6 +1,6 @@
 ; These values describe the physical robot to the firmware and set the default operational values.
 ; Edit this file to accommodate the exact physical makeup of the arm.
-; Dexter Serial Number: TBD
+; Dexter Serial Number: DEX-######
 ; DexRun modified TBD
 ; xillydemo modified TBD
 ; OS version TBD
