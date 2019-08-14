@@ -38,5 +38,9 @@ cd /srv/samba/share
 #echo "running">>/srv/samba/share/DexRun.log
 ./DexRun 1 3 1 &
 
+#start the local web server
+node www/httpd.js & 
+
+#start default job engine job
 # cd /root/Documents/dde
 # sleep 5 && sudo nano core define_and_start_job /srv/samba/share/autoexec.dde
