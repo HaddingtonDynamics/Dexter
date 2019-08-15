@@ -1,0 +1,130 @@
+<html>
+<head>
+    <title>Dexter</title>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font: 13px Helvetica, Arial; }
+        form { background: #000; padding: 3px; position: fixed; bottom: 0; width: 100%; }
+        form input { border: 0; padding: 10px; width: 90%; margin-right: .5%; }
+        form button { width: 9%; background: rgb(130, 224, 255); border: none; padding: 10px; }
+        #messages { list-style-type: none; margin: 0; padding: 0; }
+        #messages li { padding: 5px 10px; }
+        #messages li:nth-child(odd) { background: #eee; }
+        #stat { margin-bottom: 40px }
+        </style>
+    </head>
+<body> 
+	Dexter Status
+    <input type="button" value="start" onclick="pulse = setInterval(function(){getDexterStatus()},interval);">
+    <input type="button" value="stop" onclick="clearInterval(pulse);">
+    <ul id="messages"></ul>
+    <div id="stat">Status: Unknown</div>
+    <form id="send" action="">
+    <input id="msg" autocomplete="off" value="r 0 `uname"/>
+    <button>Send</button>
+        </form>
+
+<script type="text/javascript">
+var count = 0
+let port = 3000
+let ip_address = self.location.hostname //"192.168.0.137"
+//may not be an ip address... 
+let interval = 1000 //how often to update status
+var pulse //to hold the timout.
+let ws = new WebSocket('ws://'+ip_address+":"+port)
+ws.binaryType = "arraybuffer" //avoids the blob
+ws.onopen = function(){
+    self.status = "open"
+    getDexterStatus()
+    }
+ws.onerror = function(error) {
+    self.status = "error"+error
+    }
+ws.onmessage = function(msg) {
+    data = new Int32Array(msg.data)
+    if (data.length == 0) { clearInterval(pulse); console.log("Connection to Dexter Lost"); return;}
+    var m = byID("messages")
+    if (data[5]>0) {console.log("Error:"+data[5])}
+    switch (String.fromCharCode(data[4])) {
+    case 'r':
+        //console.log("r " + String.fromCharCode.apply(null, new Uint8Array(msg.data.slice(7*4))))
+        let l = data[6]
+        let text = String.fromCharCode.apply(null, new Uint8Array(msg.data.slice(7*4,7*4+l)))
+        out('r '+l+' '+text)
+        break;
+    case 'g':
+    //if ('g'.charCodeAt(0) == data[4]) {//status
+        displayStatus(msg.ip_address,data)
+        break;
+//1,0,1531787828,349602,103,0,0,0,0,0,0,0,0,0,3703,2967,0,0,0,2147483647,0,0,0,0,293,56,0,0,0,2147483647,0,0,0,0,809,3063,0,0,0,2147483647,0,0,0,0,1682,3675,0,0,0,2147483647,0,0,0,0,1990,218,0,0,0,2147483647
+        }
+    //document.write("message:"+data.length+"  "+data)
+    //ws.close()
+    }
+function byID(str) {return document.getElementById(str);}
+function make(str) {return document.createElement(str);}
+function out(msg) {
+    let ul = byID("messages")
+    let li = document.createElement("li")
+    li.appendChild(document.createTextNode(msg))
+    ul.appendChild(li)
+    }
+byID("send").onsubmit=function(e) {
+    let msg = byID("msg").value
+    ws.send("1 " + (count++) + " 1 undefined "+msg+" ;")
+    console.log("sent:"+msg)
+    out('<-'+msg)
+    window.scrollTo(0, document.body.scrollHeight)
+    return false //don't actually post the form
+    }
+function getDexterStatus() {
+    ws.send("1 " + (count++) + " 1 undefined g ;")
+    }
+//pulse = setInterval(function(){getDexterStatus()},interval)
+
+function displayStatus(ip,data) {
+    var stat = byID('stat')
+    stat.innerHTML = ip_address + " Job: " + data[0]+" No: " + data[1] + " Op: " + String.fromCharCode(data[4])
+    //+data.toString()
+    data = data.slice(10,60)
+    //https://github.com/cfry/dde/blob/99e37f9f466b3c374953581aefde0e27e1582fcd/robot.js#L2247
+    //https://github.com/cfry/dde/blob/master/robot.js#L1907
+    let label = new Array("ANGLE","DELTA","PID_DELTA","FORCE_CALC_ANGLE","A2D_SIN","A2D_COS","PLAYBACK","SENT","SLOPE","MEASURED_ANGLE")
+    let tdstyle="border:1px solid black; "
+    var num=0
+    tbl  = document.createElement('table');
+    tbl.style = 'font-family: Arial, Helvetica, sans-serif; border-collapse: collapse; border: 1px solid black; width:100px;';
+    var tr = tbl.insertRow(); //top header
+    var td = tr.insertCell();
+    td.appendChild(document.createTextNode('Cell'));
+    td.style = tdstyle + " background-color:#808080; color:#ffffff;";
+    td.innerText=" "
+    for(var j = 1; j < 6; j++) { //top labels
+        var td = tr.insertCell();
+        td.appendChild(document.createTextNode('Cell'));
+        td.style = tdstyle + " background-color:#808080; color:#ffffff;";
+        td.innerText="Joint:" + j
+        }
+    for(var i = 0; i < 10; i++) {
+        var tr = tbl.insertRow(); //data lines
+        var td = tr.insertCell(); //left header label
+        td.appendChild(document.createTextNode('Cell'));
+        td.style = tdstyle + " text-align: right; background-color:#808080; color:#ffffff;";
+        td.innerText=label[i]
+        for(var j = 0; j < 5; j++) {
+            var td = tr.insertCell();
+            td.appendChild(document.createTextNode('Cell'));
+            td.style = tdstyle;
+            num=data[j * 10 + i]
+            if (9 == i && -2147483648 == num) num="UNKNOWN"
+            td.innerText=num
+            }
+        }
+    stat.appendChild(tbl)
+    }
+
+</script>
+</body>
+</html>
+
