@@ -2817,7 +2817,8 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		token = strtok (NULL, delimiters); //length
 		i = atoi(token); //number of block to read
 		//printf("read block %d \n",i);
-		token=strtok(NULL, delimiters);//filename
+		//token=strtok(NULL, delimiters); //this would get only one word, 
+		token=strtok(NULL, ";"); // get the entire rest of the string. ";" was already nulled, but it will stop at null
 		//printf("opening file:%s.\n ",token);
 		//if(wfp>0) {fclose(wfp);} //not needed?
 		
@@ -2828,12 +2829,12 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		case '`': //shell cmd
 			//printf("shell %s\n", token);
 			if(0==i){ //first request
-				printf("- popen\n");
 				if (wpp) { //we can't start a new one, 'case the old one isn't done.
 					sendBuffReTyped[5] = EBUSY; //the system is busy
 					sendBuffReTyped[6] = 0; //no bytes returned.
 					break; //Host should request block 1 or higher with "`" and toss the data until EOF
 				}
+				printf("popen %s \n",token+1);
 				wpp = popen(token+1, "r"); //to get both stdout and stderr, the command should end with "2>&1"
 				if (errno) {
 					sendBuffReTyped[5] = errno; //there was an error
@@ -2856,6 +2857,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 			break;
 		case '#': //special keyword "files"
 			if(0 == i){ //if it's the first time, make the content.
+				token = strtok(token, delimiters); //now get just the first word.
 				//Switch case for keywords in read from robot call
 				if(strcmp(token, "#POM") == 0 || strcmp(token, "#XYZ") == 0){
 					struct J_angles measured_angles = new_J_angles(
@@ -2915,6 +2917,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 				  // do something else
 				}else{
 					printf("Error: %s is not a valid string\n", token);
+					DexError = ENOENT; //no such file or folder.
 				}
 				ptr_mat_string = mat_string;
 			}
@@ -2929,15 +2932,20 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 				//printf("mat_string: %s\n", mat_string);
 				//printf("ptr_mat_string: %s\n", ptr_mat_string);
 				
+			} else {
+				sendBuffReTyped[5] = ESPIPE; //we are done
+				sendBuffReTyped[6] = 0; //no bytes returned
 			}
 			break;
 		default:
+			token = strtok(token, delimiters); //now get just the first word.
 			wfp = fopen(token, "r");
 			if (wfp) {
 				//printf("Opened as handle %d.\n ",fileno(wfp));
 				i *= MAX_CONTENT_CHARS; //starting byte in the file
 				//printf("read from byte %d\n",i);
 				fseek(wfp, i, SEEK_SET);
+				sendBuffReTyped[5] = errno; //return an error if there is one. 
 				sendBuffReTyped[6] = fread ( sendBuff + sizeof(sendBuffReTyped[0])*7, 1, MAX_CONTENT_CHARS, wfp );
 				//printf("Read %d bytes\n",sendBuffReTyped[6]);
 				//printf("\n%s",sendBuff + sizeof(sendBuffReTyped[0])*6);
