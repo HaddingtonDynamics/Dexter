@@ -43,4 +43,4 @@ node www/httpd.js &
 
 #start default job engine job
 # cd /root/Documents/dde
-# sleep 5 && sudo nano core define_and_start_job /srv/samba/share/autoexec.dde
+# sleep 5 && sudo node core define_and_start_job /srv/samba/share/autoexec.dde
