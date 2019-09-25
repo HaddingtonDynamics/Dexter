@@ -345,13 +345,15 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 //must be updated if more mapped addresses are added
 //TODO: Compute from type data at start of mapped memory from FPGA
 
-int OldMemMapInderection[90]={0,0,0,0,0,ACCELERATION_MAXSPEED,0,0,0,0,0,0,0,0,0,0,0,0,0,0,PID_P,PID_ADDRESS,
+int OldMemMapInderection[]={0,0,0,0,0,ACCELERATION_MAXSPEED,0,0,0,0,0,0,0,0,0,0,0,0,0,0,PID_P,PID_ADDRESS,
 	0,0,0,0,0,SPEED_FACTORA,BETA_XYZ,0,0,0,0,0,MOVE_TRHESHOLD,F_FACTOR,MAX_ERROR,0,0,0,0,0,COMMAND_REG,
 	DMA_CONTROL,DMA_WRITE_DATA,DMA_WRITE_PARAMS,DMA_WRITE_ADDRESS,DMA_READ_PARAMS,DMA_READ_ADDRESS,
 	REC_PLAY_CMD,REC_PLAY_TIMEBASE,MAXSPEED_XYZ,DIFF_FORCE_BETA,DIFF_FORCE_MOVE_THRESHOLD,
-	DIFF_FORCE_MAX_SPEED,DIFF_FORCE_SPEED_FACTOR_ANGLE,DIFF_FORCE_SPEED_FACTOR_ROT, EXTRUDER_CONTROL,
-	0,0,0,0,0,0,0,0,0,BASE_FORCE_DECAY,END_FORCE_DECAY,PIVOT_FORCE_DECAY,ANGLE_FORCE_DECAY,ROTATE_FORCE_DECAY,
-	0,0,0,0,0,0,RESET_PID_AND_FLUSH_QUEUE,XYZ_FORCE_TIMEBASE,DIFFERENTIAL_FORCE_TIMEBASE,PID_TIMEBASE,0,0,0,0};
+	DIFF_FORCE_MAX_SPEED,DIFF_FORCE_SPEED_FACTOR_ANGLE,DIFF_FORCE_SPEED_FACTOR_ROT, 
+	EXTRUDER_CONTROL,0,0,0,0,0,0,END_EFFECTOR_IO,SERVO_SETPOINT_A,SERVO_SETPOINT_B,
+	BASE_FORCE_DECAY,END_FORCE_DECAY,PIVOT_FORCE_DECAY,ANGLE_FORCE_DECAY,ROTATE_FORCE_DECAY,
+	0,GRIPPER_MOTOR_CONTROL,GRIPPER_MOTOR_OFF_WIDTH,GRIPPER_MOTOR_ON_WIDTH,0,0,
+	RESET_PID_AND_FLUSH_QUEUE,XYZ_FORCE_TIMEBASE,DIFFERENTIAL_FORCE_TIMEBASE,PID_TIMEBASE,0,0,0,0};
 
 
 int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
@@ -4968,7 +4970,7 @@ void showPosAt(void)
 		b2=getNormalizedInput(PIVOT_POSITION_AT);
 		b4=getNormalizedInput(ANGLE_POSITION_AT);
 		b5=getNormalizedInput(ROT_POSITION_AT);
-		//printf("\nPos %d %d %d %d %d  ",b1,b2,b3,b4,b5);	
+		printf("\nPos %6d %6d %6d %6d %6d  ",b1,b2,b3,b4,b5);	
 }
 void ReplayMovement(char *FileName)
 {
@@ -4997,7 +4999,7 @@ void ReplayMovement(char *FileName)
 		////printf("%d \n",mapped[READ_BLOCK_COUNT]);
 	}
 	while((mapped[READ_BLOCK_COUNT] & 0x00400000) != 0 )
-		//printf("%d \n",mapped[READ_BLOCK_COUNT]);
+		printf("%d \n",mapped[READ_BLOCK_COUNT]);
 	showPosAt();
 	mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
 	mapped[REC_PLAY_CMD]=CMD_RESET_PLAY;
@@ -5017,14 +5019,43 @@ void ReplayMovement(char *FileName)
 }
 
 
-int getInput(void)
-{
-	if(fgets(iString,sizeof(iString),stdin)!=NULL)
-	{
-		return ParseInput(iString);
-	}
+int getInput(void) {
+	int a;
+	int StepsIndirection[] = {0,BASE_STEPS, PIVOT_STEPS, END_STEPS, ANGLE_STEPS, ROT_STEPS};
+	if(fgets(iString,sizeof(iString),stdin)!=NULL) {
+		DexError=ParseInput(iString);
+		if (0 < DexError) {
+			printf("ERROR %i\n", DexError);
+			}
+//DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,
+		printf("{\"DMA\":%i,\t\"BLOCK_SIZE\": %i,\t\"EFFECTOR\": %i,"
+			,getNormalizedInput(StatusReportIndirection[1])
+			,getNormalizedInput(StatusReportIndirection[2])
+			,getNormalizedInput(StatusReportIndirection[3])
+			);
+		for(int j=1;j<=5;j++) {
+			printf("\n\"J%i\":",j);
+			a=j*10-6; //the StatusReportIndirection items for each joint start 4 items in
+//	AT,  DELTA,  PID,  FORCE,  SIN,  COS,  ANGLE,  SENT, 
+			printf(" { \"AT\": %-7i",getNormalizedInput(StatusReportIndirection[a+0]));
+			printf(",\"DELTA\":%-7i",getNormalizedInput(StatusReportIndirection[a+1]));
+			printf(",\"FORCE\":%-7i",getNormalizedInput(StatusReportIndirection[a+3]));
+			printf(", \"SENT\":%-7i",getNormalizedInput(StatusReportIndirection[a+7]));
+			printf("\n     ");
+			printf(",\"STEPS\":%-7i",getNormalizedInput(StepsIndirection[j]));
+			printf(",  \"PID\":%-7i",getNormalizedInput(StatusReportIndirection[a+2]));
+			printf(",\"ANGLE\":%-7i",getNormalizedInput(StatusReportIndirection[a+6]));
+			printf(",\"SIN\":%-4i",getNormalizedInput(StatusReportIndirection[a+4]));
+			printf(",\"COS\":%-4i",getNormalizedInput(StatusReportIndirection[a+5]));
+			printf("},");
+			}
+		printf("}\n");
+		// printPosition();
+		// showPosAt();
+		return DexError;
+		}
     return 0;
-}
+	}
 
 unsigned char h2int(char c) {
   if (c >= '0' && c <='9') { return((unsigned char)c - '0');      }
@@ -5128,6 +5159,12 @@ int ParseInput(char *iString)
 					p3=strtok (NULL, delimiters);
 					p4=strtok (NULL, delimiters);
 					p5=strtok (NULL, delimiters);
+
+					p6=strtok (NULL, delimiters);
+					if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
+					p7=strtok (NULL, delimiters);
+					if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
+
 					moverobotPID(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5));
 				break; 
 				case HEART_BEAT :
@@ -5487,7 +5524,7 @@ int ParseInput(char *iString)
 					p2=strtok (NULL, delimiters);
 					if((p1==NULL) | (p2==NULL))
 					{
-						//printf("\n %d %d need addres and data",atoi(p1),atoi(p2));
+						printf("\n %d %d need addres and data",atoi(p1),atoi(p2));
 					}
 					i=atoi(p1);
 					j=atoi(p2);
@@ -5865,7 +5902,7 @@ int main(int argc, char *argv[]) {
 		}
 
 	}
-	if(RunMode==1 || RunMode==2)
+	if(RunMode==1 || RunMode==2) //3rd argument. E.g. DexRun 1 3 1 or 1 3 2
 	{
 		printf("Start realtime monitor thread\n");
 		err = pthread_create(&(tid[2]), NULL, &RealtimeMonitor, (void*)&ThreadsExit );
@@ -5878,11 +5915,13 @@ int main(int argc, char *argv[]) {
 
 	
 	
-    if(ServerMode==3)
-	{
-		printf("Going to sleep\n");
-		while(1){sleep(1);} //loop forever TODO: Add a sleep in this loop
-	}
+    // if(ServerMode==3)
+	// {
+	// 	printf("Going to sleep\n");
+	// 	while(1){sleep(1);} //loop forever TODO: Add a sleep in this loop
+	// }
+	// There doesn't seem to be any reason to sleep or stop processing console input
+
 	while(getInput()==0);
 	ThreadsExit=0;
 	sleep(1);
