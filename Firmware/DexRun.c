@@ -192,6 +192,18 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 
 
 #define END_EFFECTOR_IO 31
+// END_EFFECTOR_IO bits
+#define IO_BLUE_IN 1 //otherwise it's an output
+#define IO_BLUE_HIGH 2 //otherwise low
+#define IO_GREEN_IN 4
+#define IO_GREEN_HIGH 8
+#define IO_GREEN_PWM 16 //assuming it's an output
+#define IO_GREEN_RC 32 //if output, PWM at servo frequency and range
+#define IO_BLUE_PWM 64
+#define IO_BLUE_RC 128
+#define IO_BLUE_DYNAMIXEL 128+64 //special serial output mode for Dynamixel servos
+#define IO_DYNAMIXEL (IO_BLUE_DYNAMIXEL + IO_GREEN_IN)
+
 #define SERVO_SETPOINT_A 32
 #define SERVO_SETPOINT_B 33
 
@@ -2223,7 +2235,7 @@ void SendPacket(unsigned char *TxPkt, int length, int TxRxTimeDelay, unsigned ch
 	int i;
 	while(Fcritical != 0){usleep(1000);} // wait until previous call is complete
 	
-  	mapped[END_EFFECTOR_IO]=shadow_map[END_EFFECTOR_IO]=128+64+4;
+  	mapped[END_EFFECTOR_IO]=shadow_map[END_EFFECTOR_IO]=IO_DYNAMIXEL;
   	mapped[UART1_XMIT_TIMEBASE]=shadow_map[UART1_XMIT_TIMEBASE]= 868;
  	mapped[UART1_XMIT_CNT]=shadow_map[UART1_XMIT_CNT]= 1;  // reset send queue
 
@@ -2439,27 +2451,25 @@ void *RealtimeMonitor(void *arg)
 	int* ExitState = arg;
 	int i,j,ForceDelta,disTime=0;
 	unsigned char ServoRx[64];
-	while(*ExitState)
-	{
+	while(*ExitState) {
 
+		if (IO_DYNAMIXEL == shadow_map[END_EFFECTOR_IO]) { //only if the Dynamixels are setup
+			SendReadPacket(ServoRx, 3,30,21);
+			ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+			ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+			ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
+			ServoData[0].error = ServoRx[29];
 
-		SendReadPacket(ServoRx, 3,30,21);
-		ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-		ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
-		ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
-		ServoData[0].error = ServoRx[29];
+			//printf("\nRaw 16:%x %d ",ServoRx[16],ServoRx[16]);
+			//printf(" 17:%x %d ",ServoRx[17],ServoRx[17]);
+			//printf(" Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
 
-		//printf("\nRaw 16:%x %d ",ServoRx[16],ServoRx[16]);
-		//printf(" 17:%x %d ",ServoRx[17],ServoRx[17]);
-		//printf(" Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
-
-
-		SendReadPacket(ServoRx, 1,30,21);
-		ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-		ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
-		ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
-		ServoData[1].error = ServoRx[29];
-
+			SendReadPacket(ServoRx, 1,30,21);
+			ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+			ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+			ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
+			ServoData[1].error = ServoRx[29];
+			}
 		// if(FroceMoveMode==1) {
 		// 	// do force based movement
 		// 	for(i=0;i<5;i++) {
