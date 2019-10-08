@@ -28,3 +28,7 @@ S, J4BoundryHigh, 390010; 108
 S, J4BoundryLow, -390010;
 S, J5BoundryHigh, 684010; 190
 S, J5BoundryLow, -684010;
+
+; Set Maximum torque for joint 6 / 7 servos
+S, ServoSet2X, 1, 35, 1020; Roll goal torque
+S, ServoSet2X, 3, 35, 1020; Span goal torque
