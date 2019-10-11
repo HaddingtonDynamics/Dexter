@@ -466,9 +466,15 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define SERVO_HI_BOUND 1355000
 
 
-#define MONITOR_ERROR_CODE 666
-#define BOUNDARY_ERROR_CODE 665
-#define ERROR_INPUT_OFFSET 1024
+//DexError bit fields. Applied via OverError
+//Starting from bit 30 because 31 makes it negative and might be hard to parse.
+#define MONITOR_ERROR_CODE (1<<30) //was 666
+#define BOUNDARY_ERROR_CODE (1<<29) //was 665
+//Dynamixel error flag. Error code written to errors.log file. See:
+//http://emanual.robotis.com/docs/en/dxl/x/xl320/#shutdown18
+#define ROLL_ERROR_CODE (1<<28) //Error recieved from ROLL servo, address 3 Joint 6
+#define SPAN_ERROR_CODE (1<<27) //...SPAN servo, address 1 Joint 7
+#define ERROR_INPUT_OFFSET (1<<10) //1024
 
 
 
@@ -2370,7 +2376,7 @@ void monitorTorque() {
 				fclose(err_file);
 				printf("Joint %i velocity %d. \n", i+1, pos_vel);
 				}
-			DexError = MONITOR_ERROR_CODE;
+			OverError |= MONITOR_ERROR_CODE;
 			if (bot_state.enc_velocity_count > bot_state.enc_velocity_count_limit) {
 				// strlcpy(iString, "S RunFile ErrorRawVelocity.make_ins ;\0", ISTRING_LEN);
 				// printf("\nJoint %i velocity %d. Starting %s returned %d\n",i+1, pos_vel, iString, ParseInput(iString));
@@ -2406,7 +2412,7 @@ void monitorTorque() {
 				fclose(err_file);
 				printf("Joint %i off by %i at %i vs %d\n",i+1, err_arc, pos_raw, pos_cmd);
 				}
-			DexError = MONITOR_ERROR_CODE;
+			OverError |= MONITOR_ERROR_CODE;
 			//strlcpy(iString, "S RunFile ErrorRawPosition.make_ins ;\0", ISTRING_LEN);
 			//printf("\nStarting %s returned %d\n", iString, ParseInput(iString));
 			// the above crashes if any other commands are sent at the same time. e.g. from DDE. 
@@ -2457,7 +2463,11 @@ void *RealtimeMonitor(void *arg)
 {
 	int* ExitState = arg;
 	int i,j,ForceDelta,disTime=0;
+	FILE *err_file;
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
 	unsigned char ServoRx[64];
+	unsigned char err;
 	while(*ExitState) {
 
 		if (IO_DYNAMIXEL == shadow_map[END_EFFECTOR_IO]) { //only if the Dynamixels are setup
@@ -2465,8 +2475,23 @@ void *RealtimeMonitor(void *arg)
 			ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
 			ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
 			ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
-			ServoData[0].error = ServoRx[29];
-
+			err = ServoRx[29];
+			if (ServoData[0].error != err) { //new error
+				err_file = fopen("errors.log", "a");
+				if (err_file) {
+					tm = *localtime(&t);
+					fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+					fprintf(err_file, ", Joint 7 error %d",err);
+					if (err & 1) fprintf(err_file, " OVERLOAD");
+					if (err & 2) fprintf(err_file, " OVERHEAT");
+					if (err & 4) fprintf(err_file, " POWER");
+					fprintf(err_file, "\n");
+					fclose(err_file);
+					}
+				printf("ROLL servo error %d\n",err);
+				OverError |= ROLL_ERROR_CODE;
+				ServoData[0].error = err;
+				}
 			//printf("\nRaw 16:%x %d ",ServoRx[16],ServoRx[16]);
 			//printf(" 17:%x %d ",ServoRx[17],ServoRx[17]);
 			//printf(" Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
@@ -2475,7 +2500,23 @@ void *RealtimeMonitor(void *arg)
 			ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
 			ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
 			ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
-			ServoData[1].error = ServoRx[29];
+			err = ServoRx[29];
+			if (ServoData[1].error != err) { //new error
+				err_file = fopen("errors.log", "a");
+				if (err_file) {
+					tm = *localtime(&t);
+					fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+					fprintf(err_file, ", Joint 6 servo error %d",err);
+					if (err & 1) fprintf(err_file, " OVERLOAD");
+					if (err & 2) fprintf(err_file, " OVERHEAT");
+					if (err & 4) fprintf(err_file, " POWER");
+					fprintf(err_file, "\n");
+					fclose(err_file);
+					}
+				printf("SPAN servo error %d\n",err);
+				OverError |= ROLL_ERROR_CODE;
+				ServoData[1].error = err;
+				}
 			}
 		// if(FroceMoveMode==1) {
 		// 	// do force based movement
@@ -2834,6 +2875,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 	oplet = token[0]; //printf("\n Oplet:%c.",oplet);
 	sendBuffReTyped[4]=token[0];
 	sendBuffReTyped[5]=DexError | OverError;
+	OverError &= ERROR_INPUT_OFFSET; // clear everything other than an FPGA/Firmware missmatch. 
 	if('r'==oplet) { //printfs included for debugging in this block only since speed isn't critical at this point.
 		//printf("\n r:read_from_robot\n");
 		token = strtok (NULL, delimiters); //length
