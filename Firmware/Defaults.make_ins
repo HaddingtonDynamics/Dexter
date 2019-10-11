@@ -7,7 +7,7 @@
 
 ; AxisCal is the gear ratio times the steps per revolution times the microstepping mode 
 ; e.g. for a 52:1 drive with a 400 step motor in 16 over stepping, it would be 52*400*16 or 332800
-S, AxisCal, -332800, -332800, -332800, -360000, -36000 ;Defaults for Dexter HD
+S, AxisCal, -332800, -332800, -332800, -36000, -36000 ;Defaults for Dexter HD
 ;S, AxisCal, -332800, -332800, -332800, -86400, -86400 ;Defaults for Dexter HDI
 
 ; Interpolation factor for each joint
