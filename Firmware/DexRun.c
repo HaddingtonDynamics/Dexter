@@ -2049,6 +2049,9 @@ const char* Params[] = {
 	"LinkLengths",          	//51 Not actually detected from this list.
 	"RawEncoderErrorLimits",   	//52
 	"RawVelocityLimits",       	//53
+	"HomeOffset",				//54 offset to all (PID) moves and measured angles
+	"AxisCal",					//55 Set JointsCal and ANGLE_END_RATIO instead of via AxisCal.txt
+	"Interpolation",			//56 Set interpolation factors (defaults to 1 1 1 16 16 for 1 and HD)
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
@@ -2079,8 +2082,12 @@ struct ServoRealTimeData ServoData[NUM_SERVOS];
 
 
 
+//converts steps to angles. 
+float JointsCal[NUM_JOINTS];
+//Interpolate defaults to 1 1 1 16 16 for HD. Change via Interpolation SetParameter for HDI to 1 1 1 1 1
+float Interpolation[NUM_JOINTS]={1, 1, 1, 16, 16}; 
+int HomeOffset[NUM_JOINTS]={0}; //offset for moves (at least P PID moves) and measured angles
 
-float JointsCal[5];
 //int SoftBoundries[5];
 
 struct UARTTransactionPacket{
@@ -3359,41 +3366,6 @@ void setDefaults(int State)
 	bot_state.enc_velocity_count = 0;
 	bot_state.enc_velocity_count_limit = 10; //we can jerk 100 times before we error.
 	
-/* Load AxisCal.txt file. This is calculated from from Gear Ratio and Microstepping as follows (in DDE) :
-//Input:
-var diff_pulley_small_num_teeth = 16
-var diff_pulley_large_num_teeth = 90
-var micro_step = 16
-var motor_steps = 400
-var gear_ratios = [
-	52,
-    52,
-    52,
-    diff_pulley_large_num_teeth / diff_pulley_small_num_teeth,
-    diff_pulley_large_num_teeth / diff_pulley_small_num_teeth
-]
-
-//Output:
-var AxisCal_string = ""
-for(let i = 0; i < 5; i++){
-	AxisCal_string += -(gear_ratios[i]*micro_step*motor_steps) / (3600*360) + "\n"
-}
-AxisCal_string += -Math.round(gear_ratios[3] / gear_ratios[1] * Math.pow(2, 24))
-*/
-
-	AxisFile = fopen("AxisCal.txt", "rs");
-	if(AxisFile!=NULL) {
-		fscanf(AxisFile, "%f", &JointsCal[0]);
-		fscanf(AxisFile, "%f", &JointsCal[1]);
-		fscanf(AxisFile, "%f", &JointsCal[2]);
-		fscanf(AxisFile, "%f", &JointsCal[3]);
-		fscanf(AxisFile, "%f", &JointsCal[4]);
-		fscanf(AxisFile, "%i", &HexValue);
-        //printf("Reading AxisCal.txt. HexValue = %d\n", HexValue);
-		mapped[ANGLE_END_RATIO]=shadow_map[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
-		fclose(AxisFile);
-	}
-	
 	RemoteRobotAddress = fopen("RemoteRobotAddress.txt", "rs");
 	if(RemoteRobotAddress!=NULL)
 	{
@@ -3610,28 +3582,27 @@ int getNormalizedInput(int param)
 	if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
 	if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
 	if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
-	
+
 	val = mapped[param];
-	if(param <= ROT_POSITION_FORCE_DELTA)
-	{
-		corrF = JointsCal[(param-INPUT_OFFSET) % 5];
-	}
-	if((val & 0x40000)!=0)
-	{
+	if((val & 0x40000)!=0) 	{
 		val = (val | 0xfff80000);
-	}
+		}
+
+	if(param == BASE_MEASURED_ANGLE ){return (int)((float)val / (JointsCal[0] * Interpolation[0])) + HomeOffset[0];}
+	if(param == PIVOT_MEASURED_ANGLE){return (int)((float)val / (JointsCal[1] * Interpolation[1])) + HomeOffset[1];}
+	if(param == END_MEASURED_ANGLE  ){return (int)((float)val / (JointsCal[2] * Interpolation[2])) + HomeOffset[2];}
+	if(param == ANGLE_MEASURED_ANGLE){return (int)((float)val / (JointsCal[3] * Interpolation[3])) + HomeOffset[3];}
+	if(param == ROT_MEASURED_ANGLE  ){return (int)((float)val / (JointsCal[4] * Interpolation[4])) + HomeOffset[4];}
 	
-	if(param == BASE_MEASURED_ANGLE){corrF = JointsCal[0];}
-	if(param == PIVOT_MEASURED_ANGLE){corrF = JointsCal[1];}
-	if(param == END_MEASURED_ANGLE){corrF = JointsCal[2];}
-	if(param == ANGLE_MEASURED_ANGLE){corrF = JointsCal[3] * 16;}
-	if(param == ROT_MEASURED_ANGLE){corrF = JointsCal[4] * 16;}
-	
-	if(param == BASE_STEPS){corrF = JointsCal[0];}
-	if(param == PIVOT_STEPS){corrF = JointsCal[1];}
-	if(param == END_STEPS){corrF = JointsCal[2];}
-	if(param == ANGLE_STEPS){corrF = JointsCal[3] * 16;}
-	if(param == ROT_STEPS){corrF = JointsCal[4] * 16;}
+	if(param == BASE_STEPS ){return (int)((float)val / (JointsCal[0] * Interpolation[0])) + HomeOffset[0];}
+	if(param == PIVOT_STEPS){return (int)((float)val / (JointsCal[1] * Interpolation[1])) + HomeOffset[1];}
+	if(param == END_STEPS  ){return (int)((float)val / (JointsCal[2] * Interpolation[2])) + HomeOffset[2];}
+	if(param == ANGLE_STEPS){return (int)((float)val / (JointsCal[3] * Interpolation[3])) + HomeOffset[3];}
+	if(param == ROT_STEPS  ){return (int)((float)val / (JointsCal[4] * Interpolation[4])) + HomeOffset[4];}
+
+	if(param <= ROT_POSITION_FORCE_DELTA) {
+		corrF = JointsCal[(param-INPUT_OFFSET) % 5];
+		}
 
 	return (int)((float)val / corrF);
 }
@@ -3681,10 +3652,17 @@ int WaitMoveGoal(int a1,int a2,int a3,int a4,int a5,int timeout)
 		
 }
 
-void moverobotPID(int a1,int a2,int a3,int a4,int a5)
-{
-	DexError = CheckBoundry(&a1,&a2,&a3,&a4,&a5);
+void moverobotPID(int a1,int a2,int a3,int a4,int a5) {
+	//Adjust the position of each joint relative to the offset entered via the HomeOffset parameter.
+	a1 -= HomeOffset[0];
+	a2 -= HomeOffset[1];
+	a3 -= HomeOffset[2];
+	a4 -= HomeOffset[3];
+	a5 -= HomeOffset[4];
 	
+	//check the resulting movement to see if it's out of bounds. 
+	DexError = CheckBoundry(&a1,&a2,&a3,&a4,&a5);
+
 	a1=(int)((double)a1 * JointsCal[0]);
 	a2=(int)((double)a2 * JointsCal[1]);
 	a3=(int)((double)a3 * JointsCal[2]);
@@ -4621,7 +4599,38 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			bot_state.enc_velocity_limit[4] = a6;
 			return 0;
 			break;
-
+		case 54:
+			//HomeOffset
+			HomeOffset[0] = a2;
+			HomeOffset[1] = a3;
+			HomeOffset[2] = a4;
+			HomeOffset[3] = a5;
+			HomeOffset[4] = a6;
+			return 0;
+			break;
+		case 55:
+			//AxisCal Moved from AxisCal.txt to Defaults.make_ins
+			i = (int)((float)a5 / a4 * 16777216 ); //ratio between joint 3 and joint 4
+			i *= -1; //ANGLE_END_RATIO must be negative.
+			mapped[ANGLE_END_RATIO]=i;
+			printf("ANGLE_END_RATIO=%d\n", i);
+			JointsCal[0] = (float)a2 / (3600*360);
+			JointsCal[1] = (float)a3 / (3600*360);
+			JointsCal[2] = (float)a4 / (3600*360);
+			JointsCal[3] = (float)a5 / (3600*360);
+			JointsCal[4] = (float)a6 / (3600*360);
+			printf("JointsCal=[%f,%f,%f,%f,%f]\n",JointsCal[0],JointsCal[1],JointsCal[2],JointsCal[3],JointsCal[4]);
+			return 0;
+			break;
+		case 56:
+			//Interpolation
+			Interpolation[0] = a2;
+			Interpolation[1] = a3;
+			Interpolation[2] = a4;
+			Interpolation[3] = a5;
+			Interpolation[4] = a6;
+			return 0;
+			break;
 		default:
 			return 1;
 			break;
@@ -5668,24 +5677,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   CalTables = map_addrCt;
-
-// Load AxisCal data into JointsCal array
-	int HexValue;
-	FILE *AxisFile;
-	AxisFile = fopen("AxisCal.txt", "rs");
-	if(AxisFile!=NULL)
-	{
-		fscanf(AxisFile, "%f", &JointsCal[0]);
-		fscanf(AxisFile, "%f", &JointsCal[1]);
-		fscanf(AxisFile, "%f", &JointsCal[2]);
-		fscanf(AxisFile, "%f", &JointsCal[3]);
-		fscanf(AxisFile, "%f", &JointsCal[4]);
-		fscanf(AxisFile, "%i", &HexValue);
-        //printf("Reading AxisCal.txt. HexValue = %d\n", HexValue);
-		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
-		fclose(AxisFile);
-	}
-
 
     //Start Position code:
     int reset_StartPosition = 1; // 1 = reset, 0 = do not reset
