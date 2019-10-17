@@ -21,7 +21,7 @@
     <ul id="messages"></ul>
     <div id="stat">Status: Unknown</div>
     <form id="send" action="">
-    <input id="msg" autocomplete="off" value="r 0 `uname"/>
+    <input id="msg" autocomplete="off" value="a 0 0 0 0 0 500 0"/>
     <button>Send</button>
         </form>
 
@@ -41,17 +41,26 @@ ws.onopen = function(){
 ws.onerror = function(error) {
     self.status = "error"+error
     }
-ws.onmessage = function(msg) {
-    data = new Int32Array(msg.data)
+ws.onmessage = function(socket) {
+    let msg = "" //start new message
+    data = new Int32Array(socket.data)
     if (data.length == 0) { clearInterval(pulse); console.log("Connection to Dexter Lost"); return;}
-    var m = byID("messages")
-    if (data[5]>0) {console.log("Error:"+data[5])}
-    switch (String.fromCharCode(data[4])) {
+    let op = String.fromCharCode(data[4])
+    if (data[5]>0) {
+        msg+="Error:"
+        msg+=(data[5] & 0xFF)+" on oplet:"+op
+        if (data[5] & (1 << 10)) {msg+=" Firmware - Gateware Mismatch. Update system. Fatal error."}
+        if (data[5] & (1 << 27)) {msg+=" SPAN Servo, Joint 7. r 0 errors.log"}
+        if (data[5] & (1 << 28)) {msg+=" ROLL Servo, Joint 6. r 0 errors.log"}
+        if (data[5] & (1 << 30)) {msg+=" Joint Monitor. r 0 errors.log"}
+        }
+    switch (op) {
     case 'r':
         //console.log("r " + String.fromCharCode.apply(null, new Uint8Array(msg.data.slice(7*4))))
-        let l = data[6]
-        let text = String.fromCharCode.apply(null, new Uint8Array(msg.data.slice(7*4,7*4+l)))
-        out('r '+l+' '+text)
+        let l = data[6] //length of returned data
+        msg += '-> r '+l+' "'
+        msg += String.fromCharCode.apply(null, new Uint8Array(socket.data.slice(7*4,7*4+l)))
+        msg += '"'
         break;
     case 'g':
     //if ('g'.charCodeAt(0) == data[4]) {//status
@@ -59,7 +68,7 @@ ws.onmessage = function(msg) {
         break;
 //1,0,1531787828,349602,103,0,0,0,0,0,0,0,0,0,3703,2967,0,0,0,2147483647,0,0,0,0,293,56,0,0,0,2147483647,0,0,0,0,809,3063,0,0,0,2147483647,0,0,0,0,1682,3675,0,0,0,2147483647,0,0,0,0,1990,218,0,0,0,2147483647
         }
-    //document.write("message:"+data.length+"  "+data)
+    if (msg) out(msg)
     //ws.close()
     }
 function byID(str) {return document.getElementById(str);}
