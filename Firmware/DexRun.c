@@ -2481,7 +2481,7 @@ void *RealtimeMonitor(void *arg)
 				if (err_file) {
 					tm = *localtime(&t);
 					fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-					fprintf(err_file, ", Joint 7 error %d",err);
+					fprintf(err_file, ", Joint 6 error %d",err);
 					if (err & 1) fprintf(err_file, " OVERLOAD");
 					if (err & 2) fprintf(err_file, " OVERHEAT");
 					if (err & 4) fprintf(err_file, " POWER");
@@ -2497,6 +2497,36 @@ void *RealtimeMonitor(void *arg)
 			//printf(" Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
 
 			SendReadPacket(ServoRx, 1,30,21);
+			// printf("Servo1: ");
+			// for(i=0;i<sizeof(ServoRx)/sizeof(ServoRx[0]);i++) {
+			// 	printf(" %02X",ServoRx[i]);
+			// 	}
+			// printf("\n");
+
+			if( ServoRx[0]!= 0xFF 
+			 || ServoRx[1]!= 0xFF 
+			 || ServoRx[2]!= 0xFD
+			 || ServoRx[3]!= 0x00
+			 ) {
+				printf("Servo1: rx bad header\n");
+				}
+			if (ServoRx[4] != 1) { printf ("Servo1: rx wrong ID!\n"); }; 		//printf(" Servo %d",ServoRx[4]);
+			unsigned short len = ServoRx[5] + ((unsigned short)ServoRx[6]<<8); 	//printf(" len: %d", len);
+			if (len + 7 > sizeof(ServoRx)/sizeof(ServoRx[0]) ) { printf("Servo1: rx too long %d", len);};
+			if (ServoRx[7] != 0x55) { printf("Servo1: non-status packet!\n");};	//printf(" inst: %d", ServoRx[7]);
+			err = ServoRx[8]; 													//if (err >= 0x80) { printf(" alert ");};
+			if ( (err & 0x7F) > 0 ) { printf("Servo1: rx error: %2X\n", err); }
+			unsigned short crc = ServoRx[len+5] + ((unsigned short)ServoRx[len+6]<<8);
+			if ( crc != update_crc(0,ServoRx,len+5) ) { 
+				printf("Servo1: crc error. calc:%4X, rx:%4X\n", update_crc(0,ServoRx,len+5), crc ); 
+				for(i=0;i<sizeof(ServoRx)/sizeof(ServoRx[0]);i++) {
+					printf(" %02X",ServoRx[i]);
+					}
+				printf("\n");
+				}
+			//printf("\n");
+
+
 			ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
 			ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
 			ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
@@ -2506,7 +2536,7 @@ void *RealtimeMonitor(void *arg)
 				if (err_file) {
 					tm = *localtime(&t);
 					fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-					fprintf(err_file, ", Joint 6 servo error %d",err);
+					fprintf(err_file, ", Joint 7 servo error %d",err);
 					if (err & 1) fprintf(err_file, " OVERLOAD");
 					if (err & 2) fprintf(err_file, " OVERHEAT");
 					if (err & 4) fprintf(err_file, " POWER");
