@@ -2512,7 +2512,7 @@ void *RealtimeMonitor(void *arg)
 				}
 			if (ServoRx[4] != 1) { printf ("Servo1: rx wrong ID!\n"); }; 		//printf(" Servo %d",ServoRx[4]);
 			unsigned short len = ServoRx[5] + ((unsigned short)ServoRx[6]<<8); 	//printf(" len: %d", len);
-			if (len + 7 > sizeof(ServoRx)/sizeof(ServoRx[0]) ) { printf("Servo1: rx too long %d", len);};
+			if (len + 7 > sizeof(ServoRx)/sizeof(ServoRx[0]) ) { printf("Servo1: rx too long %d\n", len); len=0;};
 			if (ServoRx[7] != 0x55) { printf("Servo1: non-status packet!\n");};	//printf(" inst: %d", ServoRx[7]);
 			err = ServoRx[8]; 													//if (err >= 0x80) { printf(" alert ");};
 			if ( (err & 0x7F) > 0 ) { printf("Servo1: rx error: %2X\n", err); }
