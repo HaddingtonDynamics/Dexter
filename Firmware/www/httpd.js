@@ -28,12 +28,56 @@ var mimeTypes = {
   "css": "text/css",
   };
 
+const { spawn } = require('child_process');
+var job
 
 //standard web server on port 80 to serve files
 http.createServer(function (req, res) {
   var q = url.parse(req.url, true)
   if ("/"==q.pathname) 
     q.pathname="index.html"
+  if ("/runjob"==q.pathname) {
+    var jobfile = "/srv/samba/share/dde_apps/"+q.search.substr(1)
+    console.log("Running job "+jobfile+".")
+    //https://nodejs.org/api/child_process.html
+    job = spawn('node'
+      , ["core define_and_start_job "+jobfile]
+      , {cwd: '/root/Documents/dde', shell: true}
+      )
+    res.writeHead(200, {'Content-Type': 'text/html'})
+    job.stdout.on('data', function(data) {
+      console.log(">"+data)
+      res.write(data.toString().replace('\n',"<BR/>").replace("  ","&nbsp;&nbsp"))
+      })
+    job.stderr.on('data', function(data) {
+      console.log("!"+data)
+      res.write("ERROR: "+data)
+      })
+    job.on('close', function(code) {
+      console.log("closed:"+code)
+      res.write("Finished. Exit code:"+code)
+      return res.end()
+      })
+    res.write("Started "+jobfile+" PID:"+job.pid+"<BR/>")
+    return //res.end()
+    }
+  if ("/jobs"==q.pathname) {
+    console.log("serving job list")
+    fs.readdir("/srv/samba/share/dde_apps/", function(err, items) {
+      if (err) {
+        console.log("ERROR:"+err)
+        res.writeHead(500, {'Content-Type': 'text/html'})
+        return res.end("500 Error")
+        }
+      res.writeHead(200, {'Content-Type': 'text'})
+      for (var i=0; i<items.length; i++) {
+        res.write(items[i]+"\n")
+        }
+      return res.end()
+      })
+    return
+    }
+
   var filename = "/srv/samba/share/www/" + q.pathname
   console.log("serving"+q.pathname)
   fs.readFile(filename, function(err, data) {
