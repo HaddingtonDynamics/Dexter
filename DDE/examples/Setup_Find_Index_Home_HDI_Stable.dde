@@ -19,9 +19,12 @@ Overview:
 /*
 INSTRUCTIONS:
 
+INSTRUCTIONS:
+
 1.  tune opto pots 
 2.  select center and save
 3.  reboot
+3.5 Check_Eye_Order
 4.  Cal
 5.  Follow mode to validate Cal
 
@@ -36,15 +39,20 @@ INSTRUCTIONS:
 13. Power off
 14. Manually move to where you want to define home to be
 15. Power on
+15.5 Check_Eye_Order
+15.7 Center_Eye
 16. Find_Idx_Eyes_Setup
 17. Save_Eye_Offset (It looks like this is a constant [-2, 1, -2, -2, -2], to change it change the variable 'actual_eye_offset')
 18. go home
+18.5 Center_Eye
 19. Cal
 20. post_cal_info (this now saves post_cal_info.JSON to Dexter)
 21. Power off
 
 22. Move to an random position
 23. Power on
+23.5 Check_Eye_Order
+23.6 Center_Eye
 24. Find_Idx_Eyes to confirm it works
 
 
@@ -145,6 +153,7 @@ var waiting_eyes
 var all_waiting
 var idx_eye_to_cal_offset
 var post_cal_info
+var goal_angle_in_eye
 
 //idx: [255, 261, 247, 261, 256]
 //cal: [258,255,255,255,255]
@@ -316,7 +325,7 @@ function init_globals(){
     spacing_to_eye_offset[0] = null
     out("Generated spacing to eye offset:" + spacing_to_eye_offset)
 	*/
-    
+    goal_angle_in_eye = [45, 45, 45, 45, 45]
     
    // idx_eye_to_cal_offset = [0, 0, 0, 0, 0]//Vector.subtract(info_post_calibration.eyes, info_raw_idx_eye.eyes)
 }
@@ -538,7 +547,7 @@ function find_idx_eyes(){
                     	step_size[i] = cur_direction[i]*Math.abs(deg_per_eye[i]/rapid_steps_per_eye[i])
                     }
                 }else if(stage == "angle_in_eye"){
-                	let cal_atan2 = post_cal_info.atan2[i]
+                	let cal_atan2 = goal_angle_in_eye[i]
                 
                 	let x = cos_val[i] - AdcCenters_array[i][1]
                 	let y = sin_val[i] - AdcCenters_array[i][0]
@@ -572,7 +581,7 @@ function find_idx_eyes(){
                     	print_stages()
                     }else{
                         // (true_home_eye[i] - EyeNumber[i]) * deg_per_eye[i] 
-                    	step_size[i] = (cal_atan2 - atan2_val) / 360 * deg_per_eye[i] + (true_home_eye[i] - EyeNumber[i]) * deg_per_eye[i]
+                    	step_size[i] = .25 * ((cal_atan2 - atan2_val) / 360 * deg_per_eye[i] + (true_home_eye[i] - EyeNumber[i]) * deg_per_eye[i])
                     }
                     
                 }else if(stage == "complete"){
@@ -696,8 +705,264 @@ function set_found_position(){
 	plot_find_idx_eye_data(all_cos_vals[i], all_eyes[i], first_idx_eye[i], second_idx_eye[i], i)
 }
 
+new Job({
+	name: "Check_Eye_Order",
+    show_instructions: false,
+	do_list: [
+    	
+    	Dexter.move_all_joints([0, 0, 0, 0, 0]),
+        Dexter.empty_instruction_queue(),
+    	Dexter.read_from_robot("#EyeNumbers", "EyeNumbers"),
+		Dexter.empty_instruction_queue(),
+        function(){
+        	out("Eyes: " + this.user_data.EyeNumbers)
+        },
+        function(){
+        	let CMD = []
+            let angles = [0, 0, 0, 0, 0]
+            let angle = 10
+            for(let i = 0; i < 5; i++){
+            	angles[i] = angle
+            	CMD.push(Dexter.move_all_joints(angles))
+        		CMD.push(Dexter.empty_instruction_queue())
+    			CMD.push(Dexter.read_from_robot("#EyeNumbers", "EyeNumbers"))
+				CMD.push(Dexter.empty_instruction_queue())
+        		CMD.push(function(){
+        			out("Eyes: " + this.user_data.EyeNumbers)
+                })
+                angles = [0, 0, 0, 0, 0]
+                CMD.push(Dexter.move_all_joints(angles))
+                CMD.push(Dexter.empty_instruction_queue())
+        }
+            return CMD
+        }
+    ]
+})
+var FPGA = {
+	BASE_POSITION: 0,
+    END_POSITION: 1,
+    PIVOT_POSITION: 2,
+    ANGLE_POSITON: 3,
+    ROT_POSITION: 4,
+    ACCELERATION_MAXSPEED: 5,
+    BASE_SIN_CENTER: 6,
+    BASE_COS_CENTER: 7,
+    END_SIN_CENTER: 8,
+    END_COS_CENTER: 9,
+    PIVOT_SIN_CENTER: 10,
+    PIVOT_COS_CENTER: 11,
+    ANGLE_SIN_CENTER: 12,
+    ANGLE_COS_CENTER: 13,
+    ROT_SIN_CENTER: 14,
+    ROT_COS_CENTER: 15,
+    PID_DELTATNOT: 16,
+    PID_DELTAT: 17,
+    PID_D: 18,
+    PID_I: 19,
+    PID_P: 20,
+    PID_ADDRESS: 21,
+    BOUNDRY_BASE: 22,
+    BOUNDRY_END: 23,
+    BOUNDRY_PIVOT: 24,
+    BOUNDRY_ANGLE: 25,
+    BOUNDRY_ROT: 26,
+    SPEED_FACTORA: 27,
+    SPEED_FACTORB: 28,
+    FRICTION_BASE: 29,
+    FRICTION_END: 30,
+    FRICTION_PIVOT: 31,
+    FRICTION_ANGLE: 32,
+    FRICTION_ROT: 33,
+    MOVE_TRHESHOLD: 34,
+    F_FACTOR: 35,
+    MAX_ERROR: 36,
+    FORCE_BIAS_BASE: 37,
+    FORCE_BIAS_END: 38,
+    FORCE_BIAS_PIVOT: 39,
+    FORCE_BIAS_ANGLE: 40,
+    FORCE_BIAS_ROT: 41,
+    COMMAND_REG: 42,
+    DMA_CONTROL: 43,
+    DMA_WRITE_DATA: 44,
+    DMA_WRITE_PARAMS: 45,
+    DMA_WRITE_ADDRESS: 46,
+    DMA_READ_PARAMS: 47,
+    DMA_READ_ADDRESS: 48,
+    REC_PLAY_CMD: 49,
+    REC_PLAY_TIMEBASE: 50,
+    DIFF_FORCE_TIMEBASE: 51,
+    DIFF_FORCE_BETA: 52,
+    DIFF_FORCE_MOVE_THRESHOLD: 53,
+    DIFF_FORCE_MAX_SPEED: 54,
+    DIFF_FORCE_SPEED_FACTOR_ANGLE: 55,
+    DIFF_FORCE_SPEED_FACTOR_ROT: 56,
+    DIFF_FORCE_ANGLE_COMPENSATE: 57,
+    FINE_ADJUST_BASE: 58,
+    FINE_ADJUST_END: 59,
+    FINE_ADJUST_PIVOT: 60,
+    FINE_ADJUST_ANGLE: 61,
+    FINE_ADJUST_ROT: 62,
+    RECORD_LENGTH: 63,
+    END_EFFECTOR_IO: 64,
+    SERVO_SETPOINT_A: 65,
+    SERVO_SETPOINT_B: 66,
+    BASE_FORCE_DECAY: 67,
+    END_FORCE_DECAY: 68,
+    PIVOT_FORCE_DECAY: 69,
+    ANGLE_FORCE_DECAY: 70,
+    ROTATE_FORCE_DECAY: 71,
+    PID_SCHEDULE_INDEX: 72,
+    GRIPPER_MOTOR_CONTROL: 73,
+    GRIPPER_MOTOR_OFF_WIDTH: 74,
+    GRIPPER_MOTOR_ON_WIDTH: 75,
+    START_SPEED: 76,
+    ANGLE_END_RATIO: 77,
+    CMD2: 78,
+    PID_TIMEBASE: 79,
+    PHYSICS_XYZ_TIMEBASE: 80,
+    PHYSICS_DIFF_TIMEBASE: 81
+}
+
+FPGA.cmd_reg_val = function({
+	CapCalibrateBase = false,
+    CapCalibrateEnd = false,
+    CapCalibratePivot = false,
+    MoveEnable = false,
+    GoMove = false,
+    EnableLoop = false,
+    AClrLoop = false,
+    CAL_RUN = false,
+    ResetMotorPosition = false,
+    ResetForce = false,
+    CapCalAngle = false,
+    CapCalRot = false,
+    AngleEnable = false,
+    RotEnable = false,
+}={}){
+	let result = 0
+    if(CapCalibrateBase){   result += 1}
+    if(CapCalibrateEnd){    result += 2}
+    if(CapCalibratePivot){  result += 4}
+    if(MoveEnable){         result += 8}
+    if(GoMove){             result += 16}
+    if(EnableLoop){         result += 32}
+    if(AClrLoop){           result += 64}
+    if(CAL_RUN){            result += 128}
+    if(ResetMotorPosition){ result += 256}
+    if(ResetForce){         result += 512}
+    if(CapCalAngle){        result += 1024}
+    if(CapCalRot){          result += 2048}
+    if(AngleEnable){        result += 4096}
+    if(RotEnable){          result += 8192}
+    return result
+}
+
+FPGA.cmd_reg_val({
+	EnableLoop: true,
+    CAL_RUN: true,
+    ResetForce: true,
+    AngleEnable: true,
+    RotEnable: true
+})
+
+var atan2_vals, atan2_goal, J_error_thres, E_error_thresh, J_error
+new Job({
+	name: "Center_Eye",
+    inter_do_item_dur: 0.01,
+    show_instructions: false,
+    do_list: [
+        	Dexter.read_from_robot("#EyeNumbers", "EyeNumbers"),
+        Dexter.read_from_robot("#RawEncoders", "RawEncoders"),
+        
+        Dexter.read_from_robot("/srv/samba/share/AdcCenters.txt", "AdcCenters"),
 
 
+    	function(){
+        	J_error_thres = [5*_arcsec, 5*_arcsec, 5*_arcsec, 20*_arcsec, 20*_arcsec]
+            
+        	atan2_vals = [Infinity, Infinity, Infinity, Infinity, Infinity]
+            atan2_goal = [45, 45, 45, 45, 45]
+            J_error = [Infinity, Infinity, Infinity, Infinity, Infinity]
+            E_error_thresh = Vector.divide(Vector.multiply(360, J_error_thres), deg_per_eye)
+        },
+    	Robot.loop(
+        	function(){
+            
+            	let result = false
+                for(let i = 0; i < atan2_vals.length; i++){
+                	if(!(Math.abs(J_error[i]) < J_error_thres[i])){
+                    	result = true
+                    }
+                }
+                return result
+            },
+            function(){
+            	let CMD = []
+                CMD.push(Dexter.read_from_robot("#EyeNumbers", "EyeNumbers"))
+                CMD.push(function(){EyeNumber = JSON.parse(this.user_data.EyeNumbers)}),
+                CMD.push(Dexter.get_robot_status())
+                CMD.push(function(){
+                	let rs = this.robot.robot_status
+            		let cos_val = [
+            			rs[Dexter.J1_A2D_COS],
+                		rs[Dexter.J2_A2D_COS],
+                		rs[Dexter.J3_A2D_COS],
+                		rs[Dexter.J4_A2D_COS],
+                		rs[Dexter.J5_A2D_COS]
+            		]
+            		let sin_val = [
+            			rs[Dexter.J1_A2D_SIN],
+                		rs[Dexter.J2_A2D_SIN],
+                		rs[Dexter.J3_A2D_SIN],
+                		rs[Dexter.J4_A2D_SIN],
+                		rs[Dexter.J5_A2D_SIN]
+            		]
+                    let cur_angles = [
+            			rs[Dexter.J1_ANGLE],
+                		rs[Dexter.J2_ANGLE],
+                		rs[Dexter.J3_ANGLE],
+                		rs[Dexter.J4_ANGLE],
+                		rs[Dexter.J5_ANGLE]
+            		]
+                    
+                    let x, y
+                    let step = [0, 0, 0, 0, 0]
+                    let str = ""
+                    for(let i = 0; i < 5; i++){
+            			x = cos_val[i] - AdcCenters_array[i][1]
+                		y = sin_val[i] - AdcCenters_array[i][0]
+                		atan2_vals[i] = atan2d(x, y)
+                        atan2_error = atan2_goal[i] - atan2_vals[i]
+                        J_error[i] = .25 * atan2_error * deg_per_eye[i] / 360
+                        step[i] =  J_error[i]
+                        //str += "| " + EyeNumber[i] + ", " + Vector.round(atan2_error, 3) + ", " + Math.round(J_error[i]/_arcsec) + " "
+                    	str += "| " + EyeNumber[i] + ", " + Math.round(J_error[i]/_arcsec) + " "
+                    }
+                    out(str, "blue")
+                    return Dexter.move_all_joints(Vector.add(cur_angles, step))
+                })
+                CMD.push(Dexter.empty_instruction_queue())
+                
+                return CMD
+            }
+        ),
+        Dexter.sleep(1),
+            make_ins('w', FPGA.COMMAND_REG, FPGA.cmd_reg_val({
+            	ResetMotorPosition: true,
+        	})),
+            make_ins('w', FPGA.COMMAND_REG, FPGA.cmd_reg_val({
+            	ResetMotorPosition: false,
+        	})),
+            Dexter.empty_instruction_queue(),
+            function(){out("Done")}
+    ]
+})    
+
+
+
+
+
+/*
 new Job({
 	name: "Write_Dex_Files",
     inter_do_item_dur: idid,
@@ -705,7 +970,6 @@ new Job({
     do_list: [
     	init_globals,
     	function(){
-        	/*
         	scan_result = process_scan_data(scan_data)
             for(let i = 0; i < 5; i++){
             	scan_result[i].cos = {}
@@ -714,7 +978,7 @@ new Job({
                 scan_result[i].sin.ddx_thresh
                 scan_result[i].sin_eye_offset = 0
                 scan_result[i].idx_eye_to_cal_offset = 0
-            }*/
+            }
             
             post_cal_info = {
             	eyes: [0, 0, 0, 0, 0],
@@ -732,6 +996,7 @@ new Job({
     	
     ]
 })
+*/
 
 var start_time
 var end_time
@@ -839,13 +1104,14 @@ new Job({
     show_instructions: false,
     do_list: [
     	function(){
-        	//let correction = [-5, -1, -4, -4, -5]
-            //let actual_eye_offset = [-3,-2,-2,-2,-3]//[-2, 1, -2, -2, -2]
-            //actual_eye_offset[1] = -actual_eye_offset[1]
+            let eye_offset_override = [-1, -2, -2, -1, -1]//[-2, 1, -2, -2, -2]
         
+        	let eye_offset = idx_eye_to_cal_offset
+            //let eye_offset = eye_offset_override
+            
+            eye_offset[1] = -eye_offset[1] //flip J2 ??
         	for(let i = 0; i < scan_result.length; i++){
-            	scan_result[i].idx_eye_to_cal_offset = idx_eye_to_cal_offset[i]//actual_eye_offset[i]//idx_eye_to_cal_offset[i]//actual_eye_offset[i]
-            	//scan_result[i].idx_eye_to_cal_offset = actual_eye_offset[i]
+            	scan_result[i].idx_eye_to_cal_offset = eye_offset[i]
             }
         
         	let content = JSON.stringify(scan_result)
@@ -2542,6 +2808,7 @@ FPGA.cmd_reg_val({
 
 
 var atan2_vals, atan2_goal, J_error_thres, E_error_thresh, J_error
+/*
 new Job({
 	name: "Center_Eye",
     inter_do_item_dur: 0.01,
@@ -2627,7 +2894,7 @@ new Job({
             function(){out("Done")}
     ]
 })    
-
+*/
 
 
 /*
