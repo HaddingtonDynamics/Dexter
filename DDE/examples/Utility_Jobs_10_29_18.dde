@@ -1,0 +1,684 @@
+
+
+function _33 (){
+
+}
+
+
+//new Dexter({name: "my_dex", ip_address: "192.168.1.200", simulate: null})
+new Dexter({name: "my_dex", ip_address: "192.168.1.142", simulate: null})
+
+new Job({
+	name: "Set_PID_P",
+	robot: Robot.my_dex,
+    show_instructions: false,
+	do_list: [
+    	//make_ins("S", "J1_PID_P", "0.2"),
+        //make_ins("S", "J2_PID_P", "0.2"),
+        //make_ins("S", "J3_PID_P", "2"),
+        make_ins("S", "J4_PID_P", "0.001"),
+        //make_ins("S", "J5_PID_P", "0.1"),
+        make_ins("F")
+    ]
+})
+
+new Job({
+	name: "Set_LinkLengths",
+	robot: Robot.my_dex,
+    show_instructions: false,
+	do_list: [
+    	make_ins("S", "LinkLengths", 165101, 320676, 330201, 50801, 82551),
+        make_ins("F")
+    ]
+})
+
+
+new Job({
+	name: "Set_StartPosition",
+	robot: Robot.my_dex,
+    show_instructions: false,
+	do_list: [
+        make_ins("S", "StartPosition", 0, 0, 90, 0, 0),
+        make_ins("F")
+    ]
+})
+
+new Job({
+	name: "RunFile_Example",
+	robot: Robot.my_dex,
+    show_instructions: false,
+	do_list: [
+    	make_ins("S", "RunFile", "Cal.make_ins"),
+        make_ins("F"),
+        make_ins("S", "RunFile", "FollowMeMode.make_ins"),
+        make_ins("F"),
+    ]
+})
+
+new Job({
+	name: "Set_StartPosition",
+	robot: Robot.my_dex,
+    show_instructions: false,
+	do_list: [
+        make_ins("S", "StartPosition", 0, 0, 90, 0, 0),
+        make_ins("F")
+    ]
+})
+
+new Job({
+	name: "RunCal",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: true
+    },
+	do_list: [
+    	make_ins("S", "RunFile", "Cal.make_ins"),
+        make_ins("F"),
+    ]
+})
+
+new Job({
+	name: "RunFollow",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: true
+    },
+	do_list: [
+    	make_ins("S", "RunFile", "FollowMeMode.make_ins")
+    ]
+})
+
+new Job({
+	name: "RunKeep",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: true
+    },
+	do_list: [
+    	make_ins("S", "RunFile", "KeepMode.make_ins")
+    ]
+})
+
+new Job({
+	name: "RunOpenLoop",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: true
+    },
+	do_list: [
+    	make_ins("S", "RunFile", "OpenLoopMode.make_ins")
+    ]
+})
+
+
+new Job({
+	name: "Update_Status",
+    show_instructions: false,
+    inter_do_item_dur: 0.1,
+    robot: Dexter.my_dex,
+    do_list: [
+        make_ins("g"),
+        make_ins("F"),
+        Robot.go_to(0)
+    ]
+})
+
+
+
+new Job({
+	name: "read_POM",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0.1,
+    show_instructions: false,
+	do_list: [
+    	Robot.loop(true,
+			function(){
+            	let CMD = []
+                
+                CMD.push(Dexter.read_from_robot("#POM", "read_results"))
+            	CMD.push(function(){
+					let read_results = this.user_data.read_results
+					let read_val = eval(read_results)
+        			out(read_val, "blue", false)
+                })
+                return CMD
+			}
+        )
+	]
+})
+
+
+new Job({
+	name: "Straight_Test",
+    robot: Robot.my_dex,
+    do_list: [
+    	Dexter.set_parameter("MaxSpeed", 25),
+        Dexter.set_parameter("StartSpeed", 0),
+    	Dexter.move_to([-0.3, 0.5, 0.1], [0, 0, -1], [1, 1, 1]),
+        make_ins("F"),
+        make_ins("T", 0.3, 0.5, 0.1, 0, 0, -1, 1, 1, 1),
+    	Dexter.set_parameter("MaxSpeed", 25),
+        Dexter.set_parameter("StartSpeed", 0)
+    ]
+})
+
+new Job({
+	name: "Copy_to_Dexter",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: true
+    },
+	do_list: [
+
+		function(){
+        	if(this.user_data.new_file || undefined == window["copy_filepath"]){
+				window["copy_filepath"] = choose_file({buttonLabel: "Open"})
+            }
+			if(undefined == window["copy_filepath"]){
+				out("No file written.", "blue")
+			}else{
+				let my_file_content = file_content(copy_filepath)
+                let filename = copy_filepath.substring(copy_filepath.lastIndexOf("/") + 1) 
+				out(filename)
+                return Dexter.write_to_robot(my_file_content, "/srv/samba/share/" + filename)
+			}
+		}
+	]
+})
+
+new Job({
+	name: "Copy_from_Dexter",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: false,
+        Dexter_Filepath: "/srv/samba/share/DexRun.c"
+    },
+	do_list: [
+    	function(){
+    		return Human.enter_text({
+        		//task: "Enter Dexter filepath:",
+				initial_value: this.user_data.Dexter_Filepath,
+				line_count: 1,
+				user_data_variable_name: "Dexter_Filepath",
+                width: 475,
+                height: 170
+			})
+        },
+    	function(){
+        	return [
+            	function(){
+                	out("Reading: " + this.user_data.Dexter_Filepath + "...")
+                },
+            	Dexter.read_from_robot(this.user_data.Dexter_Filepath, "read_results"),
+                make_ins("F"),
+                function(){
+                	out("Read complete:")
+                }
+            ]
+        },
+		function(){
+			let my_file_content = out(this.user_data.read_results)
+            let pc_filepath = choose_save_file()
+            write_file(pc_filepath, my_file_content)
+		}
+	]
+})
+
+
+//Kent's Cal:
+var end_job = 0
+var AxisTweek =
+[0, 0, 0, 0, 0]
+var AxisTweekIndex = 0
+var DIFF_BETA = 52
+var XYZ_BETA = 28
+var MoveSpeed = 180000
+var CalSpeed = 120000
+function new_cal(){
+	return [
+    	make_ins("w", 42,832),
+              make_ins("w", 42,512),
+              make_ins("w", 79, 50 ^ 200 ),
+              make_ins("w", 80, 50 ^ 200 ),
+              make_ins("w", 81, 50 ^ 200 ),
+              make_ins("S", "J1BoundryHigh",670010 * _arcsec),
+        	  make_ins("S", "J1BoundryLow",-670010 * _arcsec),
+              make_ins("S", "J2BoundryLow",-350010 * _arcsec),
+              make_ins("S", "J2BoundryHigh",350010 * _arcsec),
+              make_ins("S", "J3BoundryLow",-570010 * _arcsec),
+              make_ins("S", "J3BoundryHigh",570010 * _arcsec),
+              make_ins("S", "J4BoundryLow",-390010 * _arcsec),
+              make_ins("S", "J4BoundryHigh",390010 * _arcsec),
+              make_ins("S", "J5BoundryLow",-684010 * _arcsec),
+              make_ins("S", "J5BoundryHigh",684010 * _arcsec),
+    		  
+              
+              make_ins("a", ...[670000,80000,0,0,0].arcsec()),
+              make_ins("F"),
+              make_ins("S", "MaxSpeed", CalSpeed / _nbits_cf),
+              make_ins("w", 42,1),
+              make_ins("a", ...[-670000,80000,0,0,0].arcsec()),
+              make_ins("F"),
+              make_ins("w", 42,0),
+              make_ins("S", "MaxSpeed", MoveSpeed / _nbits_cf),
+			  make_ins("a", ...[0,0,0,0,0].arcsec()),
+              make_ins("a", ...[0,350000,-570000,0,0].arcsec()),
+              make_ins("F"),
+              make_ins("w", 42,4),
+              make_ins("S", "MaxSpeed", CalSpeed / _nbits_cf),
+              make_ins("a", ...[0,-350000,570000,0,648000].arcsec()),
+              make_ins("F"),
+              make_ins(
+              "w", 42,0),
+              make_ins("S", "MaxSpeed", MoveSpeed / _nbits_cf),
+              make_ins("a", ...[0,0,0,0,648000].arcsec()),
+              make_ins("a", ...[0,0,570000,0,648000].arcsec()),
+              make_ins("F"),
+              make_ins("w", 42,2),
+              make_ins("S", "MaxSpeed", CalSpeed / _nbits_cf),
+              make_ins("a", ...[0,0,-570000,0,0].arcsec()),
+              make_ins("F"),
+              make_ins("w", 42,0),
+              make_ins("S", "MaxSpeed", MoveSpeed / _nbits_cf),
+              make_ins("a", ...[0,0,0,0,0].arcsec()),
+              make_ins("S", "MaxSpeed", CalSpeed / _nbits_cf),
+              make_ins("a", ...[0,0,0,370000,0].arcsec()),
+              make_ins("F"),
+              make_ins("w", 42,1024),
+              make_ins("a", ...[0,0,0,-370000,0].arcsec()),
+              make_ins("F"),
+              make_ins("w", 42,0),
+              make_ins("a", ...[0,0,0,0,680000].arcsec()),
+              make_ins("F"),
+              make_ins("w", 42,2048),
+              
+              make_ins("a", ...[0,0,0,0,-680000].arcsec()),
+              make_ins("F"),
+              make_ins("w", 42,0),
+              
+              make_ins("a", ...[0,0,0,0,0].arcsec()),
+              make_ins("S", "MaxSpeed", 240000 / _nbits_cf),
+              
+              make_ins("w", 42,64),
+              make_ins("w", 42,0),
+              
+              make_ins("l"),
+
+			  make_ins("a", ...[100000,100000,100000,100000,100000].arcsec()),
+              make_ins("a", ...[0,0,0,0,0].arcsec()),
+              make_ins("F"),
+              
+              make_ins("S", "J1BoundryHigh",648000 * _arcsec),
+        	  make_ins("S", "J1BoundryLow",-648000 * _arcsec),
+              make_ins("S", "J2BoundryLow",-290000 * _arcsec),
+              make_ins("S", "J2BoundryHigh",290000 * _arcsec),
+              make_ins("S", "J3BoundryLow",-400000 * _arcsec),
+              make_ins("S", "J3BoundryHigh",400000 * _arcsec),
+              make_ins("S", "J4BoundryLow",-340000 * _arcsec),
+              make_ins("S", "J4BoundryHigh",340000 * _arcsec),
+              make_ins("S", "J5BoundryLow",-648000 * _arcsec),
+              make_ins("S", "J5BoundryHigh",648000 * _arcsec),
+              make_ins("w", 79, 50 ^ 100 ),
+     		  make_ins("w", 80, 50 ^ 100 ),
+     		  make_ins("w", 81, 50 ^ 100 ),
+
+              make_ins("w", DIFF_BETA, 5),
+              make_ins("w", XYZ_BETA, 5),
+
+              
+              Dexter.sleep(1),
+              make_ins("w", 42,12960),
+    ]
+}
+
+
+
+function instructions_to_raw_txt_file(instructions, round_numbers = true){
+	let contents = ""
+    let elt, sub_elt, convert_to_arcsec, convert_to_nbits
+    let dim = Vector.matrix_dimensions(instructions)
+    for(let i = 0; i < dim[0]; i++){
+    	elt = instructions[i]
+        convert_to_arcsec = false
+        convert_to_nbits = false
+    	for(let j = 4; j < elt.length; j++){
+        	sub_elt = elt[j]
+        	switch(typeof sub_elt){
+            	case "string":
+                	contents = contents.concat(sub_elt)
+                    if("a" == sub_elt 
+                    	|| "p" == sub_elt
+                        || "J1BoundryHigh" == sub_elt
+                        || "J1BoundryLow" == sub_elt
+                        || "J2BoundryHigh" == sub_elt
+                        || "J2BoundryLow" == sub_elt
+                        || "J3BoundryHigh" == sub_elt
+                        || "J3BoundryLow" == sub_elt
+                        || "J4BoundryHigh" == sub_elt
+                        || "J4BoundryLow" == sub_elt
+                        || "J5BoundryHigh" == sub_elt
+                        || "J5BoundryLow" == sub_elt
+                        ){
+                    	convert_to_arcsec = true
+                    }else if(
+                    	"MaxSpeed" == sub_elt
+                    	|| "StartSpeed" == sub_elt
+                        || "Acceleration" == sub_elt
+                        ){
+                    	convert_to_nbits = true
+                    }
+                break
+                case "number":
+                	if(convert_to_arcsec){
+                    	sub_elt *= 3600
+                    }
+                    if(convert_to_nbits){
+                    	sub_elt *= _nbits_cf
+                    }
+                	if(round_numbers){
+                		contents = contents.concat(Math.round(sub_elt).toString())
+                    }else{
+                    	contents = contents.concat(sub_elt.toString())
+                    }
+                break
+                default:
+                	dde_error("Unknown datatype, " + (typeof sub_elt) + ", for value " + sub_elt + ".")
+            }
+            if(j != elt.length-1){
+            	contents = contents.concat(", ")
+            }
+        }
+        if(i != dim[0]){
+            contents = contents.concat(";\r\n")
+        }
+    }
+    
+    let filepath = choose_save_file()
+    if(filepath == undefined){
+    	out("No file saved in call to instructions_to_raw_txt_file.")
+        return
+    }
+    if(filepath.indexOf(".make_ins") == -1){
+    	filepath = filepath.concat(".make_ins")
+    }
+    write_file(filepath, contents)
+    
+    return contents
+}
+
+//Example:
+/*
+instructions_to_raw_txt_file(new_cal())
+
+instructions_to_raw_txt_file(Job.CalEncoders.orig_args.do_list)
+
+instructions_to_raw_txt_file(setFollowMe())
+instructions_to_raw_txt_file(setForceProtect())
+instructions_to_raw_txt_file(setKeepPosition())
+instructions_to_raw_txt_file(setOpenLoop())
+*/
+
+
+new Job({
+	name: "Read_Raw_Encoders",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: false,
+        Dexter_Filepath: "#RawEncoders"
+    },
+	do_list: [
+    	function(){
+        	return [
+            	function(){
+                	out("Reading: " + this.user_data.Dexter_Filepath + "...")
+                },
+            	Dexter.read_from_robot(this.user_data.Dexter_Filepath, "read_results"),
+                make_ins("F"),
+                function(){
+                	out("Read complete:")
+                }
+            ]
+        },
+		function(){
+			out(this.user_data.read_results)
+		}
+	]
+})
+
+
+new Job({
+	name: "Read_EyeNumbers",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: false,
+        Dexter_Filepath: "#EyeNumbers"
+    },
+	do_list: [
+    	function(){
+        	return [
+            	function(){
+                	out("Reading: " + this.user_data.Dexter_Filepath + "...")
+                },
+            	Dexter.read_from_robot(this.user_data.Dexter_Filepath, "read_results"),
+                make_ins("F"),
+                function(){
+                	out("Read complete:")
+                }
+            ]
+        },
+		function(){
+			out(this.user_data.read_results)
+		}
+	]
+})
+
+new Job({
+	name: "Write_EyeNumbers",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: false,
+    },
+	do_list: [
+    	function(){
+    		return Human.enter_text({
+				initial_value: "0, 0, 0, 0, 0",
+				line_count: 1,
+				user_data_variable_name: "New_EyeNumbers",
+                width: 475,
+                height: 170
+			})
+        },
+        
+    	function(){
+        	return [
+            	function(){
+                	out("Setting raw encoder values:")
+                    out(this.user_data.New_Raw_Encoder_Values)
+                },
+            	Dexter.set_parameter("EyeNumbers", this.user_data.New_Raw_Encoder_Values)
+            ]
+        },
+        make_ins("F")
+	]
+})
+
+new Job({
+	name: "Write_CommandedAngles",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: false,
+    },
+	do_list: [
+    	function(){
+    		return Human.enter_text({
+				initial_value: "0, 0, 0, 0, 0",
+				line_count: 1,
+				user_data_variable_name: "New_CommandedAngles",
+                width: 475,
+                height: 170
+			})
+        },
+
+		function(){
+			out("Setting commanded angles:")
+			out(this.user_data.New_Commanded_Angles)
+			let temp_angles = eval("[" + this.user_data.New_Commanded_Angles + "]")
+			//temp_angles = Vector.multiply(temp_angles, 3600)
+			this.user_data.New_Commanded_Angles = "" + temp_angles[0] + ", " + temp_angles[1] + ", " + temp_angles[2] + ", " + temp_angles[3] + ", " + temp_angles[4]
+		},
+		function(){return Dexter.set_parameter("CommandedAngles", this.user_data.New_CommandedAngles)},
+        make_ins("F"),
+        make_ins("w", 42, 256),
+        make_ins("w", 42, 0)
+	]
+})
+
+new Job({
+	name: "Write_Cmd_Angles",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: false,
+    },
+	do_list: [
+    	function(){
+    		return Human.enter_text({
+				initial_value: "0, 0, 0, 0, 0",
+				line_count: 1,
+				user_data_variable_name: "New_Commanded_Angles",
+                width: 475,
+                height: 170
+			})
+        },
+
+		function(){
+			out("Setting commanded angles:")
+			out(this.user_data.New_Commanded_Angles)
+			let temp_angles = eval("[" + this.user_data.New_Commanded_Angles + "]")
+			temp_angles = Vector.multiply(temp_angles, 3600)
+			this.user_data.New_Commanded_Angles = "" + temp_angles[0] + ", " + temp_angles[1] + ", " + temp_angles[2] + ", " + temp_angles[3] + ", " + temp_angles[4]
+		},
+		function(){return Dexter.set_parameter("CommandedAngles", this.user_data.New_Commanded_Angles)},
+        make_ins("F")
+	]
+})
+
+
+
+new Job({
+	name: "Open",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	do_list: [
+    	Dexter.set_open_loop()
+    ]
+})
+
+new Job({
+	name: "Follow",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	do_list: [
+    	Dexter.set_follow_me()
+    ]
+})
+
+new Job({
+	name: "Keep",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	do_list: [
+    	Dexter.set_keep_position()
+    ]
+})
+
+
+
+new Job({
+	name: "Follow_to_Keep",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: false,
+    },
+	do_list: [
+    	make_ins("g"),
+        make_ins("F"),
+    	function(){
+        
+        	let rs = Robot.my_dex.rs.robot_status
+            let meas_angles = [
+            	rs[Dexter.J1_MEASURED_ANGLE],
+                rs[Dexter.J2_MEASURED_ANGLE],
+                rs[Dexter.J3_MEASURED_ANGLE],
+                rs[Dexter.J4_MEASURED_ANGLE],
+                rs[Dexter.J5_MEASURED_ANGLE]
+            ]
+            meas_angles = Vector.multiply(3600, meas_angles)
+            
+            let meas_string = ""
+            	+ meas_angles[0] + ", "
+                + meas_angles[1] + ", "
+                + meas_angles[2] + ", "
+                + meas_angles[3] + ", "
+                + meas_angles[4]
+            
+            return Dexter.set_parameter("CommandedAngles", meas_string)
+        },
+        make_ins("F"),
+        Dexter.set_keep_position()
+	]
+})
+
+
+
+new Job({
+	name: "Home",
+	robot: Robot.my_dex,
+    inter_do_item_dur: 0,
+    show_instructions: false,
+	user_data: {
+    	new_file: false,
+    },
+	do_list: [
+    	Dexter.move_all_joints(0, 0, 0, 0, 0),
+        make_ins("F"),
+    	make_ins("g")
+    ]
+})
+
+
+new Job({
+	name: "Redefine_Home",
+	robot: Robot.my_dex,
+	do_list: [
+    	Dexter.set_parameter("CommandedAngles", 0, 0, 0, 0, 0),
+        Dexter.set_parameter("EyeNumbers", 255, 255, 255, 255, 255)
+    ]
+})
+
