@@ -1,6 +1,6 @@
-# DDE
+# DDE / Job Engine
 
-Dexter Development Environment is the IDE for Dexter. 
+Dexter Development Environment is the IDE for Dexter. It is written in javascript and runs as an electron app on the desktop, and under node.js on Dexter. When used to run DDE programs (aka "jobs") on Dexter, it is known as the "Job Engine"
 
 The current long term release version of DDE, which will not change as rapidly as the development version, is avaiable at:<br>
 https://github.com/cfry/dde/releases/tag/v2.5.13
@@ -8,7 +8,7 @@ https://github.com/cfry/dde/releases/tag/v2.5.13
 Newer development releases of DDE can be found on the releases tab at:<br>
 https://github.com/cfry/dde
 
-BETA version [3.0.7](https://github.com/cfry/dde/releases/tag/v3.0.7) is known to passes most tests on the internal test suite, it can move the robot in open loop modes, and the calibration system works well for closed loop modes. 
+BETA version [3.0.7](https://github.com/cfry/dde/releases/tag/v3.0.7) is known to passes most tests on the internal test suite, it can move the robot in open loop modes, and the calibration system works well for closed loop modes. It is the version used on Dexter as the Job Engine, but this will change in the future as newer versions pass additional testing.
 
 The current DDE documentation (precedded by some previously written articles) is available online here:
 http://hdrobotic.com/software/
