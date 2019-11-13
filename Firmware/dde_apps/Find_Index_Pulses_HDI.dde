@@ -434,6 +434,10 @@ function find_idx_eyes(){
                             if(is_idx_eye(cos_maxes[i], cos_diff_thres[i])){
                             	if(stage == "find_first_index_eye"){
                                 	first_idx_eye[i] = EyeNumber[i] - 2 * cur_direction[i] //triggers on n+1 eyes and idx is middle of 3 eyes
+                                    // /step_size[i] = (255 - EyeNumber[i]) - cur_direction[i]*2
+                                    // /cur_direction[i] *= -1 
+                                    
+                                    
                                     stage_idx[i]++ //go to next stage
                                     print_stages()
                                 }else{
