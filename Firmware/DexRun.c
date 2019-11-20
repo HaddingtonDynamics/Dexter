@@ -3700,11 +3700,11 @@ int getNormalizedInput(int param)
 	if(param == ANGLE_MEASURED_ANGLE){return (int)((float)val / (JointsCal[3] * Interpolation[3])) + HomeOffset[3];}
 	if(param == ROT_MEASURED_ANGLE  ){return (int)((float)val / (JointsCal[4] * Interpolation[4])) + HomeOffset[4];}
 	
-	if(param == BASE_STEPS ){return (int)((float)val / (JointsCal[0] * Interpolation[0])) + HomeOffset[0];}
-	if(param == PIVOT_STEPS){return (int)((float)val / (JointsCal[1] * Interpolation[1])) + HomeOffset[1];}
-	if(param == END_STEPS  ){return (int)((float)val / (JointsCal[2] * Interpolation[2])) + HomeOffset[2];}
-	if(param == ANGLE_STEPS){return (int)((float)val / (JointsCal[3] * Interpolation[3])) + HomeOffset[3];}
-	if(param == ROT_STEPS  ){return (int)((float)val / (JointsCal[4] * Interpolation[4])) + HomeOffset[4];}
+	if(param == BASE_STEPS ){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[0] * Interpolation[0])) + HomeOffset[0];}
+	if(param == PIVOT_STEPS){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[1] * Interpolation[1])) + HomeOffset[1];}
+	if(param == END_STEPS  ){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[2] * Interpolation[2])) + HomeOffset[2];}
+	if(param == ANGLE_STEPS){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[3] * Interpolation[3])) + HomeOffset[3];}
+	if(param == ROT_STEPS  ){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[4] * Interpolation[4])) + HomeOffset[4];}
 
 	if(param <= ROT_POSITION_FORCE_DELTA) {
 		corrF = JointsCal[(param-INPUT_OFFSET) % 5];
