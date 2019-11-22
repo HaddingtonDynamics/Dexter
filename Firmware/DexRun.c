@@ -2296,7 +2296,8 @@ int SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int l
 		|| RxBuffer[2] != 0xFD
 		|| RxBuffer[3] != 0x00
 		) {
-		printf("Servo%d: rx bad header\n", servo);
+		if (0 == (RxBuffer[0] ^ RxBuffer[1] ^ RxBuffer[2] ^ RxBuffer[3])) return 255;//it's just not installed. 
+		printf("Servo%d: rx bad header: %x %x %x %x\n", servo, RxBuffer[0], RxBuffer[1], RxBuffer[2], RxBuffer[3] );
 		return 255; //error codes from the servo can't be more than 127, so start from 255
 		}
 	if (RxBuffer[4] != servo) { printf ("Servo%d: rx wrong ID:%d\n", servo, RxBuffer[4]); return 254;};
@@ -2507,11 +2508,11 @@ void *RealtimeMonitor(void *arg)
 				if (i > 1023) {i -= 1024; i *= -1;}
 				ServoData[0].PresentLoad = i;
 				if (abs(ServoData[0].PresentLoad) > ServoData[0].LoadLimit) {
-					//printf("Servo3: LOAD %d, \tat %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
+					printf("Servo3: LOAD %d, \tat %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
 					SendGoalSetPacket(ServoData[0].PresentPossition, 3); //overtorque, be happy where we are.
 					}
 				else if (abs(ServoData[0].Goal - ServoData[0].PresentPossition)>10) {
-					//printf("Servo3: load %d, \tAT %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
+					printf("Servo3: load %d, \tAT %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
 					SendGoalSetPacket(ServoData[0].Goal, 3); //load is down, try again
 					} //this may make the load overtorque again, but that's ok, we vibrate.
 				err = ServoRx[29];
@@ -2544,11 +2545,11 @@ void *RealtimeMonitor(void *arg)
 				if (i > 1023) {i -= 1024; i *= -1;}
 				ServoData[1].PresentLoad = i;
 				if (abs(ServoData[1].PresentLoad) > ServoData[1].LoadLimit) {
-					//printf("Servo1: LOAD %d, \tat %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
+					printf("Servo1: LOAD %d, \tat %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
 					SendGoalSetPacket(ServoData[1].PresentPossition, 1); //overtorque, be happy where we are.
 					}
 				else if (abs(ServoData[1].Goal - ServoData[1].PresentPossition)>10) {
-					//printf("Servo1: load %d, \tAT %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
+					printf("Servo1: load %d, \tAT %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
 					SendGoalSetPacket(ServoData[1].Goal, 1); //load is down, try again
 					} //this may make the load overtorque again, but that's ok, we vibrate.
 				err = ServoRx[29];
