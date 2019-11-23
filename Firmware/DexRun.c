@@ -1918,7 +1918,7 @@ int ForcePossition[5]={0,0,0,0,0};
 int ForceDestination[5]={0,0,0,0,0};
 int ThreadsExit=1;
 
-
+char status_mode = '0'; //zero is the standard, original mode.
 int StatusReportIndirection[60]={
 	DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,
 	BASE_POSITION_AT,  BASE_POSITION_DELTA,  BASE_POSITION_PID_DELTA,  BASE_POSITION_FORCE_DELTA,  BASE_SIN,  BASE_COS,  BASE_MEASURED_ANGLE,  SENT_BASE_POSITION,  SLOPE_BASE_POSITION,0,
@@ -3104,9 +3104,18 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		//sendBuffReTyped[1]=token[0];
 		//sendBuffReTyped[2]=DexError;
 		
-		for(i=0;i<59;i++)
-		{
+		for(i=0; i<59; i++) {
 			sendBuffReTyped[i+6]=getNormalizedInput(StatusReportIndirection[i]);
+			}
+		if ('0'!=status_mode) {
+			sendBuffReTyped[6] = (ServoData[0].PresentLoad << 16) + ServoData[0].PresentPossition;
+			sendBuffReTyped[7] = (ServoData[1].PresentLoad << 16) + ServoData[1].PresentPossition;
+			sendBuffReTyped[8] = (int)status_mode;
+			sendBuffReTyped[17] = getNormalizedInput(BASE_STEPS);
+			sendBuffReTyped[27] = getNormalizedInput(PIVOT_STEPS);
+			sendBuffReTyped[37] = getNormalizedInput(END_STEPS);
+			sendBuffReTyped[47] = getNormalizedInput(ANGLE_STEPS);
+			sendBuffReTyped[57] = getNormalizedInput(ROT_STEPS);
 		}
 		return TRUE;
 	} //if('r'==oplet)
@@ -3684,11 +3693,13 @@ int getNormalizedInput(int param)
 {
 	int val;
 	float corrF=1;
-	if(param == SLOPE_BASE_POSITION){return ServoData[1].PresentPossition;}
-	if(param == SLOPE_PIVOT_POSITION){return ServoData[1].PresentLoad;}
-	if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
-	if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
-	if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
+	if ('0'==status_mode) {
+		if(param == SLOPE_BASE_POSITION){return ServoData[1].PresentPossition;}
+		if(param == SLOPE_PIVOT_POSITION){return ServoData[1].PresentLoad;}
+		if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
+		if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
+		if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
+		}
 
 	val = mapped[param];
 	if((val & 0x40000)!=0) 	{
@@ -5324,6 +5335,9 @@ int ParseInput(char *iString)
 				break; 
 	
 				case SEND_HEARTBEAT :
+					p1=strtok(NULL, delimiters);
+					if (p1) { status_mode = p1[0]; }
+					else { status_mode='0'; }
 					////printf("heartbeat dispatched\n");
 				break; 
 				case SET_PARAM :
