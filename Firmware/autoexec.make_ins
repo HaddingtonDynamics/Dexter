@@ -1,6 +1,5 @@
 ;Set reasonable boundaries on each joint to avoid damage from over extension
 S RunFile Defaults.make_ins;
-a 0 0 0 0 0 512 50; Start Joint 6 / 7 servos if present
 ;S RunFile KeepMode.make_ins;
 ;a 18000 -18000 18000 18000 18000; Un-comment and change for desired boot dance
 ;S RunFile FollowMode.make_ins; Un-comment and change for desired start mode
