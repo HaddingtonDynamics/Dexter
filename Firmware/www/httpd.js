@@ -31,35 +31,40 @@ var mimeTypes = {
 const { spawn } = require('child_process');
 var job
 
+function spawn_job_proc(jobfile, out, end) {
+    //https://nodejs.org/api/child_process.html
+    job = spawn('node'
+        , ["core define_and_start_job "+jobfile]
+        , {cwd: '/root/Documents/dde', shell: true}
+        )
+    job.stdout.on('data', function(data) {
+        console.log(">"+data)
+        out(data.toString().replace('\n',"<BR/>").replace("  ","&nbsp;&nbsp"))
+        })
+    job.stderr.on('data', function(data) {
+        console.log("!"+data)
+        out("ERROR: "+data)
+        })
+    job.on('close', function(code) {
+        console.log("closed:"+code)
+        out("Finished "+jobfile+". Exit code:"+code)
+        return end()
+        })
+    out("Started "+jobfile+" PID:"+job.pid+"<BR/>")
+    return job
+    }
+
 //standard web server on port 80 to serve files
-http.createServer(function (req, res) {
+const httpd = http.createServer(function (req, res) {
   var q = url.parse(req.url, true)
   if ("/"==q.pathname) 
     q.pathname="index.html"
   if ("/runjob"==q.pathname) {
     var jobfile = "/srv/samba/share/dde_apps/"+q.search.substr(1)
     console.log("Running job "+jobfile+".")
-    //https://nodejs.org/api/child_process.html
-    job = spawn('node'
-      , ["core define_and_start_job "+jobfile]
-      , {cwd: '/root/Documents/dde', shell: true}
-      )
     res.writeHead(200, {'Content-Type': 'text/html'})
-    job.stdout.on('data', function(data) {
-      console.log(">"+data)
-      res.write(data.toString().replace('\n',"<BR/>").replace("  ","&nbsp;&nbsp"))
-      })
-    job.stderr.on('data', function(data) {
-      console.log("!"+data)
-      res.write("ERROR: "+data)
-      })
-    job.on('close', function(code) {
-      console.log("closed:"+code)
-      res.write("Finished. Exit code:"+code)
-      return res.end()
-      })
-    res.write("Started "+jobfile+" PID:"+job.pid+"<BR/>")
-    return //res.end()
+    spawn_job_proc(jobfile, function(msg){res.write(msg)}, function(){res.end()})
+    return
     }
   if ("/jobs"==q.pathname) {
     console.log("serving job list")
@@ -75,9 +80,8 @@ http.createServer(function (req, res) {
         }
       return res.end()
       })
-    return
+    return //res.end()
     }
-
   var filename = "/srv/samba/share/www/" + q.pathname
   console.log("serving"+q.pathname)
   fs.readFile(filename, function(err, data) {
@@ -93,8 +97,47 @@ http.createServer(function (req, res) {
     res.write(data)
     return res.end()
   });
-}).listen(80)
+})
+httpd.listen(80)
 console.log("listing on port 80")
+
+//handle websocket upgrade request. 
+let job_wss = new ws.Server({ noServer: true })
+job_wss.child_process = null //reserve a spot for the job process
+httpd.on('upgrade', function upgrade(request, socket, head) {
+    const pathname = url.parse(request.url).pathname
+    if (pathname === '/runjob') { //request to run a job via web socket
+        job_wss.handleUpgrade( request, socket, head, function done(ws) {
+            job_wss.emit('connection', ws, request) 
+            }) //when connected, trigger ws Server's .on('connection') callback
+    } else { //what the heck is this for?
+        socket.destroy() //reject it.
+        }
+    })
+job_wss.on('connection', function connection(wsocket, req) {
+    let jobname = url.parse(req.url, true).search.substr(1)
+    let jobfile = "/srv/samba/share/dde_apps/"+jobname
+    console.log("job_wss connection "+jobname)
+    job_wss.child_process = spawn_job_proc(jobfile
+        , function(msg){ //data from job
+            console.log("job says:"+msg)
+            wsocket.send(msg)
+            }
+        , function(){ //job ended
+            console.log("job ended")
+            job_wss.child_process = null
+            wsocket.close()
+            }
+        )
+    wsocket.on('message', function incoming(msg) {
+//      console.log("\n\n\nbrowser says:"+msg+".\n\n\n")
+        let job = job_wss.child_process
+        if (job) {
+            console.log("\n\n\nbrowser says:"+msg+".\n\n\n")
+            job.stdin.write(msg+"\n")
+            }
+        });
+    })
 
 //socket server to accept websockets from the browser on port 3000
 //and forward them out to DexRun as a raw socket
@@ -161,4 +204,3 @@ browser.on('connection', function connection(socket, req) {
 
 //test to see if we can get a status update from DexRun
 //dexter.write("1 1 1 undefined g ;")
-
