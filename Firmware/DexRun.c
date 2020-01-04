@@ -2507,6 +2507,7 @@ void *RealtimeMonitor(void *arg)
 				// 0-1023 is CCW load, 1024-2047 is increasing CW load. the unit is about 0.1%; +-1023 is 100% load
 				if (i > 1023) {i -= 1024; i *= -1;}
 				ServoData[0].PresentLoad = i;
+#ifdef MONITOR_XL320
 				if (abs(ServoData[0].PresentLoad) > ServoData[0].LoadLimit) {
 					printf("Servo3: LOAD %d, \tat %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
 					SendGoalSetPacket(ServoData[0].PresentPossition, 3); //overtorque, be happy where we are.
@@ -2515,6 +2516,7 @@ void *RealtimeMonitor(void *arg)
 					printf("Servo3: load %d, \tAT %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
 					SendGoalSetPacket(ServoData[0].Goal, 3); //load is down, try again
 					} //this may make the load overtorque again, but that's ok, we vibrate.
+#endif
 				err = ServoRx[29];
 				if (ServoData[0].error != err) { //new error
 					err_file = fopen("errors.log", "a");
@@ -2544,6 +2546,8 @@ void *RealtimeMonitor(void *arg)
 				// 0-1023 is CCW load, 1024-2047 is inreasing CW load. the unit is about 0.1%; +-1023 is 100% load
 				if (i > 1023) {i -= 1024; i *= -1;}
 				ServoData[1].PresentLoad = i;
+                
+#ifdef MONITOR_XL320
 				if (abs(ServoData[1].PresentLoad) > ServoData[1].LoadLimit) {
 					printf("Servo1: LOAD %d, \tat %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
 					SendGoalSetPacket(ServoData[1].PresentPossition, 1); //overtorque, be happy where we are.
@@ -2552,6 +2556,8 @@ void *RealtimeMonitor(void *arg)
 					printf("Servo1: load %d, \tAT %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
 					SendGoalSetPacket(ServoData[1].Goal, 1); //load is down, try again
 					} //this may make the load overtorque again, but that's ok, we vibrate.
+#endif
+                
 				err = ServoRx[29];
 				if (ServoData[1].error != err) { //new error
 					err_file = fopen("errors.log", "a");
