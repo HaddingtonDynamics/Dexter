@@ -9,31 +9,61 @@
 
 function getParameterDefinitions() {
     return [
-        { name: 'height', type: 'int', initial: 30, caption: 'Height?' }, 
+        { name: 'height', type: 'int', initial: 30, caption: 'Height?' },
+        { name: 'flat_area_height', type: 'int', initial: 15, caption: 'Flat Area Height?' },
         { name: 'strake_height', type: 'float', initial: 2.8, caption: 'Strake Height?' },
         { name: 'strake_width', type: 'float', initial: 5.8, caption: 'Strake Width?' },
         { name: 'in_body_thick', type: 'int', initial: 5, caption: 'Inner Body Thickness?' },
         { name: 'out_body_thick', type: 'int', initial: 14, caption: 'Outer Body Thickness?' },
     ];
 }
-const height = 30;
+
 const R1 = 37 / 2;
 const R2 = 19 / 2;
 const R3 = 14;
-const W = 5.8;
-const H = 2.8;
-
 const R4 = 18;
 const R5 = 16;
-const H2 = 5;
-const W2 = 14;
+
 
 function main(params) {
-    var height = params.height;
-    var W = params.strake_width;
-    var H = params.strake_height;
-    var H2 = params.in_body_thick;
-    var W2 = params.out_body_thick;
+    const height = params.height;
+    const W = params.strake_width;
+    const H = params.strake_height;
+    const H2 = params.in_body_thick;
+    const W2 = params.out_body_thick;
+    const flat_area_height = params.flat_area_height;
+
+    function sticks() {
+        return union(
+            stick(W,H).translate([R3,0,0]).rotateZ(-120),
+            stick(W,H).translate([R3,0,0]).rotateZ(120),
+            stick(W,H).translate([R3,0,0])
+        )
+    }
+
+    function stick(W, H) {
+          return cube({size: [H,W, height+2], center: [true,true,false]})
+            .translate([0,0,-1])
+    }
+
+    function baseDiff() {
+        return difference(
+                cylinder({r: R4+H2/2, h: height+2, center: [true, true, false],fn: 32 }).translate([0,0,-1]),
+                cylinder({r: R5-H2/2, h: height+4, center: [true, true, false],fn: 64}).translate([0,0,-2]),
+                cube({size: [20,W2, height+4], center: [true,true,false]}).translate([R3,0,-2]).rotateZ(120),
+                cube({size: [20,W2, height+4], center: [true,true,false]}).translate([R3,0,-2]).rotateZ(-120),
+                cube({size: [20,W2, height+4], center: [true,true,false]}).translate([R3,0,-2])
+            );
+    }
+
+    function base(R1, R2) {
+          return difference(
+            cylinder({r: R1, h: height, center: [true, true, false],fn: 128}),
+            cylinder({r: R2, h: height+2, center: [true, true, false],fn: 64})
+                .translate([0,0,-1])
+          ).setColor([0, 1, 0, 1])
+    }
+
     return [
         difference(
             union(
@@ -61,41 +91,7 @@ function main(params) {
             cylinder({r: 1.6, h: 7, center: [true, true, false],fn: 32}).translate([-R3-2,0,-1]).rotateZ(120+14),
 
             cube({size: [15,31,height], center: [true,true,false]})
-                    .translate([-18.5,0, 15])
-        ),
-
+                    .translate([-18.5,0, flat_area_height])
+        )
     ]
 }
-
-function sticks() {
-    return union(
-        stick(W,H).translate([R3,0,0]).rotateZ(-120),
-        stick(W,H).translate([R3,0,0]).rotateZ(120),
-        stick(W,H).translate([R3,0,0])
-    )
-}
-
-function stick(W, H) {
-      return cube({size: [H,W, height+2], center: [true,true,false]})
-        .translate([0,0,-1])
-}
-
-function baseDiff() {
-    return difference(
-            cylinder({r: R4+H2/2, h: height+2, center: [true, true, false],fn: 32 }).translate([0,0,-1]),
-            cylinder({r: R5-H2/2, h: height+4, center: [true, true, false],fn: 64}).translate([0,0,-2]),
-            cube({size: [20,W2, height+4], center: [true,true,false]}).translate([R3,0,-2]).rotateZ(120),
-            cube({size: [20,W2, height+4], center: [true,true,false]}).translate([R3,0,-2]).rotateZ(-120),
-            cube({size: [20,W2, height+4], center: [true,true,false]}).translate([R3,0,-2])
-        );
-}
-
-function base(R1, R2) {
-      return difference(
-        cylinder({r: R1, h: height, center: [true, true, false],fn: 128}),
-        cylinder({r: R2, h: height+2, center: [true, true, false],fn: 64})
-            .translate([0,0,-1])
-      ).setColor([0, 1, 0, 1])
-}
-
- 
