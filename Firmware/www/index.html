@@ -8,12 +8,32 @@
 <body> 
     <h1>Dexter</h1> 
     <ul>
-        <li><a href="http://hdroboic.com">HDRobotic.com</a> Company home page</li>
+        <li><a href="http://hdrobotic.com">HDRobotic.com</a> Company home page</li>
         <li><a href="/scratch/index.html">Scratch</a> A simple block langauge. 
             <BR>To use, click the <img src="/scratch/AddExtension.png"> 
             button (lower left) and select the "Dexter HD" extension.</li>
         <li><a href="/chat.html">DexChat</a> A bare bones direct interface to Dexter for testing and development.</li>
     </ul>
+<div id="jobs"></div>
+
+<script type="text/javascript">
+var xhttp = new XMLHttpRequest();
+xhttp.onreadystatechange = function() {
+  if (this.readyState == 4 && this.status == 200) {
+    let jobs = ""
+    for(const job of xhttp.responseText.split("\n")) {
+      if (job)
+        jobs += '<LI><A HREF="/runjob?'+job+'">'+job+'</A>'
+      }
+    if (jobs) {
+      jobs = "<P>Onboard jobs, click to run:<UL>"+jobs+"</UL>"
+      }
+    document.getElementById("jobs").innerHTML = jobs
+    }
+  };
+xhttp.open("GET", "/jobs", true);
+xhttp.send();
+</script>
+
 </body>
 </html>
-
