@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 cd /srv/samba/share
 #echo "starting">>/srv/samba/share/DexRun.log
 pkill -e -x DexRun
@@ -39,8 +40,12 @@ cd /srv/samba/share
 ./DexRun 1 3 1 &
 
 #start the local web server
-node www/httpd.js & 
+sudo node www/httpd.js & 
 
-#start default job engine job
-# cd /root/Documents/dde
-# sleep 5 && sudo node core define_and_start_job /srv/samba/share/autoexec.dde
+#start default job engine job(s)
+cd /root/Documents/dde
+#Find home position from index eyes in code disks, this requires HDI. 
+#sleep 5 && sudo node core define_and_start_job /srv/samba/share/dde_apps/Find_Index_Pulses_HDI.dde
+#Start Physical interface, see
+# https://github.com/HaddingtonDynamics/Dexter/wiki/PhysicalUserInterface
+#sleep 1 && sudo node core define_and_start_job /srv/samba/share/dde_apps/PHUI2RCP.js
