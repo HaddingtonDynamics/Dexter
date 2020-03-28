@@ -1,2 +1,5 @@
-; This dance 
-a 0 0 0 0 0;
+; This dance is written by DexRun.c on bootup
+; The angles are set to the values in StartPosition_CommandedAngles.txt
+;a 0 0 0 0 0;
+;a 0 0 0 10800 0;
+;a 0 0 0 0 0;

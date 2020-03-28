@@ -52,6 +52,8 @@ void SendPacket(unsigned char *TxPkt, int length, int TxRxTimeDelay, unsigned ch
 void KeyholeSend(int *DataArray, int controlOffset, int size, int entryOffset );
 int CalcUartTimeout(int size);
 
+#define SIGNEX(v, sb) ((v) | (((v) & (1 << (sb))) ? ~((1 << (sb))-1) : 0))
+
 #define MAX_CONTENT_CHARS 62
 //maybe could be 112, 4 * 32 bit integers and then 128 bytes in the socket
 
@@ -75,7 +77,7 @@ int CalcUartTimeout(int size);
 
 
 
-#define INPUT_OFFSET 14
+#define INPUT_OFFSET 15
 
    // Motor position index
 #define CMD_POSITION_KEYHOLE 0
@@ -332,6 +334,17 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 #define ANGLE_RAW_ENCODER_ANGLE_FXP 64 + INPUT_OFFSET// was 62 //was 64
 #define ROT_RAW_ENCODER_ANGLE_FXP 65 + INPUT_OFFSET  // was 63 //was 65
 
+// Step Angles
+#define BASE_STEPS 66 + INPUT_OFFSET
+#define PIVOT_STEPS 68 + INPUT_OFFSET // was 67
+#define END_STEPS 67 + INPUT_OFFSET  // was 68
+#define ANGLE_STEPS 69 + INPUT_OFFSET
+#define ROT_STEPS 70 + INPUT_OFFSET
+
+#define MAPPED_SIZE 71 
+//must be updated if more mapped addresses are added
+//TODO: Compute from type data at start of mapped memory from FPGA
+
 int OldMemMapInderection[90]={0,0,0,0,0,ACCELERATION_MAXSPEED,0,0,0,0,0,0,0,0,0,0,0,0,0,0,PID_P,PID_ADDRESS,
 	0,0,0,0,0,SPEED_FACTORA,BETA_XYZ,0,0,0,0,0,MOVE_TRHESHOLD,F_FACTOR,MAX_ERROR,0,0,0,0,0,COMMAND_REG,
 	DMA_CONTROL,DMA_WRITE_DATA,DMA_WRITE_PARAMS,DMA_WRITE_ADDRESS,DMA_READ_PARAMS,DMA_READ_ADDRESS,
@@ -441,7 +454,7 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 
 #define MONITOR_ERROR_CODE 666
 #define BOUNDARY_ERROR_CODE 665
-
+#define ERROR_INPUT_OFFSET 1024
 
 
 
@@ -1869,7 +1882,8 @@ struct ellipse v_ellipse_fit(struct eye_data eye, int start_idx, int end_idx) {
 
 
 
-FILE *wfp = 0; //File handle to write data into via socket 'W' command
+FILE *wfp = 0; //File handle to write data into via socket 'W' command and read via 'r'
+FILE *wpp = 0; //Handle for process open for 'r' command when shelling out commands to bash
 bool reloadDefaults = false;
 int XLowBound[5]={BASE_COS_LOW,END_COS_LOW,PIVOT_COS_LOW,ANGLE_COS_LOW,ROT_COS_LOW};
 int XHighBound[5]={BASE_COS_HIGH,END_COS_HIGH,PIVOT_COS_HIGH,ANGLE_COS_HIGH,ROT_COS_HIGH};
@@ -1943,7 +1957,8 @@ int AngleHIBoundry;
 int AngleLOWBoundry;
 int controlled=0;
 
-int DexError=0;
+int DexError=0; //Temporary error code for each command / response
+int OverError=0; //overriding error which is always returned with DexError
 float fLastTime=0;
 
 int cmditer=0;
@@ -2380,7 +2395,7 @@ void monitorTorque() {
 	// 	getNormalizedInput(PIVOT_POSITION_PID_DELTA), // 
 	// 	getNormalizedInput(PIVOT_POSITION_FORCE_DELTA) // 
 	// 	);
-	printf("        \r" );// \r moves to start of same line, needs fflush.
+	//printf("        \r" );// \r moves to start of same line, needs fflush.
 	fflush(stdout); //actually print the data despite no \n end of string.
 	bot_state.start = false;
 
@@ -2421,6 +2436,7 @@ void *RealtimeMonitor(void *arg)
 	unsigned char ServoRx[64];
 	while(*ExitState)
 	{
+
 
 
 		SendReadPacket(ServoRx, 3,30,21);
@@ -2732,7 +2748,7 @@ bool ProcessServerSendData(char *sendBuff)
 
 bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 {
-	int i;
+	int i,addr,last;
 	int *sendBuffReTyped;
 	const char delimiters[] = " ,";
 	char *token;
@@ -2796,7 +2812,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 	token = strtok (NULL, delimiters); //Oplet?
 	oplet = token[0]; //printf("\n Oplet:%c.",oplet);
 	sendBuffReTyped[4]=token[0];
-	sendBuffReTyped[5]=DexError;
+	sendBuffReTyped[5]=DexError | OverError;
 	if('r'==oplet) { //printfs included for debugging in this block only since speed isn't critical at this point.
 		//printf("\n r:read_from_robot\n");
 		token = strtok (NULL, delimiters); //length
@@ -2809,70 +2825,93 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		static int mat_string_length = 0;
 		static char mat_string[256];
 		static char* ptr_mat_string;
-		if('#' == token[0]){
-			
-			if(0 == i){
+		switch(token[0]) { //what's the first character of the path?
+		case '`': //shell cmd
+			//printf("shell %s\n", token);
+			if(0==i){ //first request
+				printf("- popen\n");
+				if (wpp) { //we can't start a new one, 'case the old one isn't done.
+					sendBuffReTyped[5] = EBUSY; //the system is busy
+					sendBuffReTyped[6] = 0; //no bytes returned.
+					break; //Host should request block 1 or higher with "`" and toss the data until EOF
+				}
+				wpp = popen(token+1, "r"); //to get both stdout and stderr, the command should end with "2>&1"
+				if (errno) {
+					sendBuffReTyped[5] = errno; //there was an error
+					sendBuffReTyped[6] = 0; //no bytes returned
+				}
+			}
+			if(wpp){
+				sendBuffReTyped[6] = fread(sendBuff + sizeof(sendBuffReTyped[0])*7, 1, MAX_CONTENT_CHARS, wpp);
+				//possible issue: If child process is working to produce more output, you might get less than
+				//MAX_CONTENT_CHARS /before/ the child is done. Need to KEEP reading until you get EOF!
+				if(feof(wpp)) { //printf("EOF\n");//stream will be set to eof when process is finished
+					errno = pclose(wpp); //can this lock up? Shouldn't if the stream is eof
+					sendBuffReTyped[5] = errno; //might be zero (no error) or the error returned by the command
+					wpp = 0; //must zero out wpp so we know it's closed.
+				}
+			}else { //printf("no wpp");
+				sendBuffReTyped[5] = ECHILD; //we are done
+				sendBuffReTyped[6] = 0; //no bytes returned
+			}
+			break;
+		case '#': //special keyword "files"
+			if(0 == i){ //if it's the first time, make the content.
 				//Switch case for keywords in read from robot call
 				if(strcmp(token, "#POM") == 0 || strcmp(token, "#XYZ") == 0){
-						
-						//Read measured angles from memory here:
-						//printf("\nMeasured Angles:\n");
-						// printf("BASE: %f\n", (float)(getNormalizedInput(BASE_MEASURED_ANGLE))*0.000277777777777777);
-						// printf("END: %f\n", (float)(getNormalizedInput(END_MEASURED_ANGLE))*0.000277777777777777);
-						// printf("PIVOT: %f\n", (float)(getNormalizedInput(PIVOT_MEASURED_ANGLE))*0.000277777777777777);
-						// printf("ANGLE: %f\n", (float)(getNormalizedInput(ANGLE_MEASURED_ANGLE))*0.000277777777777777);
-						// printf("ROT: %f\n", (float)(getNormalizedInput(ROT_MEASURED_ANGLE))*0.000277777777777777);
-						
-						
-						//printf("\nStarting XYZ calc\n");
-						struct J_angles measured_angles = new_J_angles(
-							(float)(getNormalizedInput(BASE_MEASURED_ANGLE)),
-							(float)(getNormalizedInput(PIVOT_MEASURED_ANGLE)),
-							(float)(getNormalizedInput(END_MEASURED_ANGLE)),
-							(float)(getNormalizedInput(ANGLE_MEASURED_ANGLE)),
-							(float)(getNormalizedInput(ROT_MEASURED_ANGLE))
-						);
-						//printf("measured_angles complete\n");
-						struct pos_ori_mat A = J_angles_to_pos_ori_mat(measured_angles);
-						//printf("measured_pos_ori_mat complete\n");
-						
-						
-						//printf("char *mat_string complete\n");
-						
-						
-						//pos_ori_mat_to_string(measured_pos_ori_mat, mat_string);
-						
-						//printf("\n[\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f],\n    [%f, %f, %f, %f]\n]\n", A.r0.c0, A.r0.c1, A.r0.c2, A.r0.c3, A.r1.c0, A.r1.c1, A.r1.c2, A.r1.c3, A.r2.c0, A.r2.c1, A.r2.c2, A.r2.c3, A.r3.c0, A.r3.c1, A.r3.c2, A.r3.c3);
-				
-						mat_string_length = sprintf(mat_string, "[[%f, %f, %f, %f],[%f, %f, %f, %f],[%f, %f, %f, %f],[%f, %f, %f, %f]]", A.r0.c0, A.r0.c1, A.r0.c2, A.r0.c3, A.r1.c0, A.r1.c1, A.r1.c2, A.r1.c3, A.r2.c0, A.r2.c1, A.r2.c2, A.r2.c3, A.r3.c0, A.r3.c1, A.r3.c2, A.r3.c3);
-						
-						
-						//printf("mat_string_length: %d", mat_string_length);
-						
-						//char *mat_string = "[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]";
-						//char mat_string[] = pos_ori_mat_to_string(measured_pos_ori_mat);
-						//Place mat_string in pseudo-file and send to PC here
-						
+					struct J_angles measured_angles = new_J_angles(
+						(float)(getNormalizedInput(BASE_MEASURED_ANGLE)),
+						(float)(getNormalizedInput(PIVOT_MEASURED_ANGLE)),
+						(float)(getNormalizedInput(END_MEASURED_ANGLE)),
+						(float)(getNormalizedInput(ANGLE_MEASURED_ANGLE)),
+						(float)(getNormalizedInput(ROT_MEASURED_ANGLE))
+					);
+					struct pos_ori_mat A = J_angles_to_pos_ori_mat(measured_angles);
+
+					//pos_ori_mat_to_string(measured_pos_ori_mat, mat_string);
 					
-						//strlcpy(sendBuff + sizeof(sendBuffReTyped[0])*7, mat_string, 0);
-					
+					mat_string_length = sprintf(mat_string, "[[%f, %f, %f, %f],[%f, %f, %f, %f],[%f, %f, %f, %f],[%f, %f, %f, %f]]", A.r0.c0, A.r0.c1, A.r0.c2, A.r0.c3, A.r1.c0, A.r1.c1, A.r1.c2, A.r1.c3, A.r2.c0, A.r2.c1, A.r2.c2, A.r2.c3, A.r3.c0, A.r3.c1, A.r3.c2, A.r3.c3);
+					//printf("mat_string: %s length: %d", mat_string, mat_string_length);
 				}else if(strcmp(token, "#EyeNumbers") == 0){
                     mat_string_length = sprintf(mat_string, "[%i, %i, %i, %i, %i]", mapped[BASE_EYE_NUMBER], mapped[PIVOT_EYE_NUMBER], mapped[END_EYE_NUMBER], mapped[ANGLE_EYE_NUMBER], mapped[ROT_EYE_NUMBER]);
                 }else if(strcmp(token, "#RawEncoders") == 0){
-                    mat_string_length = sprintf(mat_string, "[%i, %i, %i, %i, %i]",
-                        mapped[BASE_RAW_ENCODER_ANGLE_FXP],
-                        mapped[PIVOT_RAW_ENCODER_ANGLE_FXP],
-                        mapped[END_RAW_ENCODER_ANGLE_FXP],
-                        mapped[ANGLE_RAW_ENCODER_ANGLE_FXP],
-                        mapped[ROT_RAW_ENCODER_ANGLE_FXP]);
+					mat_string_length = sprintf(mat_string, "[%i, %i, %i, %i, %i]"
+					, mapped[BASE_RAW_ENCODER_ANGLE_FXP]
+					, mapped[PIVOT_RAW_ENCODER_ANGLE_FXP]
+					, mapped[END_RAW_ENCODER_ANGLE_FXP]
+					, mapped[ANGLE_RAW_ENCODER_ANGLE_FXP]
+					, mapped[ROT_RAW_ENCODER_ANGLE_FXP]
+					);
 				}else if (strcmp(token, "#measured_angles") == 0) {
-					printf("\nAttempting to read measured angles\n");
-					printf("BASE: %d\n", mapped[BASE_MEASURED_ANGLE]);
-					printf("END: %d\n", mapped[END_MEASURED_ANGLE]);
-					printf("PIVOT: %d\n", mapped[PIVOT_MEASURED_ANGLE]);
-					printf("ANGLE: %d\n", mapped[ANGLE_MEASURED_ANGLE]);
-					printf("ROT: %d\n", mapped[ROT_MEASURED_ANGLE]);
-					mat_string_length = sprintf(mat_string, "[%d, %d, %d, %d, %d]", mapped[BASE_MEASURED_ANGLE], mapped[PIVOT_MEASURED_ANGLE], mapped[END_MEASURED_ANGLE], mapped[ANGLE_MEASURED_ANGLE], mapped[ROT_MEASURED_ANGLE]);
+					mat_string_length = sprintf(mat_string
+					, "[%d, %d, %d, %d, %d]"
+					, mapped[BASE_MEASURED_ANGLE]
+					, mapped[PIVOT_MEASURED_ANGLE]
+					, mapped[END_MEASURED_ANGLE]
+					, mapped[ANGLE_MEASURED_ANGLE]
+					, mapped[ROT_MEASURED_ANGLE]
+					  );
+					//printf("#measured_angles: %s length: %d", mat_string, mat_string_length);
+				}else if(strcmp(token, "#Steps") == 0){
+					mat_string_length = sprintf(mat_string
+					, "[%i, %i, %i, %i, %i]"
+					, SIGNEX(mapped[BASE_STEPS],18)
+					, SIGNEX(mapped[PIVOT_STEPS],18)
+					, SIGNEX(mapped[END_STEPS],18)
+					, SIGNEX(mapped[ANGLE_STEPS],18)
+					, SIGNEX(mapped[ROT_STEPS],18)
+					  );
+					//printf("#Steps: %s length: %d", mat_string, mat_string_length);
+				}else if(strcmp(token, "#StepAngles") == 0){
+					mat_string_length = sprintf(mat_string
+					, "[%i, %i, %i, %i, %i]"
+					, getNormalizedInput(BASE_STEPS)
+					, getNormalizedInput(PIVOT_STEPS)
+					, getNormalizedInput(END_STEPS)
+					, getNormalizedInput(ANGLE_STEPS)
+					, getNormalizedInput(ROT_STEPS)
+					  );
+					//printf("#StepAngles: %s length: %d", mat_string, mat_string_length);
 				}else if (strcmp(token, "xxx") == 0) {
 				  // do something else
 				}else{
@@ -2881,10 +2920,8 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 				ptr_mat_string = mat_string;
 			}
 		
-			if(mat_string_length > 0){
-						
-				//MAX_CONTENT_CHARS + 1 because strlcpy leaves room for EOS 
-				//and DDE needs to see MAX_CONTENT_CHARS before EOS. 
+			if(mat_string_length > 0){ //if there is content to send
+				//MAX_CONTENT_CHARS + 1 because strlcpy leaves room for EOS and DDE needs to see MAX_CONTENT_CHARS before EOS. 
 				sendBuffReTyped[6] = strlcpy(sendBuff + sizeof(sendBuffReTyped[0])*7, ptr_mat_string, MAX_CONTENT_CHARS + 1);
 				ptr_mat_string += MAX_CONTENT_CHARS;
 				mat_string_length -= MAX_CONTENT_CHARS;
@@ -2894,8 +2931,8 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 				//printf("ptr_mat_string: %s\n", ptr_mat_string);
 				
 			}
-		
-		}else{	
+			break;
+		default:
 			wfp = fopen(token, "r");
 			if (wfp) {
 				//printf("Opened as handle %d.\n ",fileno(wfp));
@@ -2913,8 +2950,21 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 				sendBuffReTyped[5] = errno; //there was an error
 				sendBuffReTyped[6] = 0; //no bytes returned
 				//strerror_s( sendBuff + sizeof(sendBuffReTyped[0])*7, MAX_CONTENT_CHARS, errno );
+				addr = i; // first number might actually be the starting address
+				last = atoi(token); //ending address maybe?
+				if (last > addr && (last-addr) < 20) { //is it a valid range?
+					sendBuffReTyped[5] = 0; //actually no error
+					sendBuffReTyped[6] = (last-addr)*4; 
+					//printf("\n %d %d \n",Addr,Length);
+					for(i=7; addr < last; i++, addr++) { // i is the starting address
+						sendBuffReTyped[i] = mapped[addr]; // cram it into the return data.
+						printf("\n %2d: %x ", addr, mapped[addr]);
+						}
+					}
+
+
 			}
-		}
+		} //end of select(token[0])
 		return TRUE;
 	}
 	else { //if('r'==oplet)
@@ -3552,9 +3602,15 @@ int getNormalizedInput(int param)
 	if(param == BASE_MEASURED_ANGLE){corrF = JointsCal[0];}
 	if(param == PIVOT_MEASURED_ANGLE){corrF = JointsCal[1];}
 	if(param == END_MEASURED_ANGLE){corrF = JointsCal[2];}
-	if(param == ANGLE_MEASURED_ANGLE){corrF = JointsCal[3] * 16;}
-	if(param == ROT_MEASURED_ANGLE){corrF = JointsCal[4] * 16;}
+	if(param == ANGLE_MEASURED_ANGLE){corrF = JointsCal[3] ;}
+	if(param == ROT_MEASURED_ANGLE){corrF = JointsCal[4] ;}
 	
+	if(param == BASE_STEPS){corrF = JointsCal[0];}
+	if(param == PIVOT_STEPS){corrF = JointsCal[1];}
+	if(param == END_STEPS){corrF = JointsCal[2];}
+	if(param == ANGLE_STEPS){corrF = JointsCal[3] ;}
+	if(param == ROT_STEPS){corrF = JointsCal[4] ;}
+
 	return (int)((float)val / corrF);
 }
 int getNormalInput(int param) 
@@ -5065,6 +5121,17 @@ int ParseInput(char *iString)
 					p3=strtok (NULL, delimiters);
 					p4=strtok (NULL, delimiters);
 					p5=strtok (NULL, delimiters);
+
+                                        p6=strtok (NULL, delimiters);
+                                        if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
+                                        //if(p6 != NULL){ printf("p6 %s\n",p6); }
+                                        //else{ printf("p6 doesn't exist\n"); }
+                                        p7=strtok (NULL, delimiters);
+                                        if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
+                                        //if(p7 != NULL){ printf("p7 %s\n",p7); }
+                                        //else{ printf("p7 doesn't exist\n"); }
+
+
 					moverobotPID(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5));
 				break; 
 				case HEART_BEAT :
@@ -5090,7 +5157,7 @@ int ParseInput(char *iString)
 					p1=strtok (NULL, delimiters);
 
 					//printf("SET_PARAM: %s\n", p1);
-					if (!strcmp("RunFile",p1)) {
+					if (!strcmp("RunFile",p1) || !strcmp("30",p1)) {
 						p2 = strtok (NULL, delimiters);
 						fp = fopen(p2, "r");
 						if (fp) {
@@ -5266,15 +5333,16 @@ int ParseInput(char *iString)
 					p3=strtok (NULL, delimiters);
 					p4=strtok (NULL, delimiters);
 					p5=strtok (NULL, delimiters);
-					
-					p6=strtok (NULL, delimiters);
-					if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
-					//if(p6 != NULL){ printf("p6 %s\n",p6); }
-					//else{ printf("p6 doesn't exist\n"); }
-					p7=strtok (NULL, delimiters);
-					if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
-					//if(p7 != NULL){ printf("p7 %s\n",p7); }
-					//else{ printf("p7 doesn't exist\n"); }
+
+                                        p6=strtok (NULL, delimiters);
+                                        if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
+                                        //if(p6 != NULL){ printf("p6 %s\n",p6); }
+                                        //else{ printf("p6 doesn't exist\n"); }
+                                        p7=strtok (NULL, delimiters);
+                                        if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
+                                        //if(p7 != NULL){ printf("p7 %s\n",p7); }
+                                        //else{ printf("p7 doesn't exist\n"); }
+
 					
 					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)	
 						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
@@ -5404,25 +5472,21 @@ int ParseInput(char *iString)
 							mapped[Add]=Start+i;
 					}
 				break;
-				case READ_CMD  :
-					p1=strtok (NULL, delimiters);
-					p2=strtok (NULL, delimiters);
-					if((p1==NULL) | (p2==NULL))
-					{
-						//printf("\n %d %d need addres and length",atoi(p1),atoi(p2));
-						break;
-					}
-					Add=atoi(p1);
-					Length=atoi(p2); 
-					//printf("\n %d %d \n",Add,Length);
-					for(i=0;i<Length;i++)
-					{
-						
-
-						//printf("\n  %x %d",CalTables[Add+i],CalTables[Add+i]);
-						printf("\n %x ",mapped[Add+i]);
-					}
-				break; 
+				//case READ_CMD  : //now this gets managed during the 'r' reply
+				//	p1=strtok (NULL, delimiters);
+				//	p2=strtok (NULL, delimiters);
+				//	if((p1==NULL) | (p2==NULL)) {
+				//		//printf("\n %d %d need addres and length",atoi(p1),atoi(p2));
+				//		break;
+				//	}
+				//	Add=atoi(p1);
+				//	Length=atoi(p2); 
+				//	//printf("\n %d %d \n",Add,Length);
+				//	for(i=0;i<Length;i++) {
+				//		//printf("\n  %x %d",CalTables[Add+i],CalTables[Add+i]);
+				//		printf("\n %x ",mapped[Add+i]);
+				//	}
+				//break; 
 				case WRITE_CMD  :
 					p1=strtok (NULL, delimiters);
 					p2=strtok (NULL, delimiters);
@@ -5539,7 +5603,15 @@ int main(int argc, char *argv[]) {
   }
 
   mapped = map_addr;
-  
+  err = ((mapped[0]>>16)&0xFF)+1;
+  printf("mapped, first address offset = %d\n", err);
+  if (INPUT_OFFSET!=err) {
+	  printf("DexRun.c - XILLYDEMO.BIT mismatch error! INPUT_OFFSET:%d\n",INPUT_OFFSET);
+	  OverError = ERROR_INPUT_OFFSET;
+	  mapped = (unsigned int *)malloc(sizeof(unsigned int) * MAPPED_SIZE);
+	  mapped[CMD_FIFO_STATE] = 0x2; //required so checking the FIFO doesn't hang us
+	  //return ERROR_INPUT_OFFSET; //don't need to stop, we've made a fake memory map.
+  }
   
   mfd = open("/dev/mem", O_RDWR);
   map_addrCt = mmap(NULL, CalTblSize, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, 0x3f000000);
