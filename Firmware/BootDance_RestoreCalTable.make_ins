@@ -1,6 +1,0 @@
-; This dance happens if the calibration tables exist and are loaded succesfully.
-; This will not happen if calibration has never been done.
-; The movement here will trigger the loading of the cal table into the FPGA engine
-a 50000 50000 50000 50000 50000;
-a 0 0 0 0 0;
-;S RunFile setForceProtectMode.make_ins; This will put the arm in force protect automatically.
