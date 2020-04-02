@@ -19,6 +19,9 @@ Dexter HD:
 
 Dexter HDI: Not yet released
 
+End effectors:
+- [Straight finger interface](https://www.thingiverse.com/thing:3166448)
+
 See also:
 - Unity visualization and control:<br>
 https://github.com/zalo/Dexter
