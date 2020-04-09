@@ -1,0 +1,216 @@
+/* eslint-disable no-console, spaced-comment */
+// See:
+// https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-ModBus
+// for the setup required to use this sample.
+
+// Not decared here.  Variable declared in init.js in dde/core directory.
+// var ModbusRTU = require('modbus-serial');
+
+var client = new ModbusRTU();
+var timeoutRunRefCoils = null;
+var timeoutRunRefDiscreteInputs = null;
+var timeoutRunRefInputs = null;
+var timeoutRunRefHoldings = null;
+var timeoutConnectRef = null;
+var timeoutWriteRegisters = null;
+var networkErrors = [
+    "ESOCKETTIMEDOUT",
+    "ETIMEDOUT",
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "EHOSTUNREACH",
+    "ENETRESET",
+    "ECONNABORTED",
+    "ENETUNREACH",
+    "ENOTCONN",
+    "ESHUTDOWN",
+    "EHOSTDOWN",
+    "ENETDOWN",
+    "EWOULDBLOCK",
+    "EAGAIN"
+];
+
+var iDexterHeartbeat = null;
+var bInput = [0,0,0,0,0,0,0,0];
+var iStatusToPLC = 0;
+var iPollRate = 50;
+
+// check error, and reconnect if needed
+function checkError(e) {
+    if(e.errno && networkErrors.includes(e.errno)) {
+        console.log("we have to reconnect");
+
+        // close port
+        client.close();
+
+        // re open client
+        client = new ModbusRTU();
+        timeoutConnectRef = setTimeout(connect, 1000);
+    }
+}
+
+// open connection to a serial port
+function connect(plc_ip) {
+    // clear pending timeouts
+    clearTimeout(timeoutConnectRef);
+
+    // if client already open, just run
+    if (client.isOpen) {
+        run();
+    }
+
+    // if client closed, open a new connection
+    client.connectTCP(plc_ip, { port: 502 })
+        .then(setClient)
+        .then(function() {
+            console.log("Connected"); })
+        .catch(function(e) {
+            checkError(e);
+            console.log(e.message); });
+}
+
+function setClient() {
+    // set the client's unit id
+    // set a timout for requests default is null (no timeout)
+    client.setID(1);
+    client.setTimeout(3000);
+
+    // run program
+    run();
+}
+
+function run() {
+    // clear pending timeouts
+    clearTimeout(timeoutRunRefCoils);
+    client.readCoils(0, 8)
+        .then(function(d) {
+//		console.log("Read Coils:", d.data); 
+//		console.log("First Bit:", d.data[0]);
+                if (d.data[0] == true && bInput[0] == 0) {
+//                      console.log("First Input is On");
+			Job.job_1.start();
+			bInput[0] = 1;
+                }
+                else if (d.data[0] == false) {
+                        bInput[0] = 0;
+//                      console.log("First Input is Off");
+                }
+                if (d.data[1] == true && bInput[1] == 0) {
+//                      console.log("Second Input is On");
+			Job.job_2.start();
+                        bInput[1] = 1;
+                }
+                else if (d.data[1] == false) {
+                        bInput[1] = 0;
+//                      console.log("Second Input is Off");
+                }
+	})
+       .then(function() {
+            timeoutRunRefCoils = setTimeout(readHoldingRegisters, iPollRate);
+        })
+        .catch(function(e) {
+            checkError(e);
+            console.log(e.message); });
+}
+
+/***************************/
+function readDiscreteInputs() {
+    clearTimeout(timeoutRunRefDiscreteInputs);
+
+    client.readDiscreteInputs(0, 8)
+        .then(function(d) {
+            console.log("Receive Discrete Inputs:", d.data); })
+        .then(function() {
+            timeoutRunRefDiscreteInputs = setTimeout(readInputRegisters, iPollRate); })
+        .catch(function(e) {
+            checkError(e);
+            console.log(e.message); });
+}
+
+/***************************/
+
+function readInputRegisters() {
+    clearTimeout(timeoutRunRefInputs);
+
+    client.readInputRegisters(0, 8)
+        .then(function(d) {
+            console.log("Receive Inputs:", d.data); })
+        .then(function() {
+            timeoutRunRefInputs = setTimeout(readHoldingRegisters, iPollRate); })
+        .catch(function(e) {
+            checkError(e);
+            console.log(e.message); });
+}
+/***********************/
+
+function readHoldingRegisters() {
+    clearTimeout(timeoutRunRefHoldings);
+    client.readHoldingRegisters(0, 10)
+//        .then(function(d) {
+//            console.log("Read Holding Registers:", d.data); })
+        .then(function() {
+            timeoutRunRefHoldings = setTimeout(writeHoldingRegisters, iPollRate); })
+        .catch(function(e) {
+            checkError(e);
+            console.log(e.message);
+        });
+}
+
+/***********************/
+
+function writeHoldingRegisters() {
+	iDexterHeartbeat ++;
+	if (iDexterHeartbeat > 1000){
+		 iDexterHeartbeat = 0;
+	}
+	clearTimeout(timeoutWriteRegisters);
+	client.writeRegisters(10, [iDexterHeartbeat, iStatusToPLC])
+//        .then(function(d) {
+//            console.log("Write Holding Registers", d); })
+           .then(function() {
+               timeoutWriteRegisters = setTimeout(run, iPollRate); })
+        .catch(function(e) {
+	    checkError(e);
+            console.log(e.message); })
+}
+
+// connect and start logging
+
+connect("192.168.1.12");
+
+
+function move_1(){
+    return Dexter.move_all_joints([100, 40, 30, 10, 10]) 
+}
+
+function move_2(){
+    return Dexter.move_all_joints([0, 0, 0, 0, 0])
+}
+
+function move_status () {
+	iStatusToPLC = 10
+}
+
+function complete_status () {
+        iStatusToPLC = 0
+}
+
+new Job({
+	name: "modbus_test",
+	do_list: [move_status, 
+		move_1, 
+		make_ins("F"), 
+		complete_status
+		]
+})
+
+new Job({
+        name: "modbus_home",
+        do_list: [move_status, 
+		move_2, 
+		make_ins("F"), 
+		complete_status
+		]
+})
+
+	
