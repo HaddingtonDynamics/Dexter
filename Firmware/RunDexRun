@@ -19,6 +19,7 @@ pkill -e -x DexRun
 		#set the timestamp of the compiled file to that of the source file
 		#so we don't keep re-compiling if the date isn't set
 		ls -l DexRun >>/srv/samba/share/DexRun.log
+		cd /srv/samba/share
 		fi
 #	fi
 
