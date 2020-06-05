@@ -169,9 +169,9 @@ QueuedRequester.prototype = {
     var that = this;
     
     function ajaxCb(x,d){ return function(){
-      if (x.readyState == 4){
+      if (x.readyState == 4){ console.log(x.getResponseHeader("Content-type"))
         ge("loader").style.display = "none";
-        d.callback(x.status, x.responseText);
+        d.callback(x.status, x.responseText, x.getResponseHeader("Content-type"));
         if(that.queue.length === 0) that.running = false;
         if(that.running) that._request(that.queue.shift());
       }
@@ -382,18 +382,29 @@ function createTree(element, editor){
       }
     };
   }
-
+const MAX_SIZE = 10000000
+  function humanSize(size) {
+    if (size < 1000) { return size.toString()}
+    if (size < 1000000) {return (size / 1000).toPrecision(3) + "K"}
+    if (size < 1000000000) {return (size / 1000000).toPrecision(3) + "M"}
+    return (size / 1000000000).toPrecision(3) + "G"
+  }
   function createTreeLeaf(path, name, size){
     var leaf = ce("li");
     leaf.id = name;
     var label = ce("span");
     label.innerHTML = name;
+    label.title = humanSize(size);
     leaf.appendChild(label);
     leaf.onclick = function(e){
-      if(isTextFile(leaf.id.toLowerCase())){
-        editor.loadUrl(leaf.id);
-      } else if(isImageFile(leaf.id.toLowerCase())){
+      if(size > MAX_SIZE) {
+        if (!confirm(name + " is " + humanSize(size) + "B. Edit anyway?")) return
+      } 
+      if(isImageFile(leaf.id.toLowerCase())) {
         loadPreview(leaf.id);
+      }
+        else if(isTextFile(leaf.id.toLowerCase())) {
+        editor.loadUrl(leaf.id);
       }
     };
     leaf.oncontextmenu = function(e){
@@ -416,9 +427,9 @@ function createTree(element, editor){
 
   }
 
-  function isTextFile(path){
+/*   function isTextFile(path){
     var ext = /(?:\.([^.]+))?$/.exec(path)[1];
-    //if(typeof ext !== undefined){
+    if(typeof ext !== undefined){
       switch(ext){
         case "txt":
         case "htm":
@@ -449,9 +460,10 @@ function createTree(element, editor){
           }
         default: return false;
       }
-    //}
+    }
     return false;
-  }
+  } */
+  function isTextFile(path) {return true}
 
   function isImageFile(path){
     var ext = /(?:\.([^.]+))?$/.exec(path)[1];
@@ -552,14 +564,20 @@ function createEditor(element, file, lang, theme, type){
     formData.append("data", new Blob([data], { type: type }), filename);
     requests.add("POST", "/edit", formData, httpPostProcessRequest);
   }
-  function httpGetProcessRequest(status, responseText){
-      ge("preview").style.display = "none";
-      ge("editor").style.display = "block";
-      if(status == 200)
-        editor.setValue(responseText);
-      else
+  function httpGetProcessRequest(status, responseText, responseType) {
+    if (responseType=="application/octet-stream") {
+      if (!confirm("File is Binary. Edit anyway?")) {
         editor.setValue("");
-      editor.clearSelection();
+        return
+      }
+    }
+    ge("preview").style.display = "none";
+    ge("editor").style.display = "block";
+    if(status == 200)
+      editor.setValue(responseText);
+    else
+      editor.setValue("");
+    editor.clearSelection();
   }
   function httpGet(theUrl){
       requests.add("GET", "/edit", { edit: theUrl }, httpGetProcessRequest);
