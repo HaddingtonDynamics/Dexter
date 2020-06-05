@@ -179,6 +179,12 @@ function serve_file(q, req, res){
     })
 }
 
+function isBinary(byte) { //must use numbers, not strings to compare. ' ' is 32
+  if (byte >= 32 && byte < 128) {return false} //between space and ~
+  if ([13, 10, 9].includes(byte)) { return false } //or text ctrl chars
+  return true
+}
+
 //standard web server on port 80 to serve files
 var http_server = http.createServer(function (req, res) {
   //see https://nodejs.org/api/http.html#http_class_http_incomingmessage 
@@ -199,7 +205,9 @@ var http_server = http.createServer(function (req, res) {
         let dir = []
         for (i in items) { //console.log("file:", JSON.stringify(items[i]))
           if (items[i].isFile()) { 
-            dir.push({name: items[i].name, size: "", type: "file"})
+            let stats = fs.statSync(path + items[i].name)
+            let size = stats["size"]
+            dir.push({name: items[i].name, size: size, type: "file"})
             } //size is never actually used.
           else if (items[i].isDirectory()) {
             dir.push({name: items[i].name, size: "", type: "dir"})
@@ -216,7 +224,13 @@ var http_server = http.createServer(function (req, res) {
         if (err) {
             res.writeHead(404, {'Content-Type': 'text/html'})
             return res.end("404 Not Found")
-        }  
+        }
+        for (let i = 0; i < data.length; i++) { 
+          if ( isBinary(data[i]) ) { console.log("binary data:" + data[i] + " at:" + i)
+            res.setHeader("Content-Type", "application/octet-stream")
+            break
+            }
+          }
         res.writeHead(200)
         res.write(data)
         return res.end()
