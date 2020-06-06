@@ -203,6 +203,9 @@ var http_server = http.createServer(function (req, res) {
     fs.readdir(path, {withFileTypes: true}, 
       function(err, items){ //console.log("file:" + JSON.stringify(items))
         let dir = []
+        if (q.query.list != "/") { //not at root
+          dir.push({name: "..", size: "", type: "dir"})
+          }
         for (i in items) { //console.log("file:", JSON.stringify(items[i]))
           if (items[i].isFile()) { 
             let stats = fs.statSync(path + items[i].name)
