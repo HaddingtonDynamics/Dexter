@@ -59,7 +59,13 @@
   display: inline-block;
   height: 16px;
   vertical-align: middle;
+}
+.tvu .file span {
   background: url('page.png') no-repeat;
+  background-position: 0px 0px;
+}
+.tvu .dir span {
+  background: url('folder.png') no-repeat;
   background-position: 0px 0px;
 }
 .tvu span:hover {
@@ -220,7 +226,7 @@ QueuedRequester.prototype = {
 
 var requests = new QueuedRequester();
 
-function createFileUploader(element, tree, editor){
+function createFileUploader(element, tree, editor, vars){
   var xmlHttp;
   
   var refresh = ce("button");
@@ -239,6 +245,7 @@ function createFileUploader(element, tree, editor){
   path.type = "text";
   path.name = "path";
   path.defaultValue = "/";
+  path.value = path.defaultValue;
   ge(element).appendChild(path);
   
   var button = ce("button");
@@ -310,7 +317,7 @@ function createFileUploader(element, tree, editor){
   };
 }
 
-function createTree(element, editor){
+function createTree(element, editor, vars){
   var preview = ge("preview");
   var treeRoot = ce("div");
   treeRoot.className = "tvu";
@@ -362,7 +369,7 @@ function createTree(element, editor){
     };
   }
 
-  function showContextMenu(event, path, isfile){
+  function showContextMenu(event, path, type){
     var divContext = ce("div");
     var scrollTop = document.body.scrollTop ? document.body.scrollTop : document.documentElement.scrollTop;
     var scrollLeft = document.body.scrollLeft ? document.body.scrollLeft : document.documentElement.scrollLeft;
@@ -372,7 +379,7 @@ function createTree(element, editor){
     divContext.style.display = 'block';
     divContext.style.left = left + 'px';
     divContext.style.top = top + 'px';
-    fillFileMenu(divContext, path);
+    if (type != "dir") fillFileMenu(divContext, path);
     document.body.appendChild(divContext);
     var width = divContext.offsetWidth;
     var height = divContext.offsetHeight;
@@ -389,13 +396,14 @@ const MAX_SIZE = 10000000
     if (size < 1000000000) {return (size / 1000000).toPrecision(3) + "M"}
     return (size / 1000000000).toPrecision(3) + "G"
   }
-  function createTreeLeaf(path, name, size){
+  function createTreeLeaf(path, name, type, size){
     var leaf = ce("li");
-    leaf.id = name;
+    leaf.id = vars.dir + name;
     var label = ce("span");
     label.innerHTML = name;
     label.title = humanSize(size);
     leaf.appendChild(label);
+    leaf.className = "file"
     leaf.onclick = function(e){
       if(size > MAX_SIZE) {
         if (!confirm(name + " is " + humanSize(size) + "B. Edit anyway?")) return
@@ -406,11 +414,23 @@ const MAX_SIZE = 10000000
         else if(isTextFile(leaf.id.toLowerCase())) {
         editor.loadUrl(leaf.id);
       }
-    };
+    }
+    if (type == "dir") {
+      leaf.className = "dir"
+      leaf.onclick = function(e){
+        if (name == "..") {
+          vars.dir = vars.dir.split("/").slice(0,-2).join("/") + "/"
+          } 
+        else {
+          vars.dir += name + "/"
+          }  console.log("dir:" + vars.dir )
+        refreshPath(vars.dir)
+      };
+    }
     leaf.oncontextmenu = function(e){
       e.preventDefault();
       e.stopPropagation();
-      showContextMenu(e, leaf.id, true);
+      showContextMenu(e, leaf.id, type);
     };
     return leaf;
   }
@@ -421,8 +441,9 @@ const MAX_SIZE = 10000000
     parent.appendChild(list);
     var ll = items.length;
     for(var i = 0; i < ll; i++){
-      if(items[i].type === "file")
-        list.appendChild(createTreeLeaf(path, items[i].name, items[i].size));
+      let ii = items[i]
+      //if(items[i].type === "file") //now accepting directories
+      list.appendChild(createTreeLeaf(path, ii.name, ii.type, ii.size));
     }
 
   }
@@ -481,7 +502,7 @@ const MAX_SIZE = 10000000
 
   this.refreshPath = function(path){
     treeRoot.removeChild(treeRoot.childNodes[0]);
-    httpGet(treeRoot, "/");
+    httpGet(treeRoot, path);
   };
 
   function delCb(path){
@@ -512,28 +533,29 @@ const MAX_SIZE = 10000000
     requests.add("GET", "/edit", { list: path }, getCb(parent, path));
   }
 
-  httpGet(treeRoot, "/");
+  httpGet(treeRoot, vars.dir);
   return this;
 }
 
 function createEditor(element, file, lang, theme, type){
   function getLangFromFilename(filename){
-    var lang = "plain";
+    var lang = "txt"; //was "plain" but that seems to want ';'s?
     var ext = /(?:\.([^.]+))?$/.exec(filename)[1];
     if(typeof ext !== undefined){
       switch(ext){
-        case "txt": lang = "plain"; break;
         case "hex": lang = "plain"; break;
         case "conf": lang = "plain"; break;
+        case "html":
         case "htm": lang = "html"; break;
-        case "js": lang = "javascript"; break;
-        case "h": lang = "c_cpp"; break;
-        case "c": lang = "c_cpp"; break;
+        case "js":
+        case "dde": lang = "javascript"; break;
+        case "h":
+        case "c":
         case "cpp": lang = "c_cpp"; break;
+        case "txt":
         case "css":
         case "scss":
         case "php":
-        case "html":
         case "json":
         case "xml":
         case "ini":  lang = ext;
@@ -626,11 +648,11 @@ function createEditor(element, file, lang, theme, type){
   return editor;
 }
 function onBodyLoad(){
-  var vars = {};
+  var vars = {dir: "/"};
   var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m,key,value) { vars[key] = value; });
   var editor = createEditor("editor", vars.file, vars.lang, vars.theme);
-  var tree = createTree("tree", editor);
-  createFileUploader("uploader", tree, editor);
+  var tree = createTree("tree", editor, vars);
+  createFileUploader("uploader", tree, editor, vars);
   if(typeof vars.file === "undefined") vars.file = "/index.htm";
   editor.loadUrl(vars.file);
 };
