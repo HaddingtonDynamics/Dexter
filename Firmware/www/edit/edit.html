@@ -35,15 +35,6 @@
 }
 .cm li:hover { background: #444; }
 .cm li:hover span { color: #EEE; }
-.tvu ul, .tvu li {
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-.tvu input {
-  position: absolute;
-  opacity: 0;
-}
 .tvu {
   font: normal 12px Verdana, Arial, Sans-serif;
   -moz-user-select: none;
@@ -51,6 +42,20 @@
   user-select: none;
   color: #444;
   line-height: 16px;
+  height: 100%;
+}
+.tvu ul, .tvu li {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.tvu ul {
+  height: inherit;
+  overflow-y: auto;
+}
+.tvu input {
+  position: absolute;
+  opacity: 0;
 }
 .tvu span {
   margin-bottom:5px;
@@ -101,7 +106,7 @@
   top: 28px;
   bottom: 0;
   left: 0;
-  width:160px;
+  width:200px;
   padding: 8px;
 }
 #editor, #preview { 
@@ -109,7 +114,7 @@
   top: 28px;
   right: 0;
   bottom: 0;
-  left: 160px;
+  left: 200px;
   border-left:1px solid #EEE;
 }
 #preview {
@@ -539,12 +544,14 @@ const MAX_SIZE = 10000000
 
 function createEditor(element, file, lang, theme, type){
   function getLangFromFilename(filename){
-    var lang = "txt"; //was "plain" but that seems to want ';'s?
+    var lang = "text"; //was "plain" but that seems to want ';'s?
+    // why not use this?
+    // https://github.com/ajaxorg/ace-builds/blob/v1.2.6/src/ext-modelist.js
     var ext = /(?:\.([^.]+))?$/.exec(filename)[1];
     if(typeof ext !== undefined){
       switch(ext){
-        case "hex": lang = "plain"; break;
-        case "conf": lang = "plain"; break;
+        case "hex": lang = "text"; break;
+        case "conf": lang = "ini"; break;
         case "html":
         case "htm": lang = "html"; break;
         case "js":
@@ -552,7 +559,6 @@ function createEditor(element, file, lang, theme, type){
         case "h":
         case "c":
         case "cpp": lang = "c_cpp"; break;
-        case "txt":
         case "css":
         case "scss":
         case "php":
@@ -574,7 +580,7 @@ function createEditor(element, file, lang, theme, type){
 
   if(typeof type === "undefined"){
     type = "text/"+lang;
-    if(lang === "c_cpp") type = "text/plain";
+    if(lang === "c_cpp") type = "text/plain"; //???
   }
 
   var editor = ace.edit(element);
@@ -605,7 +611,8 @@ function createEditor(element, file, lang, theme, type){
       requests.add("GET", "/edit", { edit: theUrl }, httpGetProcessRequest);
   }
 
-  if(lang !== "plain") editor.getSession().setMode("ace/mode/"+lang);
+  //if(lang !== "plain") 
+  editor.getSession().setMode("ace/mode/"+lang);
   editor.setTheme("ace/theme/"+theme);
   editor.$blockScrolling = Infinity;
   editor.getSession().setUseSoftTabs(true);
@@ -615,7 +622,7 @@ function createEditor(element, file, lang, theme, type){
   editor.commands.addCommand({
       name: 'saveCommand',
       bindKey: {win: 'Ctrl-S',  mac: 'Command-S'},
-      exec: function(editor) {
+      exec: function(editor) { console.log("saving:" + file, type)
         httpPost(file, editor.getValue()+"", type);
       },
       readOnly: false
@@ -641,7 +648,7 @@ function createEditor(element, file, lang, theme, type){
     edfname.value=filename;
     file = filename;
     lang = getLangFromFilename(file);
-    type = "text/"+lang;
+    type = "text/"+lang; 
     if(lang !== "plain") editor.getSession().setMode("ace/mode/"+lang);
     httpGet(file);
   };
