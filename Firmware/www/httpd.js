@@ -228,6 +228,8 @@ var http_server = http.createServer(function (req, res) {
             res.writeHead(404, {'Content-Type': 'text/html'})
             return res.end("404 Not Found")
         }
+        let stats = fs.statSync(filename)
+        console.log(("permissions:" + (stats.mode & parseInt('777', 8)).toString(8)))
         for (let i = 0; i < data.length; i++) { 
           if ( isBinary(data[i]) ) { console.log("binary data:" + data[i] + " at:" + i)
             res.setHeader("Content-Type", "application/octet-stream")
@@ -243,10 +245,13 @@ var http_server = http.createServer(function (req, res) {
       console.log("writing back")
         const form = formidable({ multiples: false });
         form.once('error', console.error);
-
-        form.on('file', (filename, file) => { //console.log("data:", file)
-          console.log(SHARE_FOLDER + file.name, " to ", file.path)
-          fs.copyFile(file.path, SHARE_FOLDER + file.name, (err) => {
+        var stats
+        form.on('file', function (filename, file) { //console.log("data:", file)
+          console.log(file.path, "to", SHARE_FOLDER + file.name)
+          stats = fs.statSync(SHARE_FOLDER + file.name)
+          console.log(("had permissions:" + (stats.mode & parseInt('777', 8)).toString(8)))
+      
+          fs.copyFile(file.path, SHARE_FOLDER + file.name, function(err) {
             if (err) {
               console.log(file.path, 'not created')
               res.writeHead(400)
@@ -254,11 +259,19 @@ var http_server = http.createServer(function (req, res) {
               return res.end()
               }
             else {
+              fs.chmodSync(SHARE_FOLDER + file.name, stats.mode)
+              let new_stats = fs.statSync(SHARE_FOLDER + file.name)
+              console.log(("has permissions:" + (new_stats.mode & parseInt('777', 8)).toString(8)))
+              if (stats.mode != new_stats.mode) {
+                //res.writeHead(400)
+                res.write("Permissions error")
+                return res.end()
+                }
               fs.unlink(file.path, (err) => {
-                if (err) console.log(file.path, 'not cleaned up');
-                });
+                if (err) console.log(file.path, 'not cleaned up', err);
+                }); 
               }
-            })
+            }) //done w/ copyFile
           });
         form.parse(req)
         //fs.writeFile(filename, data, [encoding], [callback])
