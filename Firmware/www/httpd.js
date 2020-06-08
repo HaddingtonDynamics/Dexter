@@ -165,7 +165,7 @@ function serve_file(q, req, res){
 	var filename = SHARE_FOLDER + "www/" + q.pathname
     console.log("serving" + q.pathname)
     fs.readFile(filename, function(err, data) {
-        if (err) {
+        if (err) { console.log(filename, "not found")
             res.writeHead(404, {'Content-Type': 'text/html'})
             return res.end("404 Not Found")
         }  
@@ -241,43 +241,57 @@ var http_server = http.createServer(function (req, res) {
         return res.end()
       })
     }
-    else if (q.pathname === "/edit" && req.method == 'POST' ) { 
-      console.log("writing back")
+    else if (q.pathname === "/edit" && req.method == 'POST' ) { //console.log("edit post file")
         const form = formidable({ multiples: false });
         form.once('error', console.error);
-        var stats
-        form.on('file', function (filename, file) { //console.log("data:", file)
-          console.log(file.path, "to", SHARE_FOLDER + file.name)
-          stats = fs.statSync(SHARE_FOLDER + file.name)
-          console.log(("had permissions:" + (stats.mode & parseInt('777', 8)).toString(8)))
-      
+        const DEFAULT_PERMISSIONS = parseInt('644', 8)
+        var stats = {mode: DEFAULT_PERMISSIONS}
+        form.on('file', function (filename, file) { 
+          try { console.log("copy", file.path, "to", SHARE_FOLDER + file.name)
+            stats = fs.statSync(SHARE_FOLDER + file.name) 
+            console.log(("had permissions:" + (stats.mode & parseInt('777', 8)).toString(8)))
+          } catch {} //no biggy if that didn't work
           fs.copyFile(file.path, SHARE_FOLDER + file.name, function(err) {
-            if (err) {
-              console.log(file.path, 'not created')
+            let new_mode = undefined
+            if (err) { console.log("copy failed:", err)
               res.writeHead(400)
-              res.write("Failed")
-              return res.end()
+              return res.end("Failed")
               }
             else {
               fs.chmodSync(SHARE_FOLDER + file.name, stats.mode)
-              let new_stats = fs.statSync(SHARE_FOLDER + file.name)
-              console.log(("has permissions:" + (new_stats.mode & parseInt('777', 8)).toString(8)))
-              if (stats.mode != new_stats.mode) {
-                //res.writeHead(400)
-                res.write("Permissions error")
-                return res.end()
+              try { //sync ok because we will recheck the actual file
+                let new_stats = fs.statSync(SHARE_FOLDER + file.name)
+                new_mode = new_stats.mode
+                console.log(("has permissions:" + (new_mode & parseInt('777', 8)).toString(8)))
+              } catch {} //if it fails, new_mode will still be undefined
+              if (stats.mode != new_mode) { //console.log("permssions wrong")
+                //res.writeHead(400) //no point?
+                return res.end("Permissions error")
                 }
-              fs.unlink(file.path, (err) => {
+              fs.unlink(file.path, function(err) {
                 if (err) console.log(file.path, 'not cleaned up', err);
                 }); 
+              res.end('ok');
               }
             }) //done w/ copyFile
           });
         form.parse(req)
-        //fs.writeFile(filename, data, [encoding], [callback])
-        res.end('ok');
+        //res.end('ok');
       // });
       }
+      else if (q.pathname === "/edit" && req.method == 'PUT' ) { console.log('edit put')
+        const form = formidable({ multiples: true });
+        form.parse(req, (err, fields, files) => { //console.log('fields:', fields);
+          let pathfile = SHARE_FOLDER + fields.path
+          fs.writeFile(pathfile, "", function (err) { console.log('create' + pathfile)
+            if (err) {console.log("failed", err)
+              res.writeHead(400)
+              return res.end("Failed:" + err)
+              }
+           res.end('ok'); //console.log('done');
+           }); 
+          });
+        }
       //else if(q.pathname === "/job_button_click") {
   //	  serve_job_button_click(q, req, res)
   //}
