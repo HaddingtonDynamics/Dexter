@@ -276,7 +276,7 @@ function createFileUploader(element, tree, editor, vars){
     if(status != 200)
       alert("ERROR["+status+"]: "+responseText);
     else
-      tree.refreshPath(path.value);
+      tree.refreshPath(vars.dir);
   }
   function createPath(p){
     var formData = new FormData();
@@ -295,7 +295,7 @@ function createFileUploader(element, tree, editor, vars){
   };
   
   refresh.onclick = function(e){
-    tree.refreshPath(path.value);
+    tree.refreshPath(vars.dir);
   };
   
   button.onclick = function(e){
@@ -318,7 +318,7 @@ function createFileUploader(element, tree, editor, vars){
     if(typeof name !== undefined){
       filename = name;
     }
-    path.value = "/"+filename+"."+ext;
+    path.value = vars.dir+filename+"."+ext;
   };
 }
 
