@@ -547,6 +547,7 @@ function createEditor(element, file, lang, theme, type){
     var lang = "text"; //was "plain" but that seems to want ';'s?
     // why not use this?
     // https://github.com/ajaxorg/ace-builds/blob/v1.2.6/src/ext-modelist.js
+    // https://github.com/ajaxorg/ace-builds/tree/2ea299a2bee97fdf58fc90cb76eec6c45535a63f/src
     var ext = /(?:\.([^.]+))?$/.exec(filename)[1];
     if(typeof ext !== undefined){
       switch(ext){
@@ -601,12 +602,17 @@ function createEditor(element, file, lang, theme, type){
     }
     ge("preview").style.display = "none";
     ge("editor").style.display = "block";
-    if(status == 200)
+    if(status == 200) { //console.log("Content:",responseText.substr(0,11))
+      if (responseText.substr(0,11) == "#!/bin/bash") { console.log("bash")
+        editor.getSession().setMode("ace/mode/sh")
+        }
       editor.setValue(responseText);
-    else
+      }
+    else {
       editor.setValue("");
+      }
     editor.clearSelection();
-  }
+    }
   function httpGet(theUrl){
       requests.add("GET", "/edit", { edit: theUrl }, httpGetProcessRequest);
   }
@@ -664,11 +670,11 @@ function onBodyLoad(){
   editor.loadUrl(vars.file);
 };
 </script>
-<script id='ace' src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.6/ace.js" type="text/javascript" charset="utf-8"></script>
+<script id='ace' src="ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
   if  (typeof ace.edit == "undefined") {
     var script = document.createElement('script');
-    script.src = "/ace.js";
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.6/ace.js";
     script.async = false;
     document.head.appendChild(script);
   }
