@@ -666,7 +666,7 @@ function onBodyLoad(){
   var editor = createEditor("editor", vars.file, vars.lang, vars.theme);
   var tree = createTree("tree", editor, vars);
   createFileUploader("uploader", tree, editor, vars);
-  if(typeof vars.file === "undefined") vars.file = "/index.htm";
+  if(typeof vars.file === "undefined") vars.file = "/autoexec.jobs";
   editor.loadUrl(vars.file);
 };
 </script>
