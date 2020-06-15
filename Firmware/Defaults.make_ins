@@ -15,7 +15,7 @@ S, AxisCal, -332800, -332800, -332800, -86400, -86400 ;Defaults for Dexter HDI
 S, Interpolation, 1, 1, 1, 1, 1 ;Default for Dexter HDI
 
 ; Length of each link in the robot, in microns. L5 is first, L1 last.
-S, LinkLengths, 82551, 50801, 330201, 320676, 228600;
+S, LinkLengths, 82440, 59500, 307500, 339092, 235200;
 
 ; Limits to the motion of each joint, in arcseconds from center
 S, J1BoundryHigh, 684010; 186
