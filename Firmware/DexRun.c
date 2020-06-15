@@ -1,9 +1,7 @@
 //#define NO_BOOT_DANCE
 //#define DEBUG_API
-//#define DEBUG_XL320_UART //Printf coms with servoes
-//#define MONITOR_XL320 //Return errors about servoes to DDE 
-#define XL320_LOAD_LIMIT 200 // roughly 10 times the percent load capacity. E.g. 100 is 10%
-//#define DEBUG_MONITOR 
+//#define DEBUG_XL320_UART
+#define DEBUG_MONITOR 
 //
 #define DEG_ARCSEC 3600
 #define MONITOR_MAX_VELOCITY (100*DEG_ARCSEC)
@@ -194,18 +192,6 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 
 
 #define END_EFFECTOR_IO 31
-// END_EFFECTOR_IO bits
-#define IO_BLUE_IN 1 //otherwise it's an output
-#define IO_BLUE_HIGH 2 //otherwise low
-#define IO_GREEN_IN 4
-#define IO_GREEN_HIGH 8
-#define IO_GREEN_PWM 16 //assuming it's an output
-#define IO_GREEN_RC 32 //if output, PWM at servo frequency and range
-#define IO_BLUE_PWM 64
-#define IO_BLUE_RC 128
-#define IO_BLUE_DYNAMIXEL 128+64 //special serial output mode for Dynamixel servos
-#define IO_DYNAMIXEL (IO_BLUE_DYNAMIXEL + IO_GREEN_IN)
-
 #define SERVO_SETPOINT_A 32
 #define SERVO_SETPOINT_B 33
 
@@ -359,15 +345,13 @@ char iString[ISTRING_LEN]; //make global so we can re-use (main, getInput, etc..
 //must be updated if more mapped addresses are added
 //TODO: Compute from type data at start of mapped memory from FPGA
 
-int OldMemMapInderection[]={0,0,0,0,0,ACCELERATION_MAXSPEED,0,0,0,0,0,0,0,0,0,0,0,0,0,0,PID_P,PID_ADDRESS,
+int OldMemMapInderection[90]={0,0,0,0,0,ACCELERATION_MAXSPEED,0,0,0,0,0,0,0,0,0,0,0,0,0,0,PID_P,PID_ADDRESS,
 	0,0,0,0,0,SPEED_FACTORA,BETA_XYZ,0,0,0,0,0,MOVE_TRHESHOLD,F_FACTOR,MAX_ERROR,0,0,0,0,0,COMMAND_REG,
 	DMA_CONTROL,DMA_WRITE_DATA,DMA_WRITE_PARAMS,DMA_WRITE_ADDRESS,DMA_READ_PARAMS,DMA_READ_ADDRESS,
 	REC_PLAY_CMD,REC_PLAY_TIMEBASE,MAXSPEED_XYZ,DIFF_FORCE_BETA,DIFF_FORCE_MOVE_THRESHOLD,
-	DIFF_FORCE_MAX_SPEED,DIFF_FORCE_SPEED_FACTOR_ANGLE,DIFF_FORCE_SPEED_FACTOR_ROT, 
-	EXTRUDER_CONTROL,0,0,0,0,0,0,END_EFFECTOR_IO,SERVO_SETPOINT_A,SERVO_SETPOINT_B,
-	BASE_FORCE_DECAY,END_FORCE_DECAY,PIVOT_FORCE_DECAY,ANGLE_FORCE_DECAY,ROTATE_FORCE_DECAY,
-	0,GRIPPER_MOTOR_CONTROL,GRIPPER_MOTOR_OFF_WIDTH,GRIPPER_MOTOR_ON_WIDTH,0,0,
-	RESET_PID_AND_FLUSH_QUEUE,XYZ_FORCE_TIMEBASE,DIFFERENTIAL_FORCE_TIMEBASE,PID_TIMEBASE,0,0,0,0};
+	DIFF_FORCE_MAX_SPEED,DIFF_FORCE_SPEED_FACTOR_ANGLE,DIFF_FORCE_SPEED_FACTOR_ROT, EXTRUDER_CONTROL,
+	0,0,0,0,0,0,0,0,0,BASE_FORCE_DECAY,END_FORCE_DECAY,PIVOT_FORCE_DECAY,ANGLE_FORCE_DECAY,ROTATE_FORCE_DECAY,
+	0,0,0,0,0,0,RESET_PID_AND_FLUSH_QUEUE,XYZ_FORCE_TIMEBASE,DIFFERENTIAL_FORCE_TIMEBASE,PID_TIMEBASE,0,0,0,0};
 
 
 int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
@@ -399,15 +383,12 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define PID_FINEMOVE 24
 #define SET_ALL_BOUNDRY 25
 
-
 //////////////////////////////////////////////////////////////////////////
 /* Start Wigglesworth Code*/
 //////////////////////////////////////////////////////////////////////////
 #define MOVETO_CMD 26
 #define MOVETOSTRAIGHT_CMD 27
 #define WRITE_TO_ROBOT 28
-#define PID_MOVE_TO 29
-#define PID_MOVE_TO_STRAIGHT 30
 
 #define DEFAULT_MAXSPEED = 232642; // 30 (deg/s)
 #define DEFAULT_STARTSPEED = 512; // .066 (deg/s) This is the smallest number allowed
@@ -471,15 +452,9 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define SERVO_HI_BOUND 1355000
 
 
-//DexError bit fields. Applied via OverError
-//Starting from bit 30 because 31 makes it negative and might be hard to parse.
-#define MONITOR_ERROR_CODE (1<<30) //was 666
-#define BOUNDARY_ERROR_CODE (1<<29) //was 665
-//Dynamixel error flag. Error code written to errors.log file. See:
-//http://emanual.robotis.com/docs/en/dxl/x/xl320/#shutdown18
-#define ROLL_ERROR_CODE (1<<28) //Error recieved from ROLL servo, address 3 Joint 6
-#define SPAN_ERROR_CODE (1<<27) //...SPAN servo, address 1 Joint 7
-#define ERROR_INPUT_OFFSET (1<<10) //1024
+#define MONITOR_ERROR_CODE 666
+#define BOUNDARY_ERROR_CODE 665
+#define ERROR_INPUT_OFFSET 1024
 
 
 
@@ -1909,9 +1884,6 @@ struct ellipse v_ellipse_fit(struct eye_data eye, int start_idx, int end_idx) {
 
 FILE *wfp = 0; //File handle to write data into via socket 'W' command and read via 'r'
 FILE *wpp = 0; //Handle for process open for 'r' command when shelling out commands to bash
-unsigned int shadow_map[MAPPED_SIZE];
-//a shadow array of the mapped memory for the FPGA. This should get a copy of everything written
-//to the FPGA so that we can read back what the last value written is.
 bool reloadDefaults = false;
 int XLowBound[5]={BASE_COS_LOW,END_COS_LOW,PIVOT_COS_LOW,ANGLE_COS_LOW,ROT_COS_LOW};
 int XHighBound[5]={BASE_COS_HIGH,END_COS_HIGH,PIVOT_COS_HIGH,ANGLE_COS_HIGH,ROT_COS_HIGH};
@@ -1920,7 +1892,7 @@ int YHighBound[5]={BASE_SIN_HIGH,END_SIN_HIGH,PIVOT_SIN_HIGH,ANGLE_SIN_HIGH,ROT_
 int ForcePossition[5]={0,0,0,0,0};
 int ForceDestination[5]={0,0,0,0,0};
 int ThreadsExit=1;
-char status_mode = '0'; //zero is the standard, original mode.
+
 
 int StatusReportIndirection[60]={
 	DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,
@@ -2060,10 +2032,6 @@ const char* Params[] = {
 	"LinkLengths",          	//51 Not actually detected from this list.
 	"RawEncoderErrorLimits",   	//52
 	"RawVelocityLimits",       	//53
-	"MaxTorque",				//54 Maximum Torque before each joint stops trying
-	"AxisCal",					//55 Set JointsCal and ANGLE_END_RATIO instead of via AxisCal.txt
-	"Interpolation",			//56 Set interpolation factors (defaults to 1 1 1 16 16 for 1 and HD)
-	"HomeOffset",				//57 offset to all (PID) moves and measured angles
 	"End"};
 #define MAX_PARAMS sizeof(Params) / sizeof(Params[0])
 
@@ -2082,23 +2050,20 @@ int FroceMoveMode=0;
 
 struct ServoRealTimeData{
 	unsigned char ServoAddress;
-	int Goal;
 	int PresentPossition;
 	int PresentSpeed;
 	int PresentLoad;
-	int LoadLimit; //roughly % of max load times 10. E.g. 100 is 10%
 	int error;
 };
 
 #define NUM_SERVOS 2
+
 struct ServoRealTimeData ServoData[NUM_SERVOS];
 
-//converts steps to angles. 
-float JointsCal[NUM_JOINTS];
-//Interpolate defaults to 1 1 1 16 16 for HD. Change via Interpolation SetParameter for HDI to 1 1 1 1 1
-float Interpolation[NUM_JOINTS]={1, 1, 1, 16, 16}; 
-int HomeOffset[NUM_JOINTS]={0}; //offset for moves (at least P PID moves) and measured angles
 
+
+
+float JointsCal[5];
 //int SoftBoundries[5];
 
 struct UARTTransactionPacket{
@@ -2174,13 +2139,13 @@ void UnloadUART(unsigned char* RxBuffer,int length)
 	unsigned char RecData;
 	for(i = 0;i < length + 11; i++)
 	{
-		mapped[UART1_XMIT_CNT]=shadow_map[UART1_XMIT_CNT]= 16; // generate next data pull
+		mapped[UART1_XMIT_CNT] = 16; // generate next data pull
 		RecData = mapped[UART_DATA_IN];
 		RxBuffer[i] = RecData;
 		#ifdef DEBUG_XL320_UART
 		printf(" %x ", RecData);
 		#endif
-		mapped[UART1_XMIT_CNT]=shadow_map[UART1_XMIT_CNT]= 0; // generate next data pull		 
+		mapped[UART1_XMIT_CNT] = 0; // generate next data pull		 
    	}
 }
 
@@ -2253,9 +2218,9 @@ void SendPacket(unsigned char *TxPkt, int length, int TxRxTimeDelay, unsigned ch
 	int i;
 	while(Fcritical != 0){usleep(1000);} // wait until previous call is complete
 	
-  	mapped[END_EFFECTOR_IO]=shadow_map[END_EFFECTOR_IO]=IO_DYNAMIXEL;
-  	mapped[UART1_XMIT_TIMEBASE]=shadow_map[UART1_XMIT_TIMEBASE]= 868;
- 	mapped[UART1_XMIT_CNT]=shadow_map[UART1_XMIT_CNT]= 1;  // reset send queue
+  	mapped[END_EFFECTOR_IO]=128+64+4;
+  	mapped[UART1_XMIT_TIMEBASE] = 868;
+ 	mapped[UART1_XMIT_CNT] = 1;  // reset send queue
 
 	Fcritical = 1;
   	for(i = 0;i < length;i++)
@@ -2265,18 +2230,19 @@ void SendPacket(unsigned char *TxPkt, int length, int TxRxTimeDelay, unsigned ch
 
   		printf("Sending UART Data %x \n", TxPkt[i]);
 #endif
- 		mapped[UART1_XMIT_DATA]=shadow_map[UART1_XMIT_DATA]= TxPkt[i];
-		mapped[UART1_XMIT_CNT]=shadow_map[UART1_XMIT_CNT]= 4;
-  		mapped[UART1_XMIT_CNT]=shadow_map[UART1_XMIT_CNT]= 0;
+ 		mapped[UART1_XMIT_DATA] = TxPkt[i];
+		mapped[UART1_XMIT_CNT] = 4;
+  		mapped[UART1_XMIT_CNT] = 0;
     
   	}
-  	mapped[UART1_XMIT_CNT]=shadow_map[UART1_XMIT_CNT]= 2;
-  	mapped[UART1_XMIT_CNT]=shadow_map[UART1_XMIT_CNT]= 0;
+  	mapped[UART1_XMIT_CNT] = 2;
+  	mapped[UART1_XMIT_CNT] = 0;
 	usleep(TxRxTimeDelay);
 	UnloadUART(RxPkt,ReadLength);
 	Fcritical = 0;
 }
-int SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int length) { 
+void SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int length)
+{
   int i;
   unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x02, start & 0x00ff, (start >> 8) & 0x00ff, length & 0x00ff, (length >> 8) & 0x00ff, 0, 0};
   unsigned short crcVal;
@@ -2291,34 +2257,8 @@ int SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int l
 
 #endif
 
-	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5), RxBuffer, length+7);  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5),RxBuffer, length+7);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,Length + 7); // TODO refine actual size
-	//Check returned data to verify it's a valid response. 
-	if( RxBuffer[0] != 0xFF 
-		|| RxBuffer[1] != 0xFF 
-		|| RxBuffer[2] != 0xFD
-		|| RxBuffer[3] != 0x00
-		) {
-		printf("Servo%d: rx bad header\n", servo);
-		return 255; //error codes from the servo can't be more than 127, so start from 255
-		}
-	if (RxBuffer[4] != servo) { printf ("Servo%d: rx wrong ID:%d\n", servo, RxBuffer[4]); return 254;};
-	unsigned short len = RxBuffer[5] + ((unsigned short)RxBuffer[6]<<8); 	//printf(" len: %d", len);
-	if (len > length+7 ) { printf("Servo%d: rx too long %d\n", servo, len); return 253;}; 
-	if (RxBuffer[7] != 0x55) { printf("Servo%d: non-status packet!\n", servo); return 252;};//servo shouldn't send anything but status
-	unsigned short crc = RxBuffer[len+5] + ((unsigned short)RxBuffer[len+6]<<8);
-	if ( crc != update_crc(0,RxBuffer,len+5) ) { 
-		printf("Servo%d: crc error. calc:%4X, rx:%4X\n", servo, update_crc(0,RxBuffer,len+5), crc ); 
-		// for(i=0;i<length);i++) {
-		// 	printf(" %02X",RxBuffer[i]);
-		// 	}
-		// printf("\n");
-		return 251;
-		}
-	//printf("\n");
-	unsigned char err = RxBuffer[8]; //if (err >= 0x80) { printf(" alert ");};
-	if ( (err & 0x7F) > 0 ) { printf("Servo%d: rx error: %2X\n", servo, err); return err;}
-	return 0;
 }
 
 struct monitorbot {
@@ -2346,19 +2286,19 @@ void printPosition()
 }
 
 void setOpenLoop() {
-	mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=shadow_map[DIFF_FORCE_SPEED_FACTOR_ANGLE]= 0;
-	mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE]=shadow_map[DIFF_FORCE_SPEED_FACTOR_ANGLE]= 0;
-	mapped[DIFF_FORCE_SPEED_FACTOR_ROT]=shadow_map[DIFF_FORCE_SPEED_FACTOR_ROT]= 0;
-	mapped[SPEED_FACTORA]=shadow_map[SPEED_FACTORA]= 0;
-	mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]= 0;
-	mapped[PID_P]=shadow_map[PID_P]= 0;
-	mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]= 1;
-	mapped[PID_P]=shadow_map[PID_P]= 0;
-	mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]= 2;
-	mapped[PID_P]=shadow_map[PID_P]= 0;
-	mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]= 3;
-	mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]= 4;
-	mapped[COMMAND_REG]=shadow_map[COMMAND_REG]= 12960;
+	mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE] = 0;
+	mapped[DIFF_FORCE_SPEED_FACTOR_ANGLE] = 0;
+	mapped[DIFF_FORCE_SPEED_FACTOR_ROT] = 0;
+	mapped[SPEED_FACTORA] = 0;
+	mapped[PID_ADDRESS] = 0;
+	mapped[PID_P] = 0;
+	mapped[PID_ADDRESS] = 1;
+	mapped[PID_P] = 0;
+	mapped[PID_ADDRESS] = 2;
+	mapped[PID_P] = 0;
+	mapped[PID_ADDRESS] = 3;
+	mapped[PID_ADDRESS] = 4;
+	mapped[COMMAND_REG] = 12960;
 	printf("\nOpen Loop mode set\n");
 	}
 
@@ -2406,7 +2346,7 @@ void monitorTorque() {
 				fclose(err_file);
 				printf("Joint %i velocity %d. \n", i+1, pos_vel);
 				}
-			OverError |= MONITOR_ERROR_CODE;
+			DexError = MONITOR_ERROR_CODE;
 			if (bot_state.enc_velocity_count > bot_state.enc_velocity_count_limit) {
 				// strlcpy(iString, "S RunFile ErrorRawVelocity.make_ins ;\0", ISTRING_LEN);
 				// printf("\nJoint %i velocity %d. Starting %s returned %d\n",i+1, pos_vel, iString, ParseInput(iString));
@@ -2442,7 +2382,7 @@ void monitorTorque() {
 				fclose(err_file);
 				printf("Joint %i off by %i at %i vs %d\n",i+1, err_arc, pos_raw, pos_cmd);
 				}
-			OverError |= MONITOR_ERROR_CODE;
+			DexError = MONITOR_ERROR_CODE;
 			//strlcpy(iString, "S RunFile ErrorRawPosition.make_ins ;\0", ISTRING_LEN);
 			//printf("\nStarting %s returned %d\n", iString, ParseInput(iString));
 			// the above crashes if any other commands are sent at the same time. e.g. from DDE. 
@@ -2493,99 +2433,29 @@ void *RealtimeMonitor(void *arg)
 {
 	int* ExitState = arg;
 	int i,j,ForceDelta,disTime=0;
-	FILE *err_file;
-	time_t t = time(NULL);
-	struct tm tm = *localtime(&t);
 	unsigned char ServoRx[64];
-	unsigned char err;
-	while(*ExitState) {
+	while(*ExitState)
+	{
 
-		if (IO_DYNAMIXEL == shadow_map[END_EFFECTOR_IO]) { //only if the Dynamixels are setup
-			if ( !SendReadPacket(ServoRx, 3,30,21) ) { //returned value is coms error, zero is ok.
-				ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-				ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
-				i = ServoRx[20] + (ServoRx[21]<<8);
-				//http://emanual.robotis.com/docs/en/dxl/x/xl320/#present-load 
-				// 0-1023 is CCW load, 1024-2047 is increasing CW load. the unit is about 0.1%; +-1023 is 100% load
-				if (i > 1023) {i -= 1024; i *= -1;}
-				ServoData[0].PresentLoad = i;
-				if (abs(ServoData[0].PresentLoad) > ServoData[0].LoadLimit) {
-					//printf("Servo3: LOAD %d, \tat %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
-					//SendGoalSetPacket(ServoData[0].PresentPossition, 3); //overtorque, be happy where we are.
-					}
-				else if (abs(ServoData[0].Goal - ServoData[0].PresentPossition)>10) {
-					//printf("Servo3: load %d, \tAT %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
-					//SendGoalSetPacket(ServoData[0].Goal, 3); //load is down, try again
-					} //this may make the load overtorque again, but that's ok, we vibrate.
-				err = ServoRx[29];
-				/*
-				if (ServoData[0].error != err) { //new error
-					err_file = fopen("errors.log", "a");
-					if (err_file) {
-						tm = *localtime(&t);
-						fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-						fprintf(err_file, ", Joint 6 error %d", err);
-						if (err & 1) fprintf(err_file, " OVERLOAD");
-						if (err & 2) fprintf(err_file, " OVERHEAT");
-						if (err & 4) fprintf(err_file, " POWER");
-						fprintf(err_file, "\n");
-						fclose(err_file);
-						}
-					printf("ROLL servo error %d\n",err);
-					
-#ifdef MONITOR_XL320 
-					OverError |= ROLL_ERROR_CODE;
-#endif
-					ServoData[0].error = err;
-					}
-					*/
-				}
 
-			if ( !SendReadPacket(ServoRx, 1,30,21) ) { //returned value is coms error, zero is ok.
-				ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-				ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
-				i = ServoRx[20] + (ServoRx[21]<<8);
-				//http://emanual.robotis.com/docs/en/dxl/x/xl320/#present-load 
-				// 0-1023 is CCW load, 1024-2047 is inreasing CW load. the unit is about 0.1%; +-1023 is 100% load
-				if (i > 1023) {i -= 1024; i *= -1;}
-				ServoData[1].PresentLoad = i;
-				if (abs(ServoData[1].PresentLoad) > ServoData[1].LoadLimit) {
-					//printf("Servo1: LOAD %d, \tat %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
-					//SendGoalSetPacket(ServoData[1].PresentPossition, 1); //overtorque, be happy where we are.
-					}
-				else if (abs(ServoData[1].Goal - ServoData[1].PresentPossition)>10) {
-					//printf("Servo1: load %d, \tAT %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
-					//SendGoalSetPacket(ServoData[1].Goal, 1); //load is down, try again
-					} //this may make the load overtorque again, but that's ok, we vibrate.
-				err = ServoRx[29];
-				/*
-				if (ServoData[1].error != err) { //new error
-					err_file = fopen("errors.log", "a");
-					if (err_file) {
-						tm = *localtime(&t);
-						fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-						fprintf(err_file, ", Joint 7 servo error %d",err);
-						if (err & 1) fprintf(err_file, " OVERLOAD");
-						if (err & 2) fprintf(err_file, " OVERHEAT");
-						if (err & 4) fprintf(err_file, " POWER");
-						fprintf(err_file, "\n");
-						fclose(err_file);
-						}
-					printf("SPAN servo error %d\n",err);
-					
-	#ifdef MONITOR_XL320
-					OverError |= SPAN_ERROR_CODE;
-	#endif
-					ServoData[1].error = err;
-					}
-					*/
-				// printf("Servo1: ");
-				// for(i=0;i<sizeof(ServoRx)/sizeof(ServoRx[0]);i++) {
-				// 	printf(" %02X",ServoRx[i]);
-				// 	}
-				// printf("\n");
-				}
-			}
+
+		SendReadPacket(ServoRx, 3,30,21);
+		ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+		ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+		ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
+		ServoData[0].error = ServoRx[29];
+
+		//printf("\nRaw 16:%x %d ",ServoRx[16],ServoRx[16]);
+		//printf(" 17:%x %d ",ServoRx[17],ServoRx[17]);
+		//printf(" Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
+
+
+		SendReadPacket(ServoRx, 1,30,21);
+		ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+		ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+		ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
+		ServoData[1].error = ServoRx[29];
+
 		// if(FroceMoveMode==1) {
 		// 	// do force based movement
 		// 	for(i=0;i<5;i++) {
@@ -2600,10 +2470,10 @@ void *RealtimeMonitor(void *arg)
 		// 		}
 
 		// 		if(abs(ForceDelta)<ForceLimit[i]) {
-		// 			mapped[FORCE_BIAS_BASE+i]=shadow_map[FORCE_BIAS_BASE+i]=ForceDelta;
+		// 			mapped[FORCE_BIAS_BASE+i]=ForceDelta;
 		// 		}
 		// 		else {
-		// 			mapped[FORCE_BIAS_BASE+i]=shadow_map[FORCE_BIAS_BASE+i]=sign(ForceDelta)*ForceLimit[i];
+		// 			mapped[FORCE_BIAS_BASE+i]=sign(ForceDelta)*ForceLimit[i];
 		// 		}
 
 		// 		//ForcePossition[i]=ForcePossition[i]+(int)((float)ForceDelta*ForceAdjustPossition[i]);
@@ -2633,33 +2503,32 @@ void SetGripperRoll(int Possition)
 {
 	SendGoalSetPacket(Possition, 3);
    	//printf("Moving Servo 3 to %u\n",Possition);
-	ServoData[0].Goal = Possition;
 
 	/*int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
-	mapped[END_EFFECTOR_IO]=shadow_map[END_EFFECTOR_IO]=80;
+	mapped[END_EFFECTOR_IO]=80;
 
-	mapped[SERVO_SETPOINT_B]=shadow_map[SERVO_SETPOINT_B]=(ServoSpan*Possition)+SERVO_LOW_BOUND;
-//	mapped[SERVO_SETPOINT_B]=shadow_map[SERVO_SETPOINT_B]=Possition;
+	mapped[SERVO_SETPOINT_B]=(ServoSpan*Possition)+SERVO_LOW_BOUND;
+//	mapped[SERVO_SETPOINT_B]=Possition;
 */	
 }
 void SetGripperSpan(int Possition)
 {
+	//SendReadPacket(3,30,21);       
 	SendGoalSetPacket(Possition, 1);
 	//printf("Moving Servo 1 to %u\n",Possition);
-	ServoData[1].Goal = Possition;
 
 /*	int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
-	mapped[END_EFFECTOR_IO]=shadow_map[END_EFFECTOR_IO]=80;
+	mapped[END_EFFECTOR_IO]=80;
 
-	mapped[SERVO_SETPOINT_A]=shadow_map[SERVO_SETPOINT_A]=(ServoSpan*Possition)+SERVO_LOW_BOUND;
-//	mapped[SERVO_SETPOINT_B]=shadow_map[SERVO_SETPOINT_B]=Possition;
+	mapped[SERVO_SETPOINT_A]=(ServoSpan*Possition)+SERVO_LOW_BOUND;
+//	mapped[SERVO_SETPOINT_B]=Possition;
 */	
 }
 void SetGripperMotor(int state, int on_width, int off_width)
 { // pin 7 of connector J19 on bottom of PCB. TODO make ON and OFF widths parameters. 
-	mapped[GRIPPER_MOTOR_ON_WIDTH]=shadow_map[GRIPPER_MOTOR_ON_WIDTH]=on_width; //12000;
-	mapped[GRIPPER_MOTOR_OFF_WIDTH]=shadow_map[GRIPPER_MOTOR_OFF_WIDTH]=off_width; //0;
-	mapped[GRIPPER_MOTOR_CONTROL]=shadow_map[GRIPPER_MOTOR_CONTROL]=state; //Pulse Width
+	mapped[GRIPPER_MOTOR_ON_WIDTH]=on_width; //12000;
+	mapped[GRIPPER_MOTOR_OFF_WIDTH]=off_width; //0;
+	mapped[GRIPPER_MOTOR_CONTROL]=state; //Pulse Width
 }
 void *StartServerSocketDDE(void *arg)
 {
@@ -2823,11 +2692,11 @@ void ProcessServerReceiveData(char *recBuff)
 		MyBotForce[4]=MaxForce(MxForce,MyBot.rotateForce);*/
 		if(FroceMoveMode==0)
 		{/*
-			mapped[FORCE_BIAS_BASE]=shadow_map[FORCE_BIAS_BASE]=MaxForce(MxForce,(int)((float)MyBot.baseForce)*fScale);
-			mapped[FORCE_BIAS_END]=shadow_map[FORCE_BIAS_END]=MaxForce(MxForce,(int)((float)MyBot.endForce)*fScale);
-			mapped[FORCE_BIAS_PIVOT]=shadow_map[FORCE_BIAS_PIVOT]=MaxForce(MxForce,(int)((float)MyBot.pivotForce)*fScale);
-			mapped[FORCE_BIAS_ANGLE]=shadow_map[FORCE_BIAS_ANGLE]=MaxForce(MxForce,(int)((float)MyBot.angleForce)*fScale);
-			mapped[FORCE_BIAS_ROT]=shadow_map[FORCE_BIAS_ROT]=MaxForce(MxForce,(int)((float)MyBot.rotateForce)*fScale);
+			mapped[FORCE_BIAS_BASE]=MaxForce(MxForce,(int)((float)MyBot.baseForce)*fScale);
+			mapped[FORCE_BIAS_END]=MaxForce(MxForce,(int)((float)MyBot.endForce)*fScale);
+			mapped[FORCE_BIAS_PIVOT]=MaxForce(MxForce,(int)((float)MyBot.pivotForce)*fScale);
+			mapped[FORCE_BIAS_ANGLE]=MaxForce(MxForce,(int)((float)MyBot.angleForce)*fScale);
+			mapped[FORCE_BIAS_ROT]=MaxForce(MxForce,(int)((float)MyBot.rotateForce)*fScale);
 */		
 		}
 		else
@@ -2944,14 +2813,12 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 	oplet = token[0]; //printf("\n Oplet:%c.",oplet);
 	sendBuffReTyped[4]=token[0];
 	sendBuffReTyped[5]=DexError | OverError;
-	OverError &= ERROR_INPUT_OFFSET; // clear everything other than an FPGA/Firmware missmatch. 
 	if('r'==oplet) { //printfs included for debugging in this block only since speed isn't critical at this point.
 		//printf("\n r:read_from_robot\n");
 		token = strtok (NULL, delimiters); //length
 		i = atoi(token); //number of block to read
 		//printf("read block %d \n",i);
-		//token=strtok(NULL, delimiters); //this would get only one word, 
-		token=strtok(NULL, ";"); // get the entire rest of the string. ";" was already nulled, but it will stop at null
+		token=strtok(NULL, delimiters);//filename
 		//printf("opening file:%s.\n ",token);
 		//if(wfp>0) {fclose(wfp);} //not needed?
 		
@@ -2962,12 +2829,12 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		case '`': //shell cmd
 			//printf("shell %s\n", token);
 			if(0==i){ //first request
+				printf("- popen\n");
 				if (wpp) { //we can't start a new one, 'case the old one isn't done.
 					sendBuffReTyped[5] = EBUSY; //the system is busy
 					sendBuffReTyped[6] = 0; //no bytes returned.
 					break; //Host should request block 1 or higher with "`" and toss the data until EOF
 				}
-				printf("popen %s \n",token+1);
 				wpp = popen(token+1, "r"); //to get both stdout and stderr, the command should end with "2>&1"
 				if (errno) {
 					sendBuffReTyped[5] = errno; //there was an error
@@ -2990,7 +2857,6 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 			break;
 		case '#': //special keyword "files"
 			if(0 == i){ //if it's the first time, make the content.
-				token = strtok(token, delimiters); //now get just the first word.
 				//Switch case for keywords in read from robot call
 				if(strcmp(token, "#POM") == 0 || strcmp(token, "#XYZ") == 0){
 					struct J_angles measured_angles = new_J_angles(
@@ -3050,7 +2916,6 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 				  // do something else
 				}else{
 					printf("Error: %s is not a valid string\n", token);
-					DexError = ENOENT; //no such file or folder.
 				}
 				ptr_mat_string = mat_string;
 			}
@@ -3065,20 +2930,15 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 				//printf("mat_string: %s\n", mat_string);
 				//printf("ptr_mat_string: %s\n", ptr_mat_string);
 				
-			} else {
-				sendBuffReTyped[5] = ESPIPE; //we are done
-				sendBuffReTyped[6] = 0; //no bytes returned
 			}
 			break;
 		default:
-			token = strtok(token, delimiters); //now get just the first word.
 			wfp = fopen(token, "r");
 			if (wfp) {
 				//printf("Opened as handle %d.\n ",fileno(wfp));
 				i *= MAX_CONTENT_CHARS; //starting byte in the file
 				//printf("read from byte %d\n",i);
 				fseek(wfp, i, SEEK_SET);
-				sendBuffReTyped[5] = errno; //return an error if there is one. 
 				sendBuffReTyped[6] = fread ( sendBuff + sizeof(sendBuffReTyped[0])*7, 1, MAX_CONTENT_CHARS, wfp );
 				//printf("Read %d bytes\n",sendBuffReTyped[6]);
 				//printf("\n%s",sendBuff + sizeof(sendBuffReTyped[0])*6);
@@ -3116,18 +2976,6 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		{
 			sendBuffReTyped[i+6]=getNormalizedInput(StatusReportIndirection[i]);
 		}
-		if ('0'!=status_mode) {
-			sendBuffReTyped[6] = (ServoData[0].PresentLoad << 16) + ServoData[0].PresentPossition;
-			sendBuffReTyped[7] = (ServoData[1].PresentLoad << 16) + ServoData[1].PresentPossition;
-			sendBuffReTyped[8] = (int)status_mode;
-			sendBuffReTyped[17] = getNormalizedInput(BASE_STEPS);
-			sendBuffReTyped[27] = getNormalizedInput(PIVOT_STEPS);
-			sendBuffReTyped[37] = getNormalizedInput(END_STEPS);
-			sendBuffReTyped[47] = getNormalizedInput(ANGLE_STEPS);
-			sendBuffReTyped[57] = getNormalizedInput(ROT_STEPS);
-		}
-
-
 		return TRUE;
 	} //if('r'==oplet)
 	return FALSE;
@@ -3316,9 +3164,9 @@ int FindIndex(int Axis,int Start,int Length,int Delay)
 	for(k=0;k<abs(Length);k++) 
 	{	
 		if(Length>0)
-			mapped[Axis]=shadow_map[Axis]=Start+k;
+			mapped[Axis]=Start+k;
 		else	
-			mapped[Axis]=shadow_map[Axis]=Start-k;
+			mapped[Axis]=Start-k;
 		for(j=0;j<Delay;j++)
 		{	
 			ADVal=mapped[ADLookUp[Axis]];
@@ -3380,8 +3228,8 @@ int InitCaptureMovement(char *FileName)
 //	if(CptMove.fp!=0)
 	{
 		//CaptureMovement((void*)&CptMove);
-		mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=CMD_RESET_RECORD;
-		mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=CMD_RECORD; // start recording
+		mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
+		mapped[REC_PLAY_CMD]=CMD_RECORD; // start recording
 		c=' ';
 		while(c!='k') // kill
 		{
@@ -3389,7 +3237,7 @@ int InitCaptureMovement(char *FileName)
 			
 			
 		}
-		mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=0; // stop recording
+		mapped[REC_PLAY_CMD]=0; // stop recording
 		
 		Length=mapped[RECORD_BLOCK_SIZE];
 		ReadDMA(0x3f000000,Length,FileName);
@@ -3471,8 +3319,8 @@ void setDefaults(int State)
 
 	int IntFloat;
 	float *fConvert=(float *)(&IntFloat);
-	mapped[COMMAND_REG]=shadow_map[COMMAND_REG]=64;  //shut off the servo system
-	mapped[COMMAND_REG]=shadow_map[COMMAND_REG]=0;  //shut off the servo system
+	mapped[COMMAND_REG]=64;  //shut off the servo system
+	mapped[COMMAND_REG]=0;  //shut off the servo system
 	CmdVal=0;
 	bot_state.start = true;
 
@@ -3488,10 +3336,41 @@ void setDefaults(int State)
 	bot_state.enc_error_limit[5-1] = 7.4 * MONITOR_MAX_ERROR * DEG_ARCSEC;
 	bot_state.enc_velocity_count = 0;
 	bot_state.enc_velocity_count_limit = 10; //we can jerk 100 times before we error.
+	
+/* Load AxisCal.txt file. This is calculated from from Gear Ratio and Microstepping as follows (in DDE) :
+//Input:
+var diff_pulley_small_num_teeth = 16
+var diff_pulley_large_num_teeth = 90
+var micro_step = 16
+var motor_steps = 400
+var gear_ratios = [
+	52,
+    52,
+    52,
+    diff_pulley_large_num_teeth / diff_pulley_small_num_teeth,
+    diff_pulley_large_num_teeth / diff_pulley_small_num_teeth
+]
 
-	for (i=NUM_SERVOS-1; i>=0; --i) {
-		ServoData[i].LoadLimit = XL320_LOAD_LIMIT;
-		}
+//Output:
+var AxisCal_string = ""
+for(let i = 0; i < 5; i++){
+	AxisCal_string += -(gear_ratios[i]*micro_step*motor_steps) / (3600*360) + "\n"
+}
+AxisCal_string += -Math.round(gear_ratios[3] / gear_ratios[1] * Math.pow(2, 24))
+*/
+
+	AxisFile = fopen("AxisCal.txt", "rs");
+	if(AxisFile!=NULL) {
+		fscanf(AxisFile, "%f", &JointsCal[0]);
+		fscanf(AxisFile, "%f", &JointsCal[1]);
+		fscanf(AxisFile, "%f", &JointsCal[2]);
+		fscanf(AxisFile, "%f", &JointsCal[3]);
+		fscanf(AxisFile, "%f", &JointsCal[4]);
+		fscanf(AxisFile, "%i", &HexValue);
+        //printf("Reading AxisCal.txt. HexValue = %d\n", HexValue);
+		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
+		fclose(AxisFile);
+	}
 	
 	RemoteRobotAddress = fopen("RemoteRobotAddress.txt", "rs");
 	if(RemoteRobotAddress!=NULL)
@@ -3530,7 +3409,7 @@ void setDefaults(int State)
 	printf("FineAdjust Keyhle set\n");
 
 
-	mapped[ACCELERATION_MAXSPEED]=shadow_map[ACCELERATION_MAXSPEED]=ACCELERATION_MAXSPEED_DEF;
+	mapped[ACCELERATION_MAXSPEED]=ACCELERATION_MAXSPEED_DEF;
 	maxSpeed=(ACCELERATION_MAXSPEED_DEF) & 0b00000000000011111111111111111111;
 	coupledAcceleration=((ACCELERATION_MAXSPEED_DEF) & 0b11111111111100000000000000000000) >> 20;
 
@@ -3538,46 +3417,46 @@ void setDefaults(int State)
 	{
 
 
-		mapped[BASE_FORCE_DECAY]=shadow_map[BASE_FORCE_DECAY]=000000;
-		mapped[END_FORCE_DECAY]=shadow_map[END_FORCE_DECAY]=000000;
-		mapped[PIVOT_FORCE_DECAY]=shadow_map[PIVOT_FORCE_DECAY]=000000;
-		mapped[ANGLE_FORCE_DECAY]=shadow_map[ANGLE_FORCE_DECAY]=000000;
-		mapped[ROTATE_FORCE_DECAY]=shadow_map[ROTATE_FORCE_DECAY]=000000;
+		mapped[BASE_FORCE_DECAY]=000000;
+		mapped[END_FORCE_DECAY]=000000;
+		mapped[PIVOT_FORCE_DECAY]=000000;
+		mapped[ANGLE_FORCE_DECAY]=000000;
+		mapped[ROTATE_FORCE_DECAY]=000000;
 
-		mapped[ACCELERATION_MAXSPEED]=shadow_map[ACCELERATION_MAXSPEED]=ACCELERATION_MAXSPEED_DEF;
+		mapped[ACCELERATION_MAXSPEED]=ACCELERATION_MAXSPEED_DEF;
 		maxSpeed=(ACCELERATION_MAXSPEED_DEF) & 0b00000000000011111111111111111111;
 		coupledAcceleration=((ACCELERATION_MAXSPEED_DEF) & 0b11111111111100000000000000000000) >> 20;
 	
 
-		mapped[REC_PLAY_TIMEBASE]=shadow_map[REC_PLAY_TIMEBASE]=5;
+		mapped[REC_PLAY_TIMEBASE]=5;
 		
 		readAdcCenters();    
 
-		mapped[DIFF_FORCE_BETA ]=shadow_map[DIFF_FORCE_BETA ]=0x0102;
-		mapped[BETA_XYZ ]=shadow_map[BETA_XYZ ]=0x0002;
+		mapped[DIFF_FORCE_BETA ]=0x0102;
+		mapped[BETA_XYZ ]=0x0002;
 
 
 	// set up PID defaults
 	
-		mapped[PID_P]=shadow_map[PID_P]=DEFAULT_PID_SETTING_XYZ;
-		mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=0;
-		mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=1;
-		mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=2;
-		mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=3;
-		mapped[PID_P]=shadow_map[PID_P]=DEFAULT_PID_SETTING_PY;
-		mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=4;
+		mapped[PID_P]=DEFAULT_PID_SETTING_XYZ;
+		mapped[PID_ADDRESS]=0;
+		mapped[PID_ADDRESS]=1;
+		mapped[PID_ADDRESS]=2;
+		mapped[PID_ADDRESS]=3;
+		mapped[PID_P]=DEFAULT_PID_SETTING_PY;
+		mapped[PID_ADDRESS]=4;
 		
 		
 		
 		
 
-		mapped[SPEED_FACTORA]=shadow_map[SPEED_FACTORA]=0;
-		mapped[MAX_ERROR]=shadow_map[MAX_ERROR]=(2000 ^ 6000);
+		mapped[SPEED_FACTORA]=0;
+		mapped[MAX_ERROR]=(2000 ^ 6000);
 		
 
-		mapped[MAXSPEED_XYZ]=shadow_map[MAXSPEED_XYZ]=140000; 
+		mapped[MAXSPEED_XYZ]=140000; 
 		
-		mapped[DIFF_FORCE_MAX_SPEED]=shadow_map[DIFF_FORCE_MAX_SPEED]=90000;
+		mapped[DIFF_FORCE_MAX_SPEED]=90000;
 
 		//mapped[ANGLE_END_RATIO]=645278;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
 		
@@ -3641,11 +3520,7 @@ int HashInputCMD(char *s)
 		return MOVETO_CMD;
 	if (s[0] == 'T')
 		return MOVETOSTRAIGHT_CMD;
-	if(s[0]=='C')
-		return PID_MOVE_TO;
-	if(s[0]=='D')
-		return PID_MOVE_TO_STRAIGHT;
-
+	
 	//////////////////////////////////////////////////////////////////////////
 	/* End Wigglesworth Code*/
 	//////////////////////////////////////////////////////////////////////////
@@ -3661,8 +3536,8 @@ int HashInputCMD(char *s)
 		return FIND_HOME_CMD;
 	if(s[0]=='n')
 		return FIND_INDEX_CMD;
-	//if(s[0]=='p')
-	//	return FIND_HOME_REP_CMD;
+	if(s[0]=='p')
+		return FIND_HOME_REP_CMD;
 	if(s[0]=='l')
 		return LOAD_TABLES;
 	if(s[0]=='i')
@@ -3708,33 +3583,33 @@ int getNormalizedInput(int param)
 {
 	int val;
 	float corrF=1;
-	if ('0'==status_mode) {
-		if(param == SLOPE_BASE_POSITION){return ServoData[1].PresentPossition;}
-		if(param == SLOPE_PIVOT_POSITION){return ServoData[1].PresentLoad;}
-		if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
-		if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
-		if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
-	}
-	val = mapped[param];
-	if((val & 0x40000)!=0) 	{
-		val = (val | 0xfff80000);
-		}
-
-	if(param == BASE_MEASURED_ANGLE ){return (int)((float)val / (JointsCal[0] * Interpolation[0])) + HomeOffset[0];}
-	if(param == PIVOT_MEASURED_ANGLE){return (int)((float)val / (JointsCal[1] * Interpolation[1])) + HomeOffset[1];}
-	if(param == END_MEASURED_ANGLE  ){return (int)((float)val / (JointsCal[2] * Interpolation[2])) + HomeOffset[2];}
-	if(param == ANGLE_MEASURED_ANGLE){return (int)((float)val / (JointsCal[3] * Interpolation[3])) + HomeOffset[3];}
-	if(param == ROT_MEASURED_ANGLE  ){return (int)((float)val / (JointsCal[4] * Interpolation[4])) + HomeOffset[4];}
+	if(param == SLOPE_BASE_POSITION){return ServoData[1].PresentPossition;}
+	if(param == SLOPE_PIVOT_POSITION){return ServoData[1].PresentLoad;}
+	if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
+	if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
+	if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
 	
-	if(param == BASE_STEPS ){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[0] * Interpolation[0])) + HomeOffset[0];}
-	if(param == PIVOT_STEPS){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[1] * Interpolation[1])) + HomeOffset[1];}
-	if(param == END_STEPS  ){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[2] * Interpolation[2])) + HomeOffset[2];}
-	if(param == ANGLE_STEPS){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[3] * Interpolation[3])) + HomeOffset[3];}
-	if(param == ROT_STEPS  ){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[4] * Interpolation[4])) + HomeOffset[4];}
-
-	if(param <= ROT_POSITION_FORCE_DELTA) {
+	val = mapped[param];
+	if(param <= ROT_POSITION_FORCE_DELTA)
+	{
 		corrF = JointsCal[(param-INPUT_OFFSET) % 5];
-		}
+	}
+	if((val & 0x40000)!=0)
+	{
+		val = (val | 0xfff80000);
+	}
+	
+	if(param == BASE_MEASURED_ANGLE){corrF = JointsCal[0];}
+	if(param == PIVOT_MEASURED_ANGLE){corrF = JointsCal[1];}
+	if(param == END_MEASURED_ANGLE){corrF = JointsCal[2];}
+	if(param == ANGLE_MEASURED_ANGLE){corrF = JointsCal[3] ;}
+	if(param == ROT_MEASURED_ANGLE){corrF = JointsCal[4] ;}
+	
+	if(param == BASE_STEPS){corrF = JointsCal[0];}
+	if(param == PIVOT_STEPS){corrF = JointsCal[1];}
+	if(param == END_STEPS){corrF = JointsCal[2];}
+	if(param == ANGLE_STEPS){corrF = JointsCal[3] ;}
+	if(param == ROT_STEPS){corrF = JointsCal[4] ;}
 
 	return (int)((float)val / corrF);
 }
@@ -3784,17 +3659,10 @@ int WaitMoveGoal(int a1,int a2,int a3,int a4,int a5,int timeout)
 		
 }
 
-void moverobotPID(int a1,int a2,int a3,int a4,int a5) {
-	//Adjust the position of each joint relative to the offset entered via the HomeOffset parameter.
-	a1 -= HomeOffset[0];
-	a2 -= HomeOffset[1];
-	a3 -= HomeOffset[2];
-	a4 -= HomeOffset[3];
-	a5 -= HomeOffset[4];
-	
-	//check the resulting movement to see if it's out of bounds. 
+void moverobotPID(int a1,int a2,int a3,int a4,int a5)
+{
 	DexError = CheckBoundry(&a1,&a2,&a3,&a4,&a5);
-
+	
 	a1=(int)((double)a1 * JointsCal[0]);
 	a2=(int)((double)a2 * JointsCal[1]);
 	a3=(int)((double)a3 * JointsCal[2]);
@@ -3850,9 +3718,9 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
     int j_deg = 0;
     double test_angle;
     double cur_max_step = 0.0;
-    double cur_max_deg = 0.0; //actually arcseconds?
+    double cur_max_deg = 0.0;
     double test_angle_step [] = {0, 0, 0, 0, 0};
-    double test_angle_deg [] = {0, 0, 0, 0, 0}; //actually arcseconds?
+    double test_angle_deg [] = {0, 0, 0, 0, 0};
     test_angle_step[0] = abs((double)(a1 - LastGoal[0]) * JointsCal[0]);
     if(test_angle_step[0] > cur_max_step){
         cur_max_step = test_angle_step[0];
@@ -3958,8 +3826,6 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 
     new_StartSpeed = (int)(abs(startSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle) * test_angle_deg[j_step] / test_angle_deg[j_deg]);
     new_MaxSpeed = (int)(abs(maxSpeed_arcsec_per_sec * JointsCal[j_step] * bit_sec_per_microstep_clockcycle) * test_angle_deg[j_step] / test_angle_deg[j_deg]);
-	//total time of the move is ServoData[1].MoveSecs = cur_max_deg / maxSpeed_arcsec_per_sec //in seconds
-	//in the monitor, use that to divide up a new position command into a series of goals which will reach the end goal in that time.
 
     /*
     if(j_step < 3 && j_deg > 2){
@@ -3983,19 +3849,19 @@ int MoveRobot(int a1,int a2,int a3,int a4,int a5, int mode)
 	
 
     if(1 > new_StartSpeed){new_StartSpeed = 1;DexError = 1;} //Anything less than 1 will cause infinite loop. Consider error code for this.
-    mapped[START_SPEED]=shadow_map[START_SPEED]= 500 ^ new_StartSpeed; // Start speed is defaulted in the FPGA to 500   
+    mapped[START_SPEED] = 500 ^ new_StartSpeed; // Start speed is defaulted in the FPGA to 500   
     if(2 > new_MaxSpeed){new_MaxSpeed = 2;DexError = 1;} //Must be higher than minimum StartSpeed. Consider error code for this.
 	maxSpeed=(new_MaxSpeed) & 0b00000000000011111111111111111111;
-	mapped[ACCELERATION_MAXSPEED]=shadow_map[ACCELERATION_MAXSPEED]= maxSpeed + (coupledAcceleration << 20);
+	mapped[ACCELERATION_MAXSPEED]= maxSpeed + (coupledAcceleration << 20);
     //printf("new_StartSpeed: %d\n", new_StartSpeed);
     //printf("new_MaxSpeed: %d\n", new_MaxSpeed);
 
 	//printf("MaxSpeed: %d(bit/clockcycle)    MaxSpeed: %d(arcsec/s)    J%d: %f (deg)\n", new_MaxSpeed, maxSpeed_arcsec_per_sec, j, cur_max/3600.0);
 
-	mapped[COMMAND_REG]=shadow_map[COMMAND_REG]=CMD_MOVEEN | CmdVal;
+	mapped[COMMAND_REG]=CMD_MOVEEN | CmdVal;
 	KeyholeSend(KeyHoleArray, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
-	mapped[COMMAND_REG]=shadow_map[COMMAND_REG]=CMD_MOVEEN | CMD_MOVEGO | CmdVal;
-	mapped[COMMAND_REG]=shadow_map[COMMAND_REG]=CmdVal;
+	mapped[COMMAND_REG]=CMD_MOVEEN | CMD_MOVEGO | CmdVal;
+	mapped[COMMAND_REG]=CmdVal;
 	/*if(mode==BLOCKING_MOVE)
 		WaitMoveGoal(LastGoal[0],LastGoal[1],LastGoal[2],LastGoal[3],LastGoal[4],DEFAULT_MOVE_TIMEOUT);*/
 	return 0;
@@ -4005,18 +3871,18 @@ void KeyholeSend(int *DataArray, int controlOffset, int size, int entryOffset )
 {
 	int i=0;
 	int ControlMask = (1 << controlOffset) - 1;
-	mapped[entryOffset]=shadow_map[entryOffset]= 1 << (controlOffset + 1); // reset keyhole
+	mapped[entryOffset] = 1 << (controlOffset + 1); // reset keyhole
 	//printf(" keyhole reset %x \n", 1 << (controlOffset + 1));
-	mapped[entryOffset]=shadow_map[entryOffset]= 0;
+	mapped[entryOffset] = 0;
 	for(i=0;i < size; i++)
 	{
-		mapped[entryOffset]=shadow_map[entryOffset]= DataArray[i] & ControlMask;
+		mapped[entryOffset] = DataArray[i] & ControlMask;
 		//printf(" keyhole Write Data  %d \n", DataArray[i] & ControlMask);
 
-		mapped[entryOffset]=shadow_map[entryOffset]= (DataArray[i] & ControlMask) + (1 << controlOffset); // toggle the data write
+		mapped[entryOffset] = (DataArray[i] & ControlMask) + (1 << controlOffset); // toggle the data write
 //		printf(" keyhole Write Data toggle  %d \n", DataArray[i] + (1 << controlOffset));
 
-		mapped[entryOffset]=shadow_map[entryOffset]= DataArray[i] & ControlMask;
+		mapped[entryOffset] = DataArray[i] & ControlMask;
 	}
 }
 
@@ -4280,13 +4146,13 @@ int MoveRobotStraight(struct XYZ xyz_2)
 		
 		//Startspeed
 		//printf("cur_angular_velocity: %i\n", cur_angular_velocity);
-		mapped[START_SPEED]=shadow_map[START_SPEED]=1 ^ cur_angular_velocity;
+		mapped[START_SPEED]=1 ^ cur_angular_velocity;
 		
 		
 		//Maxspeed
 		maxSpeed=cur_angular_velocity & 0b00000000000011111111111111111111;
 		//printf("maxSpeed: %i", cur_angular_velocity & 0b00000000000011111111111111111111);
-		mapped[ACCELERATION_MAXSPEED]=shadow_map[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
+		mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
 		//printf("mapped startspeed: %i", maxSpeed + (coupledAcceleration << 20));
 		
 		//printf("i = %i, J1 = %f", i, J_angles_list[i].J1);
@@ -4299,21 +4165,18 @@ int MoveRobotStraight(struct XYZ xyz_2)
 }
 
 int JointAngleBoundErr(char ejoint, int eangle, int eboundry) {
-	// FILE *err_file;
-	// time_t t = time(NULL);
-	// struct tm tm = *localtime(&t);
-	// err_file = fopen("errors.log", "a");
-	// if (err_file) {
-	// 	tm = *localtime(&t);
-	// 	fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-	// 	fprintf(err_file, ", Joint %i angle %i exceeded boundary %i. \n", ejoint, eangle, eboundry);
-	// 	fclose(err_file);
-	// 	printf ("Joint %i angle %i exceeded boundary %i. \n", ejoint, eangle, eboundry);
-	// 	}
-	// return BOUNDARY_ERROR_CODE;
-	//so... per James W. communication from Kent,
-	//don't do this until there are two sets of boundaries. One for the FPGA, and one larger that is mechanical max. Instead:
-	return 0;
+	FILE *err_file;
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
+	err_file = fopen("errors.log", "a");
+	if (err_file) {
+		tm = *localtime(&t);
+		fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+		fprintf(err_file, ", Joint %i angle %i exceeded boundary %i. \n", ejoint, eangle, eboundry);
+		fclose(err_file);
+		printf ("Joint %i angle %i exceeded boundary %i. \n", ejoint, eangle, eboundry);
+		}
+	return BOUNDARY_ERROR_CODE;
 	}
 
 int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5) {
@@ -4410,7 +4273,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			//set Max Speed
 			/*
 			maxSpeed=a2 & 0b00000000000011111111111111111111;
-			mapped[ACCELERATION_MAXSPEED]=shadow_map[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
+			mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
 			*/
 			maxSpeed_arcsec_per_sec = a2 * arcsec_per_nbits; // Depricated. For backward compatibility with _nbits_cf from DDE.
 			return 0;
@@ -4418,7 +4281,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 		case 1:
 			//set Acceleration
 			coupledAcceleration=a2 & 0b111111;
-			mapped[ACCELERATION_MAXSPEED]=shadow_map[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
+			mapped[ACCELERATION_MAXSPEED]=maxSpeed + (coupledAcceleration << 20);
 			return 0;
 		break;
 		case 2:
@@ -4538,7 +4401,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			return 0;
 		break;
 		case 25:
-			//mapped[START_SPEED]=shadow_map[START_SPEED]=1 ^ a2; //Replaced
+			//mapped[START_SPEED]=1 ^ a2; //Replaced
 			startSpeed_arcsec_per_sec = a2 * arcsec_per_nbits; // Depricated. For backward compatibility with _nbits_cf from DDE.
 			return 0;
 		break;
@@ -4564,40 +4427,40 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			return 0;
 		break;
 		case 31:     // J1_PID_P							
-			mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=0;
-			mapped[PID_P]=shadow_map[PID_P]=(int)uia2;
+			mapped[PID_ADDRESS]=0;
+			mapped[PID_P]=(int)uia2;
 			// printf("\nSetting J1_PID_P to:\n");
 			// printf("  Float: %f\n", fa2);
 			// printf("  Hex: %x\n", uia2);
 			return 0;
 		break;
 		case 32:     // J2_PID_P
-			mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=2;
-			mapped[PID_P]=shadow_map[PID_P]=(int)uia2;
+			mapped[PID_ADDRESS]=2;
+			mapped[PID_P]=(int)uia2;
 			// printf("\nSetting J2_PID_P to:\n");
 			// printf("  Float: %f\n", fa2);
 			// printf("  Hex: %x\n", uia2);
 			return 0;
 		break;
 		case 33:     // J3_PID_P
-			mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=1;
-			mapped[PID_P]=shadow_map[PID_P]=(int)uia2;
+			mapped[PID_ADDRESS]=1;
+			mapped[PID_P]=(int)uia2;
 			// printf("\nSetting J3_PID_P to:\n");
 			// printf("  Float: %f\n", fa2);
 			// printf("  Hex: %x\n", uia2);
 			return 0;
 		break;
 		case 34:     // J4_PID_P
-			mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=3;
-			mapped[PID_P]=shadow_map[PID_P]=(int)uia2;
+			mapped[PID_ADDRESS]=3;
+			mapped[PID_P]=(int)uia2;
 			// printf("\nSetting J4_PID_P to:\n");
 			// printf("  Float: %f\n", fa2);
 			// printf("  Hex: %x\n", uia2);
 			return 0;
 		break;
 		case 35:     // J5_PID_P
-			mapped[PID_ADDRESS]=shadow_map[PID_ADDRESS]=4;
-			mapped[PID_P]=shadow_map[PID_P]=(int)uia2;
+			mapped[PID_ADDRESS]=4;
+			mapped[PID_P]=(int)uia2;
 			// printf("\nSetting J5_PID_P to:\n");
 			// printf("  Float: %f\n", fa2);
 			// printf("  Hex: %x\n", uia2);
@@ -4707,11 +4570,11 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			*/
 
 			printf("CommandedAngles: %i %i %i %i %i (steps)\n",angles_temp[0],angles_temp[1], angles_temp[2],angles_temp[3], angles_temp[4]);
-			mapped[COMMAND_REG]=shadow_map[COMMAND_REG]= CMD_MOVEEN | CmdVal;
+			mapped[COMMAND_REG]= CMD_MOVEEN | CmdVal;
 			KeyholeSend(angles_temp, CMD_POSITION_KEYHOLE_CMD, CMD_POSITION_KEYHOLE_SIZE, CMD_POSITION_KEYHOLE );
-			mapped[COMMAND_REG]=shadow_map[COMMAND_REG]= CMD_MOVEEN | CmdVal | 0x80000000; //sets mux to read from commanded angles keyhole
-			mapped[COMMAND_REG]=shadow_map[COMMAND_REG]= CMD_MOVEEN | CmdVal | 0xC0000000; //triggers the add
-			mapped[COMMAND_REG]=shadow_map[COMMAND_REG]= CMD_MOVEEN | CmdVal;
+			mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0x80000000; //sets mux to read from commanded angles keyhole
+			mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal | 0xC0000000; //triggers the add
+			mapped[COMMAND_REG] = CMD_MOVEEN | CmdVal;
 			return 0;
 		break;
 		case 51:
@@ -4736,44 +4599,7 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			bot_state.enc_velocity_limit[4] = a6;
 			return 0;
 			break;
-		case 54:
-			//MaxTorque
-			if (7 == a2) ServoData[1].LoadLimit = a3; //Max for Joint 7, Servo 1, Data[1]
-			if (6 == a2) ServoData[0].LoadLimit = a3; //Max for Joint 6, Servo 3, Data[0]
-			return 0;
-			break;
-		case 55:
-			//AxisCal //Moved from AxisCal.txt to Defaults.make_ins
-			i = (int)((float)a5 / a4 * 16777216 ); //ratio between joint 3 and joint 4
-			i *= -1; //ANGLE_END_RATIO must be negative.
-			mapped[ANGLE_END_RATIO]=i;
-			printf("ANGLE_END_RATIO=%d\n", i);
-			JointsCal[0] = (float)a2 / (3600*360);
-			JointsCal[1] = (float)a3 / (3600*360);
-			JointsCal[2] = (float)a4 / (3600*360);
-			JointsCal[3] = (float)a5 / (3600*360);
-			JointsCal[4] = (float)a6 / (3600*360);
-			printf("JointsCal=[%f,%f,%f,%f,%f]\n",JointsCal[0],JointsCal[1],JointsCal[2],JointsCal[3],JointsCal[4]);
-			return 0;
-			break;
-		case 56:
-			//Interpolation
-			Interpolation[0] = a2;
-			Interpolation[1] = a3;
-			Interpolation[2] = a4;
-			Interpolation[3] = a5;
-			Interpolation[4] = a6;
-			return 0;
-			break;
-		case 57:
-			//HomeOffset
-			HomeOffset[0] = a2;
-			HomeOffset[1] = a3;
-			HomeOffset[2] = a4;
-			HomeOffset[3] = a5;
-			HomeOffset[4] = a6;
-			return 0;
-			break;
+
 		default:
 			return 1;
 			break;
@@ -4804,25 +4630,25 @@ int ReadDMA(int p1,int p2,char *p3)
 	fp=fopen(p3, "wb");
 	if(fp!=0)
 	{
-		mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=DMA_RESET_ALL;
-		mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=0;
+		mapped[DMA_CONTROL]=DMA_RESET_ALL;
+		mapped[DMA_CONTROL]=0;
 		blocks=p2/256;
 		for(j=0;j<blocks;j++) // only do full blocks inside loop
 		{	
-			mapped[DMA_READ_ADDRESS]=shadow_map[DMA_READ_ADDRESS]=p1+(j*1024);
-			mapped[DMA_READ_PARAMS]=shadow_map[DMA_READ_PARAMS]=(2<<8) | 127;
-			mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=DMA_READ_BLOCK;
-			mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=0;
+			mapped[DMA_READ_ADDRESS]=p1+(j*1024);
+			mapped[DMA_READ_PARAMS]=(2<<8) | 127;
+			mapped[DMA_CONTROL]=DMA_READ_BLOCK;
+			mapped[DMA_CONTROL]=0;
 			for(i=0;i<256;i++)
 			{
-				mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=DMA_READ_DEQUEUE;
+				mapped[DMA_CONTROL]=DMA_READ_DEQUEUE;
 				dataarray[i]=mapped[DMA_READ_DATA];
 				////printf("\n %d",dataarray[i]);
-				mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=0;
+				mapped[DMA_CONTROL]=0;
 			}
 			writeSize=fwrite((const void *)dataarray,sizeof(int),256,fp);
 			//printf("\n write %d iteration %d",writeSize,j);
-			mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=0;
+			mapped[DMA_CONTROL]=0;
 		}
 		fclose(fp);
 	}
@@ -4936,24 +4762,24 @@ int WriteDMA(int Address,char *FileName)
 		fseek(fp, 0, SEEK_END);    /* file pointer at the end of file */
 		Length = ftell(fp);   /* take a position of file pointer size variable */
 		fseek(fp, 0, SEEK_SET);    /* file pointer at the beginning of file */
-		mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=DMA_RESET_ALL;
-		mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=0;
+		mapped[DMA_CONTROL]=DMA_RESET_ALL;
+		mapped[DMA_CONTROL]=0;
 		blocks=Length/256;
 		for(j=0;j<blocks;j++) // only do full blocks inside loop
 		{	
 			if( ( readSize=fread((void *)dataarray,sizeof(int),256,fp) )==256)
 			{
-				mapped[DMA_WRITE_ADDRESS]=shadow_map[DMA_WRITE_ADDRESS]=Address+(j*1024);
-				mapped[DMA_WRITE_PARAMS]=shadow_map[DMA_WRITE_PARAMS]=(2<<8) | 127;
-				mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=0;
+				mapped[DMA_WRITE_ADDRESS]=Address+(j*1024);
+				mapped[DMA_WRITE_PARAMS]=(2<<8) | 127;
+				mapped[DMA_CONTROL]=0;
 				for(i=0;i<256;i++)
 				{
-					mapped[DMA_WRITE_DATA]=shadow_map[DMA_WRITE_DATA]=dataarray[i];
-					mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=DMA_WRITE_ENQUEUE;
-					mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=0;
+					mapped[DMA_WRITE_DATA]=dataarray[i];
+					mapped[DMA_CONTROL]=DMA_WRITE_ENQUEUE;
+					mapped[DMA_CONTROL]=0;
 				}
-				mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=DMA_WRITE_INITIATE;
-				mapped[DMA_CONTROL]=shadow_map[DMA_CONTROL]=0;
+				mapped[DMA_CONTROL]=DMA_WRITE_INITIATE;
+				mapped[DMA_CONTROL]=0;
 				////printf("\n write %d iteration %d",readSize,j);
 			}
 		}
@@ -5000,7 +4826,7 @@ int CaptureADtoFile(int Axis,int Start,int Length,int Delay,char *FileName)
 		{	
 			for(i=0;i<256;i++)
 			{
-				mapped[Axis]=shadow_map[Axis]=Start+i+(k*256);
+				mapped[Axis]=Start+i+(k*256);
 				AvgSIN=0;
 				AvgCOS=0;
 				for(j=0;j<Delay;j++)
@@ -5064,7 +4890,7 @@ int FindHome(int Axis,int Start,int Length,int Delay,char *FileName)
 	}
 	for(k=0;k<Length;k++) 
 	{	
-		mapped[Axis]=shadow_map[Axis]=Start+k;
+		mapped[Axis]=Start+k;
 		AvgSIN=0;
 		AvgCOS=0;
 		for(j=0;j<Delay;j++)
@@ -5121,8 +4947,8 @@ int FindHome(int Axis,int Start,int Length,int Delay,char *FileName)
 		MoveRobot(0,0,0,0,30000-MinSINIdx,BLOCKING_MOVE);
 		break; 
 	}
-	mapped[COMMAND_REG]=shadow_map[COMMAND_REG]=256;  //reset home
-	mapped[COMMAND_REG]=shadow_map[COMMAND_REG]=0;
+	mapped[COMMAND_REG]=256;  //reset home
+	mapped[COMMAND_REG]=0;
 	return 30000-MinSINIdx;
 }
 
@@ -5135,19 +4961,19 @@ void showPosAt(void)
 		b2=getNormalizedInput(PIVOT_POSITION_AT);
 		b4=getNormalizedInput(ANGLE_POSITION_AT);
 		b5=getNormalizedInput(ROT_POSITION_AT);
-		printf("\nPos %6d %6d %6d %6d %6d  ",b1,b2,b3,b4,b5);	
+		//printf("\nPos %d %d %d %d %d  ",b1,b2,b3,b4,b5);	
 }
 void ReplayMovement(char *FileName)
 {
 	int Length,rbc;
 	showPosAt();
 	Length=WriteDMA(0x3f000000,FileName);
-	mapped[RECORD_LENGTH]=shadow_map[RECORD_LENGTH]=Length/4;
-	mapped[REC_PLAY_TIMEBASE]=shadow_map[REC_PLAY_TIMEBASE]=1;
-	mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=CMD_RESET_RECORD;
-	mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=CMD_RESET_PLAY;
-	mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=0;
-	mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=CMD_PLAYBACK;
+	mapped[RECORD_LENGTH]=Length/4;
+	mapped[REC_PLAY_TIMEBASE]=1;
+	mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
+	mapped[REC_PLAY_CMD]=CMD_RESET_PLAY;
+	mapped[REC_PLAY_CMD]=0;
+	mapped[REC_PLAY_CMD]=CMD_PLAYBACK;
 	rbc=mapped[READ_BLOCK_COUNT];
 	showPosAt();
 	
@@ -5164,63 +4990,34 @@ void ReplayMovement(char *FileName)
 		////printf("%d \n",mapped[READ_BLOCK_COUNT]);
 	}
 	while((mapped[READ_BLOCK_COUNT] & 0x00400000) != 0 )
-		printf("%d \n",mapped[READ_BLOCK_COUNT]);
+		//printf("%d \n",mapped[READ_BLOCK_COUNT]);
 	showPosAt();
-	mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=CMD_RESET_RECORD;
-	mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=CMD_RESET_PLAY;
-	mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=0;
+	mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
+	mapped[REC_PLAY_CMD]=CMD_RESET_PLAY;
+	mapped[REC_PLAY_CMD]=0;
 
 	/*fa0=fa0+mapped[PLAYBACK_BASE_POSITION];
 	fa1=fa1+mapped[PLAYBACK_END_POSITION];
 	fa2=fa2+mapped[PLAYBACK_PIVOT_POSITION];
 	fa3=fa3+mapped[PLAYBACK_ANGLE_POSITION];
 	fa4=fa4+mapped[PLAYBACK_ROT_POSITION];
-	mapped[FINE_ADJUST_BASE]=shadow_map[FINE_ADJUST_BASE]=fa0;
-	mapped[FINE_ADJUST_END]=shadow_map[FINE_ADJUST_END]=fa1;
-	mapped[FINE_ADJUST_PIVOT]=shadow_map[FINE_ADJUST_PIVOT]=fa2;
-	mapped[FINE_ADJUST_ANGLE]=shadow_map[FINE_ADJUST_ANGLE]=fa3;
-	mapped[FINE_ADJUST_ROT]=shadow_map[FINE_ADJUST_ROT]=fa4;*/
-	mapped[REC_PLAY_CMD]=shadow_map[REC_PLAY_CMD]=CMD_RESET_RECORD;
+	mapped[FINE_ADJUST_BASE]=fa0;
+	mapped[FINE_ADJUST_END]=fa1;
+	mapped[FINE_ADJUST_PIVOT]=fa2;
+	mapped[FINE_ADJUST_ANGLE]=fa3;
+	mapped[FINE_ADJUST_ROT]=fa4;*/
+	mapped[REC_PLAY_CMD]=CMD_RESET_RECORD;
 }
 
 
-int getInput(void) {
-	int a;
-	int StepsIndirection[] = {0,BASE_STEPS, PIVOT_STEPS, END_STEPS, ANGLE_STEPS, ROT_STEPS};
-	if(fgets(iString,sizeof(iString),stdin)!=NULL) {
-		DexError=ParseInput(iString);
-		if (0 < DexError) {
-			printf("ERROR %i\n", DexError);
-			}
-//DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,
-		printf("{\"DMA\":%i,\t\"BLOCK_SIZE\": %i,\t\"EFFECTOR\": %i,"
-			,getNormalizedInput(StatusReportIndirection[1])
-			,getNormalizedInput(StatusReportIndirection[2])
-			,getNormalizedInput(StatusReportIndirection[3])
-			);
-		for(int j=1;j<=5;j++) {
-			printf("\n\"J%i\":",j);
-			a=j*10-6; //the StatusReportIndirection items for each joint start 4 items in
-//	AT,  DELTA,  PID,  FORCE,  SIN,  COS,  ANGLE,  SENT, 
-			printf(" { \"AT\": %-7i",getNormalizedInput(StatusReportIndirection[a+0]));
-			printf(",\"DELTA\":%-7i",getNormalizedInput(StatusReportIndirection[a+1]));
-			printf(",\"FORCE\":%-7i",getNormalizedInput(StatusReportIndirection[a+3]));
-			printf(", \"SENT\":%-7i",getNormalizedInput(StatusReportIndirection[a+7]));
-			printf("\n     ");
-			printf(",\"STEPS\":%-7i",getNormalizedInput(StepsIndirection[j]));
-			printf(",  \"PID\":%-7i",getNormalizedInput(StatusReportIndirection[a+2]));
-			printf(",\"ANGLE\":%-7i",getNormalizedInput(StatusReportIndirection[a+6]));
-			printf(",\"SIN\":%-4i",getNormalizedInput(StatusReportIndirection[a+4]));
-			printf(",\"COS\":%-4i",getNormalizedInput(StatusReportIndirection[a+5]));
-			printf("},");
-			}
-		printf("}\n");
-		// printPosition();
-		// showPosAt();
-		return DexError;
-		}
-    return 0;
+int getInput(void)
+{
+	if(fgets(iString,sizeof(iString),stdin)!=NULL)
+	{
+		return ParseInput(iString);
 	}
+    return 0;
+}
 
 unsigned char h2int(char c) {
   if (c >= '0' && c <='9') { return((unsigned char)c - '0');      }
@@ -5258,15 +5055,6 @@ int ParseInput(char *iString)
 	int i,j,Add,Start,Length,Delay,Axis,tokenVal;
 	float f1;
 	int d2,d3,d4,d5;
-
-	//move_to and pid_move_to vars
-	int J1, J2, J3, J4, J5;
-	struct Vector my_point;
-	struct Vector my_dir;
-	struct Config my_config;
-	struct XYZ xyz_1;
-	struct J_angles result_J_angles;
-
 	////printf("\nStart wait Goal");
 #ifdef DEBUG_API
 	printf("ParseInput: %s\n", iString);
@@ -5334,10 +5122,15 @@ int ParseInput(char *iString)
 					p4=strtok (NULL, delimiters);
 					p5=strtok (NULL, delimiters);
 
-					p6=strtok (NULL, delimiters);
-					if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
-					p7=strtok (NULL, delimiters);
-					if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
+                                        p6=strtok (NULL, delimiters);
+                                        if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
+                                        //if(p6 != NULL){ printf("p6 %s\n",p6); }
+                                        //else{ printf("p6 doesn't exist\n"); }
+                                        p7=strtok (NULL, delimiters);
+                                        if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
+                                        //if(p7 != NULL){ printf("p7 %s\n",p7); }
+                                        //else{ printf("p7 doesn't exist\n"); }
+
 
 					moverobotPID(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5));
 				break; 
@@ -5358,9 +5151,6 @@ int ParseInput(char *iString)
 				break; 
 	
 				case SEND_HEARTBEAT :
-					p1=strtok(NULL, delimiters);
-					if (p1) { status_mode = p1[0]; }
-					else { status_mode='0'; }
 					////printf("heartbeat dispatched\n");
 				break; 
 				case SET_PARAM :
@@ -5543,15 +5333,16 @@ int ParseInput(char *iString)
 					p3=strtok (NULL, delimiters);
 					p4=strtok (NULL, delimiters);
 					p5=strtok (NULL, delimiters);
-					
-					p6=strtok (NULL, delimiters);
-					if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
-					//if(p6 != NULL){ printf("p6 %s\n",p6); }
-					//else{ printf("p6 doesn't exist\n"); }
-					p7=strtok (NULL, delimiters);
-					if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
-					//if(p7 != NULL){ printf("p7 %s\n",p7); }
-					//else{ printf("p7 doesn't exist\n"); }
+
+                                        p6=strtok (NULL, delimiters);
+                                        if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
+                                        //if(p6 != NULL){ printf("p6 %s\n",p6); }
+                                        //else{ printf("p6 doesn't exist\n"); }
+                                        p7=strtok (NULL, delimiters);
+                                        if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
+                                        //if(p7 != NULL){ printf("p7 %s\n",p7); }
+                                        //else{ printf("p7 doesn't exist\n"); }
+
 					
 					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)	
 						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
@@ -5577,17 +5368,17 @@ int ParseInput(char *iString)
 					
 					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
 					
-					my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
-					my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
-					my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
-					xyz_1 = new_XYZ(my_point, my_dir, my_config);
-					result_J_angles = xyz_to_J_angles(xyz_1);
+					struct Vector my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
+					struct Vector my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					struct Config my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
+					struct XYZ xyz_1 = new_XYZ(my_point, my_dir, my_config);
+					struct J_angles result_J_angles = xyz_to_J_angles(xyz_1);
 					
-					J1 = (int)round(result_J_angles.J1);
-					J2 = (int)round(result_J_angles.J2);
-					J3 = (int)round(result_J_angles.J3);
-					J4 = (int)round(result_J_angles.J4);
-					J5 = (int)round(result_J_angles.J5);
+					int J1 = (int)round(result_J_angles.J1);
+					int J2 = (int)round(result_J_angles.J2);
+					int J3 = (int)round(result_J_angles.J3);
+					int J4 = (int)round(result_J_angles.J4);
+					int J5 = (int)round(result_J_angles.J5);
 					
 					//printf("\nJangles: \n");
 					//printf("[%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
@@ -5659,49 +5450,6 @@ int ParseInput(char *iString)
 					
 				break;
 				
-				case PID_MOVE_TO:
-					//printf("\nMOVETO_CMD\n");
-					//MoveRobot(36000, 36000, 36000, 36000, 36000, BLOCKING_MOVE);
-					
-					p1 = strtok(NULL, delimiters);
-					p2 = strtok(NULL, delimiters);
-					p3 = strtok(NULL, delimiters);
-					p4 = strtok(NULL, delimiters);
-					p5 = strtok(NULL, delimiters);
-					p6 = strtok(NULL, delimiters);
-					p7 = strtok(NULL, delimiters);
-					p8 = strtok(NULL, delimiters);
-					p9 = strtok(NULL, delimiters);
-
-					p10 = strtok(NULL, delimiters);
-					p11 = strtok(NULL, delimiters);
-					
-					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
-					
-					my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
-					my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
-					my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
-					xyz_1 = new_XYZ(my_point, my_dir, my_config);
-					result_J_angles = xyz_to_J_angles(xyz_1);
-					
-					J1 = (int)round(result_J_angles.J1);
-					J2 = (int)round(result_J_angles.J2);
-					J3 = (int)round(result_J_angles.J3);
-					J4 = (int)round(result_J_angles.J4);
-					J5 = (int)round(result_J_angles.J5);
-					
-					//printf("\nJangles: \n");
-					printf("PID: [%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
-					//printf("\n");
-					
-					if (p10 && 'N'!=p10[0]) SetGripperRoll(atoi(p10));
-					if (p11 && 'N'!=p11[0]) SetGripperSpan(atoi(p11));
-
-					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL)
-						moverobotPID(J1, J2, J3, J4, J5);
-
-					
-				break;
 					
 				/* End Wigglesworth Code*/
 				//////////////////////////////////////////////////////////////////////////
@@ -5716,12 +5464,12 @@ int ParseInput(char *iString)
 					Length=atoi(p3);
 					Start=atoi(p2);
 					Delay=atoi(p4);
-					mapped[Add]=shadow_map[Add]=Start;
+					mapped[Add]=Start;
 					//printf("\n %d %d \n",Add,Length);
 					for(i=0;i<Length;i++)
 					{
 						for(j=0;j<Delay;j++)			
-							mapped[Add]=shadow_map[Add]=Start+i;
+							mapped[Add]=Start+i;
 					}
 				break;
 				//case READ_CMD  : //now this gets managed during the 'r' reply
@@ -5744,14 +5492,14 @@ int ParseInput(char *iString)
 					p2=strtok (NULL, delimiters);
 					if((p1==NULL) | (p2==NULL))
 					{
-						printf("\n %d %d need addres and data",atoi(p1),atoi(p2));
+						//printf("\n %d %d need addres and data",atoi(p1),atoi(p2));
 					}
 					i=atoi(p1);
 					j=atoi(p2);
 					//printf("\n %d %d %d \n",OldMemMapInderection[i],i,j);
 					if(OldMemMapInderection[i]==COMMAND_REG)
 						CmdVal=j;
-					//printf("\n  mapped[%d]=%d;\n",OldMemMapInderection[i],j);
+					//printf("\n  mapped[%d] = %d;\n",OldMemMapInderection[i],j);
 					//to build up a set of FPGA commands, just use the above printf and copy the result into your code.
 					mapped[OldMemMapInderection[i]]=j;
 					if(i==ACCELERATION_MAXSPEED)
@@ -5860,8 +5608,8 @@ int main(int argc, char *argv[]) {
   if (INPUT_OFFSET!=err) {
 	  printf("DexRun.c - XILLYDEMO.BIT mismatch error! INPUT_OFFSET:%d\n",INPUT_OFFSET);
 	  OverError = ERROR_INPUT_OFFSET;
-	  mapped = shadow_map;
-	 mapped[CMD_FIFO_STATE]=shadow_map[CMD_FIFO_STATE]= 0x2; //required so checking the FIFO doesn't hang us
+	  mapped = (unsigned int *)malloc(sizeof(unsigned int) * MAPPED_SIZE);
+	  mapped[CMD_FIFO_STATE] = 0x2; //required so checking the FIFO doesn't hang us
 	  //return ERROR_INPUT_OFFSET; //don't need to stop, we've made a fake memory map.
   }
   
@@ -5875,6 +5623,24 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   CalTables = map_addrCt;
+
+// Load AxisCal data into JointsCal array
+	int HexValue;
+	FILE *AxisFile;
+	AxisFile = fopen("AxisCal.txt", "rs");
+	if(AxisFile!=NULL)
+	{
+		fscanf(AxisFile, "%f", &JointsCal[0]);
+		fscanf(AxisFile, "%f", &JointsCal[1]);
+		fscanf(AxisFile, "%f", &JointsCal[2]);
+		fscanf(AxisFile, "%f", &JointsCal[3]);
+		fscanf(AxisFile, "%f", &JointsCal[4]);
+		fscanf(AxisFile, "%i", &HexValue);
+        //printf("Reading AxisCal.txt. HexValue = %d\n", HexValue);
+		mapped[ANGLE_END_RATIO]=HexValue;//((LG_RADIUS/SM_RADIUS * MOTOR_STEPS * MICRO_STEP)/(MOTOR_STEPS*GEAR_RATIO*MICRO_STEP))*2^24
+		fclose(AxisFile);
+	}
+
 
     //Start Position code:
     int reset_StartPosition = 1; // 1 = reset, 0 = do not reset
@@ -5921,7 +5687,7 @@ int main(int argc, char *argv[]) {
 
 //  Addr= = atoi(argv[3]);
 //  Dta= = atoi(argv[4]);
-//mapped[Addr]=shadow_map[Addr]= Dta;
+//  mapped[Addr] = Dta;
 
 	setDefaults(DefaultMode);
 	strlcpy(iString, "S RunFile autoexec.make_ins ;\0", ISTRING_LEN); //start running default instructions
@@ -5968,7 +5734,7 @@ int main(int argc, char *argv[]) {
 			printf("Sent base position NOT zero\n");
 			return 0;   
 		}
-		//mapped[BASE_POSITION]=shadow_map[BASE_POSITION]=1;
+		//mapped[BASE_POSITION]=1;
     	#ifndef NO_BOOT_DANCE
 		
 		printf("Boot Dance\n");
@@ -5978,12 +5744,12 @@ int main(int argc, char *argv[]) {
 		int DEFAULT_STARTSPEED = 512; // .066 (deg/s) This is the smallest number allowed
 		
 		//Maxspeed
-		mapped[ACCELERATION_MAXSPEED]=shadow_map[ACCELERATION_MAXSPEED]=DEFAULT_MAXSPEED;
+		mapped[ACCELERATION_MAXSPEED]=DEFAULT_MAXSPEED;
 		maxSpeed=(DEFAULT_MAXSPEED) & 0b00000000000011111111111111111111;
 		coupledAcceleration=((DEFAULT_MAXSPEED) & 0b00000011111100000000000000000000) >> 20;
 		
 		//Startspeed
-		mapped[START_SPEED]=shadow_map[START_SPEED]=1 ^ DEFAULT_STARTSPEED;
+		mapped[START_SPEED]=1 ^ DEFAULT_STARTSPEED;
 		//Wigglesworth Code End
 		*/
 
@@ -6104,7 +5870,7 @@ int main(int argc, char *argv[]) {
 		}
 
 	}
-	if(RunMode==1 || RunMode==2) //3rd argument. E.g. DexRun 1 3 1 or 1 3 2
+	if(RunMode==1 || RunMode==2)
 	{
 		printf("Start realtime monitor thread\n");
 		err = pthread_create(&(tid[2]), NULL, &RealtimeMonitor, (void*)&ThreadsExit );
@@ -6117,13 +5883,11 @@ int main(int argc, char *argv[]) {
 
 	
 	
-    // if(ServerMode==3)
-	// {
-	// 	printf("Going to sleep\n");
-	// 	while(1){sleep(1);} //loop forever TODO: Add a sleep in this loop
-	// }
-	// There doesn't seem to be any reason to sleep or stop processing console input
-
+    if(ServerMode==3)
+	{
+		printf("Going to sleep\n");
+		while(1){sleep(1);} //loop forever TODO: Add a sleep in this loop
+	}
 	while(getInput()==0);
 	ThreadsExit=0;
 	sleep(1);
