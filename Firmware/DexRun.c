@@ -2259,6 +2259,33 @@ void SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int 
 
 	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5),RxBuffer, length+7);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,Length + 7); // TODO refine actual size
+	//Check returned data to verify it's a valid response. 
+	if( RxBuffer[0] != 0xFF 
+		|| RxBuffer[1] != 0xFF 
+		|| RxBuffer[2] != 0xFD
+		|| RxBuffer[3] != 0x00
+		) {
+		if (0 == (RxBuffer[0] ^ RxBuffer[1] ^ RxBuffer[2] ^ RxBuffer[3])) return 255;//it's just not installed. 
+		printf("Servo%d: rx bad header: %x %x %x %x\n", servo, RxBuffer[0], RxBuffer[1], RxBuffer[2], RxBuffer[3] );
+		return 255; //error codes from the servo can't be more than 127, so start from 255
+		}
+	if (RxBuffer[4] != servo) { printf ("Servo%d: rx wrong ID:%d\n", servo, RxBuffer[4]); return 254;};
+	unsigned short len = RxBuffer[5] + ((unsigned short)RxBuffer[6]<<8); 	//printf(" len: %d", len);
+	if (len > length+7 ) { printf("Servo%d: rx too long %d\n", servo, len); return 253;}; 
+	if (RxBuffer[7] != 0x55) { printf("Servo%d: non-status packet!\n", servo); return 252;};//servo shouldn't send anything but status
+	unsigned short crc = RxBuffer[len+5] + ((unsigned short)RxBuffer[len+6]<<8);
+	if ( crc != update_crc(0,RxBuffer,len+5) ) { 
+		printf("Servo%d: crc error. calc:%4X, rx:%4X\n", servo, update_crc(0,RxBuffer,len+5), crc ); 
+		// for(i=0;i<length);i++) {
+		// 	printf(" %02X",RxBuffer[i]);
+		// 	}
+		// printf("\n");
+		return 251;
+		}
+	//printf("\n");
+	unsigned char err = RxBuffer[8]; //if (err >= 0x80) { printf(" alert ");};
+	if ( (err & 0x7F) > 0 ) { printf("Servo%d: rx error: %2X\n", servo, err); return err;}
+	return 0;
 }
 
 struct monitorbot {
@@ -2439,22 +2466,24 @@ void *RealtimeMonitor(void *arg)
 
 
 
-		SendReadPacket(ServoRx, 3,30,21);
-		ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-		ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
-		ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
-		ServoData[0].error = ServoRx[29];
+		if ( !SendReadPacket(ServoRx, 3,30,21) ) { //returned value is coms error, zero is ok.
+			ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+			ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+			ServoData[0].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
+			ServoData[0].error = ServoRx[29];
+		}
 
 		//printf("\nRaw 16:%x %d ",ServoRx[16],ServoRx[16]);
 		//printf(" 17:%x %d ",ServoRx[17],ServoRx[17]);
 		//printf(" Possition %d Speed %d Load %d \n", ServoData[0].PresentPossition,ServoData[0].PresentSpeed,ServoData[0].PresentLoad);
 
 
-		SendReadPacket(ServoRx, 1,30,21);
-		ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-		ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
-		ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
-		ServoData[1].error = ServoRx[29];
+		if ( !SendReadPacket(ServoRx, 1,30,21) ) { //returned value is coms error, zero is ok.
+			ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+			ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+			ServoData[1].PresentLoad = ServoRx[20] + (ServoRx[21]<<8);
+			ServoData[1].error = ServoRx[29];
+		}
 
 		// if(FroceMoveMode==1) {
 		// 	// do force based movement
