@@ -77,7 +77,7 @@ console.log("done making wss: " + wss)
 function serve_job_button_click(browser_socket, mess_obj){
     let job_name_with_extension = mess_obj.job_name_with_extension //includes ".js" suffix 
     console.log("\n\nserver top of serve_job_button_click with job_name_with_extension: " + job_name_with_extension)
-	let jobfile = DDE_APPS_FOLDER + job_name_with_extension //q.search.substr(1)
+	  let jobfile = DDE_APPS_FOLDER + job_name_with_extension //q.search.substr(1)
     //console.log("serve_job_button_click with jobfile: " + jobfile)
     let job_name = extract_job_name(job_name_with_extension) 
     //console.log("top of serve_job_button_click with job_name: " + job_name)
@@ -476,8 +476,6 @@ wss.on('connection', function(the_ws, req) {
   })
   the_ws.send('websocket connected.\n')
 })
-
-
 
 //websocket server that connects to Dexter
 //socket server to accept websockets from the browser on port 3000

@@ -3,7 +3,7 @@
 //#define DEBUG_XL320_UART //Printf coms with servoes
 //#define MONITOR_XL320 //Return errors about servoes to DDE 
 #define XL320_LOAD_LIMIT 200 // roughly 10 times the percent load capacity. E.g. 100 is 10%
-//#define DEBUG_MONITOR 
+#define DEBUG_MONITOR 
 //
 #define DEG_ARCSEC 3600
 #define MONITOR_MAX_VELOCITY (100*DEG_ARCSEC)
@@ -399,15 +399,12 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define PID_FINEMOVE 24
 #define SET_ALL_BOUNDRY 25
 
-
 //////////////////////////////////////////////////////////////////////////
 /* Start Wigglesworth Code*/
 //////////////////////////////////////////////////////////////////////////
 #define MOVETO_CMD 26
 #define MOVETOSTRAIGHT_CMD 27
 #define WRITE_TO_ROBOT 28
-#define PID_MOVE_TO 29
-#define PID_MOVE_TO_STRAIGHT 30
 
 #define DEFAULT_MAXSPEED = 232642; // 30 (deg/s)
 #define DEFAULT_STARTSPEED = 512; // .066 (deg/s) This is the smallest number allowed
@@ -480,6 +477,7 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define ROLL_ERROR_CODE (1<<28) //Error recieved from ROLL servo, address 3 Joint 6
 #define SPAN_ERROR_CODE (1<<27) //...SPAN servo, address 1 Joint 7
 #define ERROR_INPUT_OFFSET (1<<10) //1024
+#define ERROR_INPUT_OFFSET 1024
 
 
 
@@ -1920,8 +1918,8 @@ int YHighBound[5]={BASE_SIN_HIGH,END_SIN_HIGH,PIVOT_SIN_HIGH,ANGLE_SIN_HIGH,ROT_
 int ForcePossition[5]={0,0,0,0,0};
 int ForceDestination[5]={0,0,0,0,0};
 int ThreadsExit=1;
-char status_mode = '0'; //zero is the standard, original mode.
 
+char status_mode = '0'; //zero is the standard, original mode.
 int StatusReportIndirection[60]={
 	DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,
 	BASE_POSITION_AT,  BASE_POSITION_DELTA,  BASE_POSITION_PID_DELTA,  BASE_POSITION_FORCE_DELTA,  BASE_SIN,  BASE_COS,  BASE_MEASURED_ANGLE,  SENT_BASE_POSITION,  SLOPE_BASE_POSITION,0,
@@ -2095,8 +2093,8 @@ struct ServoRealTimeData ServoData[NUM_SERVOS];
 
 //converts steps to angles. 
 float JointsCal[NUM_JOINTS];
-//Interpolate defaults to 1 1 1 16 16 for HD. Change via Interpolation SetParameter for HDI to 1 1 1 1 1
-float Interpolation[NUM_JOINTS]={1, 1, 1, 16, 16}; 
+//Interpolate defaults to 1 1 1 1 1 for HDI. Change via Interpolation SetParameter to 1 1 1 16 16 for HD
+float Interpolation[NUM_JOINTS]={1, 1, 1, 1, 1}; 
 int HomeOffset[NUM_JOINTS]={0}; //offset for moves (at least P PID moves) and measured angles
 
 //int SoftBoundries[5];
@@ -2291,7 +2289,7 @@ int SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int l
 
 #endif
 
-	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5), RxBuffer, length+7);  // send time plus receive time in bytes transacted
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + length + 5),RxBuffer, length+7);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,Length + 7); // TODO refine actual size
 	//Check returned data to verify it's a valid response. 
 	if( RxBuffer[0] != 0xFF 
@@ -2299,7 +2297,8 @@ int SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int l
 		|| RxBuffer[2] != 0xFD
 		|| RxBuffer[3] != 0x00
 		) {
-		printf("Servo%d: rx bad header\n", servo);
+		if (0 == (RxBuffer[0] ^ RxBuffer[1] ^ RxBuffer[2] ^ RxBuffer[3])) return 255;//it's just not installed. 
+		printf("Servo%d: rx bad header: %x %x %x %x\n", servo, RxBuffer[0], RxBuffer[1], RxBuffer[2], RxBuffer[3] );
 		return 255; //error codes from the servo can't be more than 127, so start from 255
 		}
 	if (RxBuffer[4] != servo) { printf ("Servo%d: rx wrong ID:%d\n", servo, RxBuffer[4]); return 254;};
@@ -2502,23 +2501,24 @@ void *RealtimeMonitor(void *arg)
 
 		if (IO_DYNAMIXEL == shadow_map[END_EFFECTOR_IO]) { //only if the Dynamixels are setup
 			if ( !SendReadPacket(ServoRx, 3,30,21) ) { //returned value is coms error, zero is ok.
-				ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-				ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+		ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+		ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
 				i = ServoRx[20] + (ServoRx[21]<<8);
 				//http://emanual.robotis.com/docs/en/dxl/x/xl320/#present-load 
 				// 0-1023 is CCW load, 1024-2047 is increasing CW load. the unit is about 0.1%; +-1023 is 100% load
 				if (i > 1023) {i -= 1024; i *= -1;}
 				ServoData[0].PresentLoad = i;
+#ifdef MONITOR_XL320
 				if (abs(ServoData[0].PresentLoad) > ServoData[0].LoadLimit) {
-					//printf("Servo3: LOAD %d, \tat %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
-					//SendGoalSetPacket(ServoData[0].PresentPossition, 3); //overtorque, be happy where we are.
+					printf("Servo3: LOAD %d, \tat %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
+					SendGoalSetPacket(ServoData[0].PresentPossition, 3); //overtorque, be happy where we are.
 					}
 				else if (abs(ServoData[0].Goal - ServoData[0].PresentPossition)>10) {
-					//printf("Servo3: load %d, \tAT %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
-					//SendGoalSetPacket(ServoData[0].Goal, 3); //load is down, try again
+					printf("Servo3: load %d, \tAT %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
+					SendGoalSetPacket(ServoData[0].Goal, 3); //load is down, try again
 					} //this may make the load overtorque again, but that's ok, we vibrate.
+#endif
 				err = ServoRx[29];
-				/*
 				if (ServoData[0].error != err) { //new error
 					err_file = fopen("errors.log", "a");
 					if (err_file) {
@@ -2532,33 +2532,34 @@ void *RealtimeMonitor(void *arg)
 						fclose(err_file);
 						}
 					printf("ROLL servo error %d\n",err);
-					
 #ifdef MONITOR_XL320 
 					OverError |= ROLL_ERROR_CODE;
 #endif
 					ServoData[0].error = err;
 					}
-					*/
 				}
 
 			if ( !SendReadPacket(ServoRx, 1,30,21) ) { //returned value is coms error, zero is ok.
-				ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-				ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+		ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+		ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
 				i = ServoRx[20] + (ServoRx[21]<<8);
 				//http://emanual.robotis.com/docs/en/dxl/x/xl320/#present-load 
 				// 0-1023 is CCW load, 1024-2047 is inreasing CW load. the unit is about 0.1%; +-1023 is 100% load
 				if (i > 1023) {i -= 1024; i *= -1;}
 				ServoData[1].PresentLoad = i;
+
+#ifdef MONITOR_XL320
 				if (abs(ServoData[1].PresentLoad) > ServoData[1].LoadLimit) {
-					//printf("Servo1: LOAD %d, \tat %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
-					//SendGoalSetPacket(ServoData[1].PresentPossition, 1); //overtorque, be happy where we are.
+					printf("Servo1: LOAD %d, \tat %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
+					SendGoalSetPacket(ServoData[1].PresentPossition, 1); //overtorque, be happy where we are.
 					}
 				else if (abs(ServoData[1].Goal - ServoData[1].PresentPossition)>10) {
-					//printf("Servo1: load %d, \tAT %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
-					//SendGoalSetPacket(ServoData[1].Goal, 1); //load is down, try again
+					printf("Servo1: load %d, \tAT %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
+					SendGoalSetPacket(ServoData[1].Goal, 1); //load is down, try again
 					} //this may make the load overtorque again, but that's ok, we vibrate.
+#endif
+                
 				err = ServoRx[29];
-				/*
 				if (ServoData[1].error != err) { //new error
 					err_file = fopen("errors.log", "a");
 					if (err_file) {
@@ -2572,13 +2573,11 @@ void *RealtimeMonitor(void *arg)
 						fclose(err_file);
 						}
 					printf("SPAN servo error %d\n",err);
-					
 	#ifdef MONITOR_XL320
 					OverError |= SPAN_ERROR_CODE;
 	#endif
 					ServoData[1].error = err;
 					}
-					*/
 				// printf("Servo1: ");
 				// for(i=0;i<sizeof(ServoRx)/sizeof(ServoRx[0]);i++) {
 				// 	printf(" %02X",ServoRx[i]);
@@ -3112,8 +3111,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		//sendBuffReTyped[1]=token[0];
 		//sendBuffReTyped[2]=DexError;
 		
-		for(i=0;i<59;i++)
-		{
+		for(i=0; i<59; i++) {
 			sendBuffReTyped[i+6]=getNormalizedInput(StatusReportIndirection[i]);
 		}
 		if ('0'!=status_mode) {
@@ -3126,8 +3124,6 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 			sendBuffReTyped[47] = getNormalizedInput(ANGLE_STEPS);
 			sendBuffReTyped[57] = getNormalizedInput(ROT_STEPS);
 		}
-
-
 		return TRUE;
 	} //if('r'==oplet)
 	return FALSE;
@@ -3488,11 +3484,11 @@ void setDefaults(int State)
 	bot_state.enc_error_limit[5-1] = 7.4 * MONITOR_MAX_ERROR * DEG_ARCSEC;
 	bot_state.enc_velocity_count = 0;
 	bot_state.enc_velocity_count_limit = 10; //we can jerk 100 times before we error.
-
+	
 	for (i=NUM_SERVOS-1; i>=0; --i) {
 		ServoData[i].LoadLimit = XL320_LOAD_LIMIT;
-		}
-	
+}
+
 	RemoteRobotAddress = fopen("RemoteRobotAddress.txt", "rs");
 	if(RemoteRobotAddress!=NULL)
 	{
@@ -3641,11 +3637,7 @@ int HashInputCMD(char *s)
 		return MOVETO_CMD;
 	if (s[0] == 'T')
 		return MOVETOSTRAIGHT_CMD;
-	if(s[0]=='C')
-		return PID_MOVE_TO;
-	if(s[0]=='D')
-		return PID_MOVE_TO_STRAIGHT;
-
+	
 	//////////////////////////////////////////////////////////////////////////
 	/* End Wigglesworth Code*/
 	//////////////////////////////////////////////////////////////////////////
@@ -3661,8 +3653,8 @@ int HashInputCMD(char *s)
 		return FIND_HOME_CMD;
 	if(s[0]=='n')
 		return FIND_INDEX_CMD;
-	//if(s[0]=='p')
-	//	return FIND_HOME_REP_CMD;
+	if(s[0]=='p')
+		return FIND_HOME_REP_CMD;
 	if(s[0]=='l')
 		return LOAD_TABLES;
 	if(s[0]=='i')
@@ -3709,17 +3701,18 @@ int getNormalizedInput(int param)
 	int val;
 	float corrF=1;
 	if ('0'==status_mode) {
-		if(param == SLOPE_BASE_POSITION){return ServoData[1].PresentPossition;}
-		if(param == SLOPE_PIVOT_POSITION){return ServoData[1].PresentLoad;}
-		if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
-		if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
-		if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
-	}
+	if(param == SLOPE_BASE_POSITION){return ServoData[1].PresentPossition;}
+	if(param == SLOPE_PIVOT_POSITION){return ServoData[1].PresentLoad;}
+	if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
+	if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
+	if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
+		}
+	
 	val = mapped[param];
 	if((val & 0x40000)!=0) 	{
 		val = (val | 0xfff80000);
-		}
-
+	}
+	
 	if(param == BASE_MEASURED_ANGLE ){return (int)((float)val / (JointsCal[0] * Interpolation[0])) + HomeOffset[0];}
 	if(param == PIVOT_MEASURED_ANGLE){return (int)((float)val / (JointsCal[1] * Interpolation[1])) + HomeOffset[1];}
 	if(param == END_MEASURED_ANGLE  ){return (int)((float)val / (JointsCal[2] * Interpolation[2])) + HomeOffset[2];}
@@ -3794,7 +3787,7 @@ void moverobotPID(int a1,int a2,int a3,int a4,int a5) {
 	
 	//check the resulting movement to see if it's out of bounds. 
 	DexError = CheckBoundry(&a1,&a2,&a3,&a4,&a5);
-
+	
 	a1=(int)((double)a1 * JointsCal[0]);
 	a2=(int)((double)a2 * JointsCal[1]);
 	a3=(int)((double)a3 * JointsCal[2]);
@@ -4314,7 +4307,7 @@ int JointAngleBoundErr(char ejoint, int eangle, int eboundry) {
 	//so... per James W. communication from Kent,
 	//don't do this until there are two sets of boundaries. One for the FPGA, and one larger that is mechanical max. Instead:
 	return 0;
-	}
+		}
 
 int CheckBoundry(int* j1, int* j2, int* j3, int* j4, int* j5) {
 	int err = 0; // Error number to return, default to zero
@@ -5191,7 +5184,7 @@ int getInput(void) {
 		DexError=ParseInput(iString);
 		if (0 < DexError) {
 			printf("ERROR %i\n", DexError);
-			}
+	}
 //DMA_READ_DATA,DMA_READ_DATA,RECORD_BLOCK_SIZE,END_EFFECTOR_IO_IN,
 		printf("{\"DMA\":%i,\t\"BLOCK_SIZE\": %i,\t\"EFFECTOR\": %i,"
 			,getNormalizedInput(StatusReportIndirection[1])
@@ -5220,7 +5213,7 @@ int getInput(void) {
 		return DexError;
 		}
     return 0;
-	}
+}
 
 unsigned char h2int(char c) {
   if (c >= '0' && c <='9') { return((unsigned char)c - '0');      }
@@ -5258,15 +5251,6 @@ int ParseInput(char *iString)
 	int i,j,Add,Start,Length,Delay,Axis,tokenVal;
 	float f1;
 	int d2,d3,d4,d5;
-
-	//move_to and pid_move_to vars
-	int J1, J2, J3, J4, J5;
-	struct Vector my_point;
-	struct Vector my_dir;
-	struct Config my_config;
-	struct XYZ xyz_1;
-	struct J_angles result_J_angles;
-
 	////printf("\nStart wait Goal");
 #ifdef DEBUG_API
 	printf("ParseInput: %s\n", iString);
@@ -5543,15 +5527,16 @@ int ParseInput(char *iString)
 					p3=strtok (NULL, delimiters);
 					p4=strtok (NULL, delimiters);
 					p5=strtok (NULL, delimiters);
-					
-					p6=strtok (NULL, delimiters);
-					if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
-					//if(p6 != NULL){ printf("p6 %s\n",p6); }
-					//else{ printf("p6 doesn't exist\n"); }
-					p7=strtok (NULL, delimiters);
-					if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
-					//if(p7 != NULL){ printf("p7 %s\n",p7); }
-					//else{ printf("p7 doesn't exist\n"); }
+
+                                        p6=strtok (NULL, delimiters);
+                                        if (p6 && 'N'!=p6[0]) SetGripperRoll(atoi(p6));
+                                        //if(p6 != NULL){ printf("p6 %s\n",p6); }
+                                        //else{ printf("p6 doesn't exist\n"); }
+                                        p7=strtok (NULL, delimiters);
+                                        if (p7 && 'N'!=p7[0]) SetGripperSpan(atoi(p7));
+                                        //if(p7 != NULL){ printf("p7 %s\n",p7); }
+                                        //else{ printf("p7 doesn't exist\n"); }
+
 					
 					if(p1!=NULL && p2!=NULL && p3!=NULL && p4!=NULL && p5!=NULL)	
 						MoveRobot(atoi(p1),atoi(p2),atoi(p3),atoi(p4),atoi(p5),BLOCKING_MOVE);
@@ -5577,17 +5562,17 @@ int ParseInput(char *iString)
 					
 					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
 					
-					my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
-					my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
-					my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
-					xyz_1 = new_XYZ(my_point, my_dir, my_config);
-					result_J_angles = xyz_to_J_angles(xyz_1);
+					struct Vector my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
+					struct Vector my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					struct Config my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
+					struct XYZ xyz_1 = new_XYZ(my_point, my_dir, my_config);
+					struct J_angles result_J_angles = xyz_to_J_angles(xyz_1);
 					
-					J1 = (int)round(result_J_angles.J1);
-					J2 = (int)round(result_J_angles.J2);
-					J3 = (int)round(result_J_angles.J3);
-					J4 = (int)round(result_J_angles.J4);
-					J5 = (int)round(result_J_angles.J5);
+					int J1 = (int)round(result_J_angles.J1);
+					int J2 = (int)round(result_J_angles.J2);
+					int J3 = (int)round(result_J_angles.J3);
+					int J4 = (int)round(result_J_angles.J4);
+					int J5 = (int)round(result_J_angles.J5);
 					
 					//printf("\nJangles: \n");
 					//printf("[%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
@@ -5659,49 +5644,6 @@ int ParseInput(char *iString)
 					
 				break;
 				
-				case PID_MOVE_TO:
-					//printf("\nMOVETO_CMD\n");
-					//MoveRobot(36000, 36000, 36000, 36000, 36000, BLOCKING_MOVE);
-					
-					p1 = strtok(NULL, delimiters);
-					p2 = strtok(NULL, delimiters);
-					p3 = strtok(NULL, delimiters);
-					p4 = strtok(NULL, delimiters);
-					p5 = strtok(NULL, delimiters);
-					p6 = strtok(NULL, delimiters);
-					p7 = strtok(NULL, delimiters);
-					p8 = strtok(NULL, delimiters);
-					p9 = strtok(NULL, delimiters);
-
-					p10 = strtok(NULL, delimiters);
-					p11 = strtok(NULL, delimiters);
-					
-					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
-					
-					my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
-					my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
-					my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
-					xyz_1 = new_XYZ(my_point, my_dir, my_config);
-					result_J_angles = xyz_to_J_angles(xyz_1);
-					
-					J1 = (int)round(result_J_angles.J1);
-					J2 = (int)round(result_J_angles.J2);
-					J3 = (int)round(result_J_angles.J3);
-					J4 = (int)round(result_J_angles.J4);
-					J5 = (int)round(result_J_angles.J5);
-					
-					//printf("\nJangles: \n");
-					printf("PID: [%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
-					//printf("\n");
-					
-					if (p10 && 'N'!=p10[0]) SetGripperRoll(atoi(p10));
-					if (p11 && 'N'!=p11[0]) SetGripperSpan(atoi(p11));
-
-					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL)
-						moverobotPID(J1, J2, J3, J4, J5);
-
-					
-				break;
 					
 				/* End Wigglesworth Code*/
 				//////////////////////////////////////////////////////////////////////////
@@ -5751,7 +5693,7 @@ int ParseInput(char *iString)
 					//printf("\n %d %d %d \n",OldMemMapInderection[i],i,j);
 					if(OldMemMapInderection[i]==COMMAND_REG)
 						CmdVal=j;
-					//printf("\n  mapped[%d]=%d;\n",OldMemMapInderection[i],j);
+					//printf("\n  mapped[%d] = %d;\n",OldMemMapInderection[i],j);
 					//to build up a set of FPGA commands, just use the above printf and copy the result into your code.
 					mapped[OldMemMapInderection[i]]=j;
 					if(i==ACCELERATION_MAXSPEED)
