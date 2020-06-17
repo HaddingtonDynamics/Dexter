@@ -1,0 +1,283 @@
+<html>
+  <head>
+    <style>
+    	button {
+        	margin-right:10px; 
+            font-size:14px; 
+            padding-top:2px; 
+            padding-bottom:2px;
+            background-color:#93dfff;
+            border-width:2px;
+    		border-style:outset;
+        }
+        input[type=button] {background-color:#ddd3ff; font-size:14px;}
+
+		input[type=submit] {background-color:#93dfff; font-size:14px;}
+        
+        .dde_error_css_class {
+    		color:red;
+		}
+        .warning_css_class {
+    		color:#e50;  /*orange*/
+		}
+        .doc_details {
+        	margin-left:20px;
+        	font-size:16px;
+    	}
+    	.doc_details summary { font-weight: 600; }
+    </style>
+    <script type="text/javascript" src="je_and_browser_code.js"></script>
+    <script> 
+        console.log("top of script tag in browser")
+        var platform = "browser"
+        var web_socket
+        function get_init_jobs(){
+            console.log("top of get_init_jobs in browser")
+        	var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = handle_init_jobs
+            xhttp.open("GET", "/init_jobs", true);
+            xhttp.send();
+        }
+        function handle_init_jobs(){
+        	if (this.readyState == 4 && this.status == 200) {
+                let response_text = this.responseText
+                let data = JSON.parse(response_text) //array of strings of job names
+                //console.log("handle_init_jobs recieved data: " + JSON.stringify(data))
+                for(let job_name_with_extension of data){ 
+                    if(job_name_with_extension.endsWith(".js") ||
+                       job_name_with_extension.endsWith(".dde")){
+                       if(job_name_with_extension !== "dde_init.js"){
+                         make_job_button(job_name_with_extension)
+                       }
+                    }
+                }
+             }
+             init_ws()
+        }
+        function make_job_button(job_name_with_extension_or_job_name){
+            let dot_index = job_name_with_extension_or_job_name.indexOf(".")
+            let job_name
+            let job_name_with_extension
+            if(dot_index == -1) {
+               job_name = job_name_with_extension_or_job_name
+               job_name_with_extension = job_name + ".js"  //beware, its possible its really a .dde file 
+               //BUT, mostly job_name_with_extension won't be used as you won't be starting such
+               //jobs from their button (but you will want to see their status).
+            }
+            else {
+               job_name = job_name_with_extension_or_job_name.substring(0, dot_index)
+               job_name_with_extension = job_name_with_extension_or_job_name 
+            }
+            let but_elt = document.createElement("BUTTON");
+            but_elt.innerHTML = job_name
+            but_elt.id = job_name + "_job_button_id"
+            but_elt.title = "Click to start this job."
+            let the_url = "/job_button_click?job_name_with_extension=" + job_name_with_extension
+            //console.log("get_job_button_click requesting url: " + the_url)
+            but_elt.onclick = function(){ get_job_button_click(job_name_with_extension) }
+            but_elt.style["background-color"] = "#DDDDDD"
+            but_elt.style["font-size"] = "14px" 
+            but_elt.style["margin-right"] = "10px"
+            but_elt.style["padding-top"] = "2px" 
+            but_elt.style["padding-bottom"] = "3px" 
+            job_button_container_id.appendChild(but_elt)  
+        } 
+        
+         function get_keep_alive_click(event){
+            let is_checked = event.target.checked
+            let mess_obj = {kind: "keep_alive_click",
+                            job_name_with_extension: "keep_alive", //this is a pseudo-job, not a real job, but its processed like one.
+                            keep_alive_value: is_checked}
+            web_socket.send(JSON.stringify(mess_obj))
+         }
+        
+        var job_name_with_extension_to_xhttp = {}
+        function get_job_button_click(job_name_with_extension){
+            console.log("top of get_job_button_click in browser")
+           /* var xhttp = job_name_with_extension_to_xhttp[job_name_with_extension]
+            if (!xhttp || (xhttp.readyState == 4)) { 
+            	xhttp = new XMLHttpRequest() //this will not time out.
+                job_name_with_extension_to_xhttp[job_name_with_extension] = xhttp
+                xhttp.onreadystatechange = handle_stdout
+            }
+            let the_url = "/job_button_click?job_name_with_extension=" + job_name_with_extension
+            //console.log("get_job_button_click requesting url: " + the_url)
+            xhttp.open("GET", the_url, true);
+            xhttp.send();
+            */
+            let mess_obj = {kind: "job_button_click", job_name_with_extension: job_name_with_extension}; 
+            web_socket.send(JSON.stringify(mess_obj))
+       }
+       
+       function init_ws(){
+       	 web_socket = new WebSocket("ws://"+window.location.hostname+":3001")
+         web_socket.onmessage = handle_ws_msg
+       }
+       function handle_ws_msg(event){
+           //onsole.log("handle_ws_msg with total text: " + event.data + "\n\n")
+           let [stdout_text, data_array] = split_response_text_into_stdout_and_data(event.data)
+           
+           //onsole.log("handle_ws_msg recieved data: " + JSON.stringify(data))
+           //onsole.log("handle_ws_msg recieved stdout_text: " + stdout_text)
+           if(stdout_text.trim() !== ""){
+           		stdout_text = stdout_text.replace(new RegExp("\n", 'g'), "<br/>")
+           		//stdout_id.innerHTML += (stdout_text)
+                //stdout_id.insertAdjacentHTML('beforeend', stdout_text)
+                //stdout_id.scrollTop = stdout_id.scrollHeight
+                append_to_output(stdout_text)
+           }
+           for(data of data_array) { 
+               //console.log("In handle_stdout with data: " + JSON.stringify(data))
+               if(data.kind === "show_job_button"){
+                   let job_name = data.job_name
+                   let button_id = job_name + "_job_button_id"
+                   let but_elt = window[button_id]
+                   if(!but_elt){//happens for job set_link_lengths, maybe other jobs started by THE job that spawned the process 
+                       make_job_button(job_name)
+                       setTimeout(function(){
+                           let but_elt = window[button_id]
+                           but_elt.title = data.button_tooltip
+                           but_elt.style["background-color"] = data.button_color
+                       }, 200) //needed because button takes a while to become created and installed in browser
+                   }
+                   else {
+                       but_elt.title = data.button_tooltip
+                       but_elt.style["background-color"] = data.button_color
+                   }
+               }
+               else if(data.kind === "out_call"){
+               	   out(data.val, data.color, data.temp, data.code)
+               }
+               else if(data.kind === "selector_set_in_ui_call"){
+               	   selector_set_in_ui(data.path_string, data.value)
+               }
+               else if (data.kind === "show_window"){
+                   SW.render_show_window(data)
+               }
+           }
+        }
+         //expect response_text to look like:
+         //"foo<for_server>{.a.}</for_server> bar <for_server>{.b.}</for_server> baz"
+         //return ["foo bar  baz", [{.a.}, {.b.}]]
+         function split_response_text_into_stdout_and_data(response_text){
+           let data_array = []
+           let strs = response_text.split("<for_server>") 
+              //if response_text starts with "<for_server>", 
+              //first elt of strs will be ""
+              //if no "<for_server>" in response_text, strs will have 1 elt, the whole response_text
+           let str_for_std_out = strs.shift()
+           //now str_for_std_out has the first elt of the orig split result,
+           //and strs has had its first elt removed.          
+           for (let str of strs) {
+              //str originally started with "<for_server>" but that's stipped out by split
+              let for_server_end_pos = str.indexOf("</for_server>")
+              if (for_server_end_pos == -1) { //shouldn't. incomplete for_server tag, 
+                  //so just spit str out 
+                 str_for_std_out += str
+              }
+              else { //normal: got complete for_server tag 
+                 let the_data_str = str.substring(0, for_server_end_pos)
+                 let the_str_for_out = str.substring(for_server_end_pos) //might be ""
+                 data_array.push(JSON.parse(the_data_str))
+                 str_for_std_out += the_str_for_out   
+              }
+           }
+           return [str_for_std_out, data_array]
+         }
+	</script>
+  </head>
+  <body id="body_id" onload='get_init_jobs()'>
+        <a href="/">Back to Dexter Applications</a><br/>
+    	<div style='font-size:20px; font-weight:700;'>Dexter Job Engine</div>
+          Showing a button for the first job defined in each file in /srv/samba/share/dde_apps/<br/>
+          Click a Job&apos;s button to start or stop it.<br/>
+        <details class="doc_details"><summary>Help</summary>
+         <details class="doc_details"><summary>Capabilities</summary>
+         The Job Engine runs Jobs that are defined in files in Dexter's /srv/samba/share/dde_apps/" folder.
+         These files should have extensions of ".js" or ".dde" and contain JavaScript.
+         The JavaScript can define Jobs, using most instructions, including most
+         Human instructions. The code can call the functions: show_window, out, dde_error,
+         warning, and the usual functions needed for creating Jobs.
+         If you have an appropriately configures sound card, you can call
+         speak, beep, and beeps.
+         <p/>
+         Using the buttons in the button bar, you can start, stop, and resumed paused
+         Jobs just like in Dexter Development Environment(DDE).
+         The pane below the button bar shows you messages that help you monitor
+         the running of the job, including error messages.
+         <p/>
+         If you want to understand, debug, extend or write new Jobs, please
+         use DDE.
+        </details>
+        <details class="doc_details"><summary>Requirements</summary>
+          This interface runs in a standard, modern browser. It is most heavily
+          tested in Chrome.<br/>
+          Your Dexter file system needs to have
+          recent versions of:
+          <ul><li>the files: /srv/samba/share/www/httpd.js, jobs.js and index.html</li>
+              <li>the folders: /root/Documents/dde/core/, low_level_dexter/, and math/</li>
+          </ul>
+          Each of the Job definition files should have a name
+          that is THE SAME as the name of the first Job defintion in the file, 
+          but with an extension of <code>.js</code> or <code>.dde</code>.
+          Other extensions <i>might</i> work.
+        </details>
+        <details class="doc_details"><summary>User Guide</summary>
+          <ol>
+          <li>Connect the computer running the browser to Dexter via USB.</li>
+          <li>In the browser, enter a url of the IP address of your Dexter,
+          	typically: <code>192.168.1.142</code><br/>
+          	You'll see a page of <b>Dexter Applications</b>.</li>
+          <li>Click the link for "Job Engine".<br/>
+          	This displays a new page that shows a button for each Job in
+          	Dexter's /srv/samba/share/dde_apps/ folder.</li>
+          <li>Click a button to load its file into the Job Engine,
+             which defines the Job, then automatically starts it.</li>
+          <li>While the Job is running, it's button will turn green.
+              You can stop the Job by clicking the button.</li>
+          <li>During the running of the Job you'll see its progress and
+              any messages it prints out in the Output pane.</li>
+          <li>If the Job runs to completion, its button will turn purple.<br/>
+              If it errors, its button will turn red.</li>
+          <li>Hover the mouse over
+              the Job button to see its status or error message.</li>
+          <li>You can restart a stopped Job by clicking its button.</li>
+          </ol>
+        </details>
+        <details class="doc_details"><summary>Keep Alive</summary>
+         A checkbox to the left of the button bar permits you to
+         <i>keep alive</i> the process of a Job after it has completed.
+         This is useful if you want to share state between Jobs after they
+         have completed. It is also convenient to have top level <code>show_window</code>
+         dialog boxes that can set global variables to be read (and set) by Jobs,
+         to customize their behavior.
+         <p/>
+         If you want to stop the process and start afresh,
+         just uncheck the <i>keep_alive</i> checkbox. 
+         If htere are no active jobs, the process will stop.
+         If there are active jobs, the process will stop
+         when the last one finishes. You can click running Jobs'
+         buttons to force them to stop.
+         <p/>
+         With the <code>keep_alive</code> checkbox checked, the browser behaves
+         much more like DDE, in that there is a shared process that
+         all Jobs run in. Though this is great for Jobs that interact
+         in complex ways, its a "dirtier" environment than
+         running a Job with <code>keep_alive</code> unchecked.
+        </details>
+        </details>
+        <div id='job_button_container_id' style="margin:0px; padding:12px; background-color:#bae5fe;">
+           <button onclick="clear_output()" 
+                   title="Remove all previously output text (below)."
+                   style="margin-right:0px;">Clear</button>
+           <span title="When checked, all started Jobs will run in one process&#013;so they can share state.&#013;When unchecked, started Jobs will run in their own process.">
+           	  <input id="keep_alive_id" type="checkbox" onchange="get_keep_alive_click(event)"/>
+           	  <label for="keep_alive_id" >keep_alive</label>
+           </span>
+           <div style="display:inline-block;margin:0px;padding:0px;font-size:11px;vertical-align:0px;transform:rotate(-90deg);">Jobs</div>
+        </div>
+        <!-- output_div_id is same spelling as DDE output pane content div on purpose. -->
+        <div id='output_div_id' style='margin:0px; padding:10px; background-color:#EEEEEE; overflow:auto; width:800px; height:200px;'>
+        </div>
+	</body>
+</html>

@@ -1,21 +1,19 @@
 ; These values describe the physical robot to the firmware and set the default operational values.
 ; Edit this file to accommodate the exact physical makeup of the arm.
-; Dexter Serial Number: DEX-00000
-; DexRun modified 2019-11-22T22:54:09Z
-; xillydemo modified 2019-09-16T17:04:17Z
-; OS version Ubuntu 16.04 LTS
 
 ; AxisCal is the gear ratio times the steps per revolution times the microstepping mode 
 ; e.g. for a 52:1 drive with a 400 step motor in 16 over stepping, it would be 52*400*16 or 332800
 ;S, AxisCal, -332800, -332800, -332800, -36000, -36000 ;Defaults for Dexter HD
-S, AxisCal, -332800, -332800, -332800, -86400, -86400 ;Defaults for Dexter HDI
+;S, AxisCal, -332800, -332800, -332800, -86400, -86400 ;Defaults for Dexter HDI Harmonic Drive
+S, AxisCal, -320000, -320000, -320000, -86400, -86400 ;Defaults for Dexter HDI Cone Drive
 
 ; Interpolation factor for each joint
 ;S, Interpolation, 1, 1, 1, 16, 16 ;Default for Dexter HD
 S, Interpolation, 1, 1, 1, 1, 1 ;Default for Dexter HDI
 
 ; Length of each link in the robot, in microns. L5 is first, L1 last.
-S, LinkLengths, 82440, 59500, 307500, 339092, 235200;
+;S, LinkLengths, 82551, 50801, 330201, 320676, 228600; For Dexter HD
+S, LinkLengths, 82515, 62000, 307703, 338891, 236200; For Dexter HDI
 
 ; Limits to the motion of each joint, in arcseconds from center
 S, J1BoundryHigh, 684010; 186
@@ -29,8 +27,16 @@ S, J4BoundryLow, -390010;
 S, J5BoundryHigh, 684010; 190
 S, J5BoundryLow, -684010;
 
+; Limits to the maximum velocity we should ever see on each joint
+; Excessive velocity indicates encoder or eye calibration errors
+; If these values are exceeded repeatedly, Dexter will automatically switch to open loop modes
+S, RawVelocityLimits, 1296000, 1296000, 1296000, 1296000, 1296000;
+
+a 0 0 0 0 0 512 300; Start Joint 6 / 7 servos if present
 ; Set Maximum torque for joint 6 / 7 servos
 S, ServoSet2X, 1, 35, 1020; Roll goal torque
 S, ServoSet2X, 1, 35, 1020; Roll goal torque
 S, ServoSet2X, 3, 35, 1020; Span goal torque
 S, ServoSet2X, 3, 35, 1020; Span goal torque
+
+
