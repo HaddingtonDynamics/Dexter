@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 cd /srv/samba/share
 #echo "starting">>/srv/samba/share/DexRun.log
 pkill -e -x DexRun
@@ -20,7 +19,6 @@ pkill -e -x DexRun
 		#set the timestamp of the compiled file to that of the source file
 		#so we don't keep re-compiling if the date isn't set
 		ls -l DexRun >>/srv/samba/share/DexRun.log
-		cd /srv/samba/share
 		fi
 #	fi
 
@@ -43,8 +41,32 @@ cd /srv/samba/share
 #start the local web server
 sudo node www/httpd.js & 
 
-#start default job engine job(s)
-cd /root/Documents/dde
+#./say-ip #if we make a speaker standard equipment, Dexter can speak it ip
+
+#Start default jobs from autoexec.jobs
+sleep 5 #give DexRun time to finish starting
+#https://stackoverflow.com/questions/1521462/looping-through-the-content-of-a-file-in-bash
+while read -u 10 job; do # the -u 10 uses pipe 10 in place of stdin
+
+  if [[ $job =~ ^#.* ]]
+  then
+    echo "Ignoring $job"
+  else
+    if [[ -e /srv/samba/share/dde_apps/$job ]] 
+    then
+      cd /root/Documents/dde
+      echo "/srv/samba/share/dde_apps/$job"
+      sudo node core define_and_start_job /srv/samba/share/dde_apps/$job
+      sleep 1
+    else
+      echo "$job not found"
+    fi
+  fi
+done 10< autoexec.jobs 
+# pipe to 10 so dde doesn't read lines from autoexec.jobs via stdin
+
+#start default job engine job
+#cd /root/Documents/dde
 #Find home position from index eyes in code disks, this requires HDI. 
 sleep 5 && sudo node core define_and_start_job /srv/samba/share/dde_apps/Find_Index_Pulses_HDI.dde
 #Start Physical interface, see

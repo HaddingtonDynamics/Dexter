@@ -1,0 +1,6 @@
+# Place .dde file for Job Engine in /srv/samba/share/dde_apps and 
+# list filename here to automatically execute on startup. 
+# Add a # before the filename to comment it out
+#helloworld.dde 
+Find_Index_Pulses_HDI.dde
+PHUI2RCP.js
