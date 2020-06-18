@@ -479,18 +479,6 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define ROLL_ERROR_CODE (1<<28) //Error recieved from ROLL servo, address 3 Joint 6
 #define SPAN_ERROR_CODE (1<<27) //...SPAN servo, address 1 Joint 7
 #define ERROR_INPUT_OFFSET (1<<10) //1024
-#define ERROR_INPUT_OFFSET 1024
-
-
-
-
-
-
-
-
-
-
-
 
 
 //////////////////////////////////////////////////////////////////////////
