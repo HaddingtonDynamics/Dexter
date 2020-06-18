@@ -1,6 +1,7 @@
 
 var http = require('http'); 
 var url = require('url'); //url parsing
+var formidable = require('formidable');
 var fs = require('fs'); //file system
 var net = require('net'); //network
 const ws = require('ws'); //websocket
@@ -30,6 +31,10 @@ var mimeTypes = {
   "txt": "text/plain"
   };
 
+const SHARE_FOLDER = '/srv/samba/share/'
+const DDE_APPS_FOLDER = SHARE_FOLDER + 'dde_apps/'
+const DDE_INSTALL_FOLDER = '/root/Documents/dde' //where DDE is installed on Dexter
+
 const { spawn } = require('child_process');
  
 var job_name_to_process = {}
@@ -55,7 +60,7 @@ function extract_job_name(job_name_with_extension){
 
 function serve_init_jobs(q, req, res){
     //console.log("top of serve_init_jobs in server")
-    fs.readdir("/srv/samba/share/dde_apps/", 
+    fs.readdir(DDE_APPS_FOLDER, 
         function(err, items){
             let items_str = JSON.stringify(items)
             //console.log("serve_init_jobs writing: " + items_str)
@@ -68,24 +73,24 @@ function serve_init_jobs(q, req, res){
 console.log("now making wss")
 const wss = new ws.Server({port: 3001})    //server: http_server });
 console.log("done making wss: " + wss)
- 
 
 function serve_job_button_click(browser_socket, mess_obj){
     let job_name_with_extension = mess_obj.job_name_with_extension //includes ".js" suffix 
     console.log("\n\nserver top of serve_job_button_click with job_name_with_extension: " + job_name_with_extension)
-	let jobfile = "/srv/samba/share/dde_apps/" + job_name_with_extension //q.search.substr(1)
+	  let jobfile = DDE_APPS_FOLDER + job_name_with_extension //q.search.substr(1)
     //console.log("serve_job_button_click with jobfile: " + jobfile)
     let job_name = extract_job_name(job_name_with_extension) 
     //console.log("top of serve_job_button_click with job_name: " + job_name)
     //console.log("serve_job_button_click with existing status_code: " + status_code)
-   let job_process = get_job_name_to_process(job_name) //warning: might be undefined.
-   //let server_response = res //to help close over
-   if(!job_process){
+    let job_process = get_job_name_to_process(job_name) //warning: might be undefined.
+    //let server_response = res //to help close over
+    if(!job_process){
         //https://nodejs.org/api/child_process.html
         //https://blog.cloudboost.io/node-js-child-process-spawn-178eaaf8e1f9
         job_process = spawn('node',
-                            ["core define_and_start_job " + jobfile],   //a jobfile than ends in "/keep_alive" is handled specially in core/index.js
-                            {cwd: '/root/Documents/dde', shell: true}
+                            ["core define_and_start_job " + jobfile],   
+				//a jobfile than ends in "/keep_alive" is handled specially in core/index.js
+                            {cwd: DDE_INSTALL_FOLDER, shell: true}
                            )
         set_job_name_to_process(job_name, job_process)
         console.log("just set job_name: " + job_name + " to new process: " + job_process)
@@ -157,10 +162,10 @@ function serve_show_window_call_callback(browser_socket, mess_obj){
 }
 
 function serve_file(q, req, res){
-	var filename = "/srv/samba/share/www/" + q.pathname
+	var filename = SHARE_FOLDER + "www/" + q.pathname
     console.log("serving" + q.pathname)
     fs.readFile(filename, function(err, data) {
-        if (err) {
+        if (err) { console.log(filename, "not found")
             res.writeHead(404, {'Content-Type': 'text/html'})
             return res.end("404 Not Found")
         }  
@@ -172,6 +177,12 @@ function serve_file(q, req, res){
         res.write(data)
         return res.end()
     })
+}
+
+function isBinary(byte) { //must use numbers, not strings to compare. ' ' is 32
+  if (byte >= 32 && byte < 128) {return false} //between space and ~
+  if ([13, 10, 9].includes(byte)) { return false } //or text ctrl chars
+  return true
 }
 
 //standard web server on port 80 to serve files
@@ -186,8 +197,102 @@ var http_server = http.createServer(function (req, res) {
   if (q.pathname === "/init_jobs") {
       serve_init_jobs(q, req, res)
   }
-  //else if (q.pathname === "/get_refresh") { serve_get_refresh(q, req, res) }
-  //else if(q.pathname === "/job_button_click") {
+  else if (q.pathname === "/edit" && q.query.list ) { 
+    let path = SHARE_FOLDER + q.query.list
+    console.log("File list:"+path)
+    fs.readdir(path, {withFileTypes: true}, 
+      function(err, items){ //console.log("file:" + JSON.stringify(items))
+        let dir = []
+        if (q.query.list != "/") { //not at root
+          dir.push({name: "..", size: "", type: "dir"})
+          }
+        for (i in items) { //console.log("file:", JSON.stringify(items[i]))
+          if (items[i].isFile()) { 
+            let stats = fs.statSync(path + items[i].name)
+            let size = stats["size"]
+            dir.push({name: items[i].name, size: size, type: "file"})
+            } //size is never actually used.
+          else if (items[i].isDirectory()) {
+            dir.push({name: items[i].name, size: "", type: "dir"})
+            } //directories are not currently supported. 
+          }
+        res.write(JSON.stringify(dir))
+        res.end()
+      })
+    }
+  else if (q.pathname === "/edit" && q.query.edit ) { 
+    let filename = SHARE_FOLDER + q.query.edit
+    console.log("serving" + filename)
+    fs.readFile(filename, function(err, data) {
+        if (err) {
+            res.writeHead(404, {'Content-Type': 'text/html'})
+            return res.end("404 Not Found")
+        }
+        let stats = fs.statSync(filename)
+        console.log(("permissions:" + (stats.mode & parseInt('777', 8)).toString(8)))
+        for (let i = 0; i < data.length; i++) { 
+          if ( isBinary(data[i]) ) { console.log("binary data:" + data[i] + " at:" + i)
+            res.setHeader("Content-Type", "application/octet-stream")
+            break
+            }
+          }
+        res.writeHead(200)
+        res.write(data)
+        return res.end()
+      })
+    }
+    else if (q.pathname === "/edit" && req.method == 'POST' ) { //console.log("edit post file")
+        const form = formidable({ multiples: false });
+        form.once('error', console.error);
+        const DEFAULT_PERMISSIONS = parseInt('644', 8)
+        var stats = {mode: DEFAULT_PERMISSIONS}
+        form.on('file', function (filename, file) { 
+          try { console.log("copy", file.path, "to", SHARE_FOLDER + file.name)
+            stats = fs.statSync(SHARE_FOLDER + file.name) 
+            console.log(("had permissions:" + (stats.mode & parseInt('777', 8)).toString(8)))
+          } catch {} //no biggy if that didn't work
+          fs.copyFile(file.path, SHARE_FOLDER + file.name, function(err) {
+            let new_mode = undefined
+            if (err) { console.log("copy failed:", err)
+              res.writeHead(400)
+              return res.end("Failed")
+              }
+            else {
+              fs.chmodSync(SHARE_FOLDER + file.name, stats.mode)
+              try { //sync ok because we will recheck the actual file
+                let new_stats = fs.statSync(SHARE_FOLDER + file.name)
+                new_mode = new_stats.mode
+                console.log(("has permissions:" + (new_mode & parseInt('777', 8)).toString(8)))
+              } catch {} //if it fails, new_mode will still be undefined
+              if (stats.mode != new_mode) { //console.log("permssions wrong")
+                //res.writeHead(400) //no point?
+                return res.end("Permissions error")
+                }
+              fs.unlink(file.path, function(err) {
+                if (err) console.log(file.path, 'not cleaned up', err);
+                }); 
+              res.end('ok');
+              }
+            }) //done w/ copyFile
+          });
+        form.parse(req)
+        //res.end('ok');
+      // });
+      }
+      else if (q.pathname === "/edit" && req.method == 'PUT' ) { console.log('edit put')
+        const form = formidable({ multiples: true });
+        form.parse(req, (err, fields, files) => { //console.log('fields:', fields);
+          let pathfile = SHARE_FOLDER + fields.path
+          fs.writeFile(pathfile, "", function (err) { console.log('create' + pathfile)
+            if (err) {console.log("failed", err)
+              res.writeHead(400)
+              return res.end("Failed:" + err)
+              }
+           res.end('ok'); //console.log('done');
+           }); 
+          });
+        }
+      //else if(q.pathname === "/job_button_click") {
   //	  serve_job_button_click(q, req, res)
   //}
   //else if(q.pathname === "/show_window_button_click") {
@@ -221,6 +326,132 @@ function jobs(q, res){
 */
 
 
+// ModBus client server
+const ModbusRTU = require("modbus-serial");
+var modbus_reg = []
+
+function modbus_startjob(job_name) {
+	console.log(job_name)
+	let jobfile = DDE_APPS_FOLDER + job_name + ".dde"
+	let job_process = get_job_name_to_process(job_name)
+	if(!job_process){
+	    console.log("spawning " + jobfile)
+	    //https://nodejs.org/api/child_process.html
+	    //https://blog.cloudboost.io/node-js-child-process-spawn-178eaaf8e1f9
+	    //a jobfile than ends in "/keep_alive" is handled specially in core/index.js
+	    job_process = spawn('node',
+		["core define_and_start_job " + jobfile],   
+		{cwd: DDE_INSTALL_FOLDER, shell: true}
+		)
+	    set_job_name_to_process(job_name, job_process)
+	    console.log("Spawned " + DDE_APPS_FOLDER + job_name + ".dde as process id " + job_process)
+	    job_process.stdout.on('data', function(data) {
+		console.log("\n\n" + job_name + ">'" + data + "'\n")
+		let data_str = data.toString()
+		if (data_str.substr(0,7) == "modbus:") { //expecting 'modbus: 4, 123' or something like that
+		    [addr, value] = data_str.substr(7).split(",").map(x => parseInt(x) || 0)
+		    modbus_reg[addr] = value
+		//TODO: Change this to something that allows multiple values to be set in one out.
+		    }
+		})
+	 
+	    job_process.stderr.on('data', function(data) {
+	  	console.log("\n\n" + job_name + "!>'" + data + "'\n")
+		//remove_job_name_to_process(job_name) //error doesn't mean end.
+		})
+	    job_process.on('close', function(code) {
+		console.log("\n\nJob: " + job_name + ".dde closed with code: " + code)
+		//if(code !== 0){  } //who do we tell if a job crashed?
+		remove_job_name_to_process(job_name)
+		})
+	    }
+	else {
+	    console.log("\n" + job_name + " already running as process " + job_process)
+	    } //finished with !job_process
+	}
+
+var vector = {
+    //TODO: Figure out what to return as inputs.
+    // Possible: Values from a file? 
+    // e.g. modbus.json has an array where jobs can store data to be read out here.
+    // maybe that is the modbus_reg array as a json file?
+    getInputRegister: function(addr) { //doesn't get triggered by QModMaster for some reason.
+	//This does work mbpoll -1 -p 8502 -r 2 -t 3 192.168.0.142 
+        console.log("read input", addr)
+        return addr; //just sample data
+        },
+    getMultipleInputRegisters: function(startAddr, length) {
+        console.log("read inputs from", startAddr, "for", length); 
+        var values = [];
+        for (var i = startAddr; i < length; i++) {
+            values[i] = startAddr + i; //just sample return data
+            }
+        return values;
+        },
+    getHoldingRegister: function(addr) {
+        let value = modbus_reg[addr] || 0
+        console.log("read register", addr, "is", value)
+        return value 
+        },
+    getMultipleHoldingRegisters: function(startAddr, length) {
+        console.log("read registers from", startAddr, "for", length); 
+        let values = []
+        for (var i = 0; i < length; i++) {
+            values[i] = modbus_reg[i] || 0
+            }
+        return values
+        },
+    setRegister: function(addr, value) { 
+        console.log("set register", addr, "to", value) 
+        modbus_reg[addr] = value
+        return
+        },
+    getCoil: function(addr) { //return 0 or 1 only.
+        let value = ((addr % 2) === 0) //just sample return data
+        console.log("read coil", addr, "is", value)
+        return value 
+        //TODO Return the status of the job modbuscoil<addr>.dde
+        // e.g. 1 if it's running, 0 if it's not.
+        },
+    setCoil: function(addr, value) { //gets true or false as a value.
+        console.log("set coil", addr, " ", value)
+	if (value) { modbus_startjob("modbus" + addr) }
+	else { console.log("stop") }
+        //TODO Start or kill job modbuscoil<addr>.dde depending on <value>
+        // Maybe pass in with modbus_reg as a user_data? or they can access the file?
+        return; 
+        },
+    readDeviceIdentification: function(addr) {
+        return {
+            0x00: "HaddingtonDynamics",
+            0x01: "Dexter",
+            0x02: "1.1",
+            0x05: "HDI",
+            0x97: "MyExtendedObject1",
+            0xAB: "MyExtendedObject2"
+        };
+    }
+};
+
+// set the server to answer for modbus requests
+console.log("ModbusTCP listening on modbus://0.0.0.0:8502");
+var serverTCP = new ModbusRTU.ServerTCP(vector, { host: "0.0.0.0", port: 8502, debug: true, unitID: 1 });
+
+serverTCP.on("initialized", function() {
+    console.log("initialized");
+});
+
+serverTCP.on("socketError", function(err) {
+    console.error(err);
+    serverTCP.close(closed);
+});
+
+function closed() {
+    console.log("server closed");
+}
+
+
+// Web Socket Proxy to DexRun raw socket
 wss.on('connection', function(the_ws, req) {
   console.log("\n\nwss got connection: " + the_ws)
   console.log("\nwss SAME AS the_ws : " + (wss === the_ws))
@@ -245,8 +476,6 @@ wss.on('connection', function(the_ws, req) {
   })
   the_ws.send('websocket connected.\n')
 })
-
-
 
 //websocket server that connects to Dexter
 //socket server to accept websockets from the browser on port 3000
