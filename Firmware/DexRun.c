@@ -405,6 +405,8 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define MOVETO_CMD 26
 #define MOVETOSTRAIGHT_CMD 27
 #define WRITE_TO_ROBOT 28
+#define PID_MOVE_TO 29
+#define PID_MOVE_TO_STRAIGHT 30
 
 #define DEFAULT_MAXSPEED = 232642; // 30 (deg/s)
 #define DEFAULT_STARTSPEED = 512; // .066 (deg/s) This is the smallest number allowed
@@ -3637,7 +3639,11 @@ int HashInputCMD(char *s)
 		return MOVETO_CMD;
 	if (s[0] == 'T')
 		return MOVETOSTRAIGHT_CMD;
-	
+	if(s[0]=='C')
+		return PID_MOVE_TO;
+	if(s[0]=='D')
+		return PID_MOVE_TO_STRAIGHT;
+
 	//////////////////////////////////////////////////////////////////////////
 	/* End Wigglesworth Code*/
 	//////////////////////////////////////////////////////////////////////////
@@ -5251,6 +5257,15 @@ int ParseInput(char *iString)
 	int i,j,Add,Start,Length,Delay,Axis,tokenVal;
 	float f1;
 	int d2,d3,d4,d5;
+
+    //move_to and pid_move_to vars
+	int J1, J2, J3, J4, J5;
+	struct Vector my_point;
+	struct Vector my_dir;
+	struct Config my_config;
+	struct XYZ xyz_1;
+	struct J_angles result_J_angles;
+
 	////printf("\nStart wait Goal");
 #ifdef DEBUG_API
 	printf("ParseInput: %s\n", iString);
@@ -5562,18 +5577,19 @@ int ParseInput(char *iString)
 					
 					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
 					
-					struct Vector my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
-					struct Vector my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
-					struct Config my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
-					struct XYZ xyz_1 = new_XYZ(my_point, my_dir, my_config);
-					struct J_angles result_J_angles = xyz_to_J_angles(xyz_1);
+					my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
+					my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
+					xyz_1 = new_XYZ(my_point, my_dir, my_config);
+					result_J_angles = xyz_to_J_angles(xyz_1);
 					
-					int J1 = (int)round(result_J_angles.J1);
-					int J2 = (int)round(result_J_angles.J2);
-					int J3 = (int)round(result_J_angles.J3);
-					int J4 = (int)round(result_J_angles.J4);
-					int J5 = (int)round(result_J_angles.J5);
-					
+					J1 = (int)round(result_J_angles.J1);
+					J2 = (int)round(result_J_angles.J2);
+					J3 = (int)round(result_J_angles.J3);
+					J4 = (int)round(result_J_angles.J4);
+					J5 = (int)round(result_J_angles.J5);
+
+
 					//printf("\nJangles: \n");
 					//printf("[%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
 					//printf("\n");
@@ -5644,6 +5660,50 @@ int ParseInput(char *iString)
 					
 				break;
 				
+                case PID_MOVE_TO:
+					//printf("\nMOVETO_CMD\n");
+					//MoveRobot(36000, 36000, 36000, 36000, 36000, BLOCKING_MOVE);
+
+					p1 = strtok(NULL, delimiters);
+					p2 = strtok(NULL, delimiters);
+					p3 = strtok(NULL, delimiters);
+					p4 = strtok(NULL, delimiters);
+					p5 = strtok(NULL, delimiters);
+					p6 = strtok(NULL, delimiters);
+					p7 = strtok(NULL, delimiters);
+					p8 = strtok(NULL, delimiters);
+					p9 = strtok(NULL, delimiters);
+
+					p10 = strtok(NULL, delimiters);
+					p11 = strtok(NULL, delimiters);
+
+					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
+
+					my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
+					my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
+					xyz_1 = new_XYZ(my_point, my_dir, my_config);
+					result_J_angles = xyz_to_J_angles(xyz_1);
+
+					J1 = (int)round(result_J_angles.J1);
+					J2 = (int)round(result_J_angles.J2);
+					J3 = (int)round(result_J_angles.J3);
+					J4 = (int)round(result_J_angles.J4);
+					J5 = (int)round(result_J_angles.J5);
+
+					//printf("\nJangles: \n");
+					printf("PID: [%d, %d, %d, %d, %d]", J1, J2, J3, J4, J5);
+					//printf("\n");
+
+					if (p10 && 'N'!=p10[0]) SetGripperRoll(atoi(p10));
+					if (p11 && 'N'!=p11[0]) SetGripperSpan(atoi(p11));
+
+					if (p1 != NULL && p2 != NULL && p3 != NULL && p4 != NULL && p5 != NULL)
+						moverobotPID(J1, J2, J3, J4, J5);
+
+
+				break;
+
 					
 				/* End Wigglesworth Code*/
 				//////////////////////////////////////////////////////////////////////////
