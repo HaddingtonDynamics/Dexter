@@ -3,7 +3,7 @@
 Dexter Development Environment is the IDE for Dexter. It is written in javascript and runs as an electron app on the desktop, and under node.js on Dexter. When used to run DDE programs (aka "jobs") on Dexter, it is known as the "Job Engine"
 
 The current long term release version of DDE, which will not change as rapidly as the development version, is avaiable at:<br>
-https://github.com/cfry/dde/releases/tag/v2.5.13
+https://github.com/cfry/dde/releases/tag/v2.5.17  
 
 Newer development releases of DDE can be found on the [releases tab](https://github.com/cfry/dde/tags) at:<br>
 https://github.com/cfry/dde
