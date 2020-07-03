@@ -5566,7 +5566,7 @@ int ParseInput(char *iString)
 					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
 					
 					my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
-					my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					my_dir = new_vector(atof(p4), atof(p5), atof(p6));
 					my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
 					xyz_1 = new_XYZ(my_point, my_dir, my_config);
 					result_J_angles = xyz_to_J_angles(xyz_1);
@@ -5633,7 +5633,7 @@ int ParseInput(char *iString)
 
 
 					struct Vector my_point_end = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
-					struct Vector my_dir_end = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					struct Vector my_dir_end = new_vector(atof(p4), atof(p5), atof(p6));
 					struct Config my_config_end = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
 					struct XYZ xyz_end = new_XYZ(my_point_end, my_dir_end, my_config_end);
 					printf("\nxyz_end:\n");
@@ -5668,7 +5668,7 @@ int ParseInput(char *iString)
 					//printf("xyz: [%d, %d, %d] dir: [%d, %d, %d] config: [%d, %d, %d]\n", p1f, p2f, p3f, p4f, p5f, p6f, p7f, p8f, p9f);
 
 					my_point = new_vector((float)atoi(p1), (float)atoi(p2), (float)atoi(p3));
-					my_dir = new_vector((float)atoi(p4), (float)atoi(p5), (float)atoi(p6));
+					my_dir = new_vector(atof(p4), atof(p5), atof(p6));
 					my_config = new_config((bool)atoi(p7), (bool)atoi(p8), (bool)atoi(p9));
 					xyz_1 = new_XYZ(my_point, my_dir, my_config);
 					result_J_angles = xyz_to_J_angles(xyz_1);
