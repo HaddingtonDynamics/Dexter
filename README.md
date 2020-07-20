@@ -15,7 +15,8 @@ Dexter HD:
 - [Tool Interface](https://a360.co/2V8DpoO) - Fusion 360 model of tool interface that is compatible with Dexter 1, HD, and HDI. You can download files in multiple formats.
 
 Dexter HDI: 
-- Not yet released
+- Assembly, BOM, STL files not yet released
+- [kinematic model/skin](https://a360.co/2Zfxktd) for simulation or printing skins for your unskinned HDI.
 
 See also:
 - Unity visualization and control:<br>
