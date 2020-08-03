@@ -1,4 +1,8 @@
 /* eslint-disable no-console, spaced-comment */
+// Thanks to 
+// https://www.dcisiv.com.au
+// for providing this example.
+//
 // See:
 // https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-ModBus
 // for the setup required to use this sample.
