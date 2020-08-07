@@ -1,7 +1,7 @@
 
 var http = require('http'); 
 var url = require('url'); //url parsing
-var formidable = require('formidable');
+var formidable = require('formidable'); //read form data
 var fs = require('fs'); //file system
 var net = require('net'); //network
 const ws = require('ws'); //websocket
@@ -74,10 +74,10 @@ console.log("now making wss")
 const wss = new ws.Server({port: 3001})    //server: http_server });
 console.log("done making wss: " + wss)
 
-function serve_job_button_click(browser_socket, mess_obj){
+function serve_job_button_click(browser_socket, mess_obj){ //called by wss.on('connection / the_ws.on('message
     let job_name_with_extension = mess_obj.job_name_with_extension //includes ".js" suffix 
     console.log("\n\nserver top of serve_job_button_click with job_name_with_extension: " + job_name_with_extension)
-	  let jobfile = DDE_APPS_FOLDER + job_name_with_extension //q.search.substr(1)
+	let jobfile = DDE_APPS_FOLDER + job_name_with_extension //q.search.substr(1)
     //console.log("serve_job_button_click with jobfile: " + jobfile)
     let job_name = extract_job_name(job_name_with_extension) 
     //console.log("top of serve_job_button_click with job_name: " + job_name)
@@ -100,7 +100,7 @@ function serve_job_button_click(browser_socket, mess_obj){
           //server_response.write(data_str) //pipe straight through to calling browser's handle_stdout
           //https://github.com/expressjs/compression/issues/56 sez call flush even though it isn't documented.
           //server_response.flushHeaders() //flush is deprecated.
-          browser_socket.send(data_str)
+          if (browser_socket.ReadyState == 1) browser_socket.send(data_str)
 	     })
          
         job_process.stderr.on('data', function(data) {
@@ -133,8 +133,17 @@ function serve_job_button_click(browser_socket, mess_obj){
         	code = "set_keep_alive_value(" + mess_obj.keep_alive_value + ")"
         }
         else {
-        	//code = "Job." + job_name + ".server_job_button_click()"
-            code = 'Job.maybe_define_and_server_job_button_click("' + jobfile + '")'
+          //code = "Job." + job_name + ".server_job_button_click()"
+          //e.g. `web_socket.send(JSON.stringify({"job_name_with_extension": "dexter_message_interface.dde", "ws_message": "goodbye" }))`
+            if (mess_obj.ws_message ) { // {"job_name_with_extension": jobname.dde, "ws_message": data}
+              code = 'Job.'+job_name+'.user_data.ws_message = "' + mess_obj.ws_message  + '"'
+              }
+            else if (mess_obj.code) {//if they gave us code, just pass it on.
+              code = mess_obj.code
+            }
+            else { //default is just a browser job interface button click.
+              code = 'Job.maybe_define_and_server_job_button_click("' + jobfile + '")'
+              }
         }
         console.log("serve_job_button_click writing to job: " + job_name + " stdin: " + code)
         //https://stackoverflow.com/questions/13230370/nodejs-child-process-write-to-stdin-from-an-already-initialised-process
@@ -459,23 +468,29 @@ wss.on('connection', function(the_ws, req) {
   the_ws.on('message', function(message) {
     console.log('\n\nwss server on message received: %s', message);
     //the_ws.send("server sent this to browser in response to: " + message)
-    let mess_obj = JSON.parse(message)
-    console.log("\nwss server on message receieved kind: " + mess_obj.kind)
-    if(mess_obj.kind === "keep_alive_click") {
-        serve_job_button_click(browser_socket, mess_obj)
+    let mess_obj
+    try {mess_obj = JSON.parse(message)} 
+    catch (error) { mess_obj = {kind: "message_error", error: error, message: message } }
+    console.log(" of kind: " + mess_obj.kind)
+    if(mess_obj.kind === "show_window_call_callback") { //help the job and browser with this special kind.
+      serve_show_window_call_callback(browser_socket, mess_obj)
     }
-    else if(mess_obj.kind === "job_button_click") {
-    	serve_job_button_click(browser_socket, mess_obj)
+    else if(mess_obj.kind === "keep_alive_click") { //just a keep alive ping.
+//      serve_job_button_click(browser_socket, mess_obj) //remove? No need to bug the job.
     }
-    else if(mess_obj.kind === "show_window_call_callback"){
-        serve_show_window_call_callback(browser_socket, mess_obj)
+    else if (mess_obj.job_name_with_extension) { //kind might be job_button_click or anything but we have job file. 
+      console.log(" for job " + mess_obj.job_name_with_extension)
+      serve_job_button_click(browser_socket, mess_obj)
     }
     else {
-      console.log("\n\nwss server received invalid message kind: " + mess_obj.kind)
+      console.log(" for unknown job")
+      the_ws.send("unknown job / kind")
     }
   })
   the_ws.send('websocket connected.\n')
 })
+
+
 
 //websocket server that connects to Dexter
 //socket server to accept websockets from the browser on port 3000
@@ -530,7 +545,7 @@ browser.on('connection', function connection(socket, req) {
         dexter.removeAllListeners() 
         dexter.destroy()
         } )
-      }
+      } //TODO: Should this be an else? When re-connecting, messages are sent twice.
     dexter.write(data.toString());
     });
   socket.on('close', function (data) {
