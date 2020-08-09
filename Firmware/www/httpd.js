@@ -1,7 +1,7 @@
 
 var http = require('http'); 
 var url = require('url'); //url parsing
-var formidable = require('formidable'); //read form data
+var formidable = require('formidable');
 var fs = require('fs'); //file system
 var net = require('net'); //network
 const ws = require('ws'); //websocket
@@ -62,6 +62,7 @@ function serve_init_jobs(q, req, res){
     //console.log("top of serve_init_jobs in server")
     fs.readdir(DDE_APPS_FOLDER, 
         function(err, items){
+        	console.log('\n\nAbout to stringify 1\n');
             let items_str = JSON.stringify(items)
             //console.log("serve_init_jobs writing: " + items_str)
             res.write(items_str)
@@ -74,7 +75,7 @@ console.log("now making wss")
 const wss = new ws.Server({port: 3001})    //server: http_server });
 console.log("done making wss: " + wss)
 
-function serve_job_button_click(browser_socket, mess_obj){ //called by wss.on('connection / the_ws.on('message
+function serve_job_button_click(browser_socket, mess_obj){
     let job_name_with_extension = mess_obj.job_name_with_extension //includes ".js" suffix 
     console.log("\n\nserver top of serve_job_button_click with job_name_with_extension: " + job_name_with_extension)
 	let jobfile = DDE_APPS_FOLDER + job_name_with_extension //q.search.substr(1)
@@ -100,13 +101,14 @@ function serve_job_button_click(browser_socket, mess_obj){ //called by wss.on('c
           //server_response.write(data_str) //pipe straight through to calling browser's handle_stdout
           //https://github.com/expressjs/compression/issues/56 sez call flush even though it isn't documented.
           //server_response.flushHeaders() //flush is deprecated.
-          if (browser_socket.ReadyState == 1) browser_socket.send(data_str)
+          browser_socket.send(data_str)
 	     })
          
         job_process.stderr.on('data', function(data) {
           console.log("\n\njob: " + job_name + " got stderr with data: " + data)
           remove_job_name_to_process(job_name)
           //server_response.write("Job." + job_name + " errored with: " + data)
+          console.log('\n\nAbout to stringify 2\n');
           let lit_obj = {job_name: job_name,
                          kind: "show_job_button",
                          button_tooltip: "Server errored with: " + data, 
@@ -117,6 +119,7 @@ function serve_job_button_click(browser_socket, mess_obj){ //called by wss.on('c
         job_process.on('close', function(code) {
           console.log("\n\nServer closed the process of Job: " + job_name + " with code: " + code)
           if(code !== 0){
+          	console.log('\n\nAbout to stringify 3\n');
           	let lit_obj = {job_name: job_name, 
                            kind: "show_job_button",
                            button_tooltip: "Errored with server close error code: " + code,
@@ -136,12 +139,13 @@ function serve_job_button_click(browser_socket, mess_obj){ //called by wss.on('c
           //code = "Job." + job_name + ".server_job_button_click()"
           //e.g. `web_socket.send(JSON.stringify({"job_name_with_extension": "dexter_message_interface.dde", "ws_message": "goodbye" }))`
             if (mess_obj.ws_message ) { // {"job_name_with_extension": jobname.dde, "ws_message": data}
-              code = 'Job.'+job_name+'.user_data.ws_message = "' + mess_obj.ws_message  + '"'
+              //code = 'Job.'+job_name+'.user_data.ws_message = "' + mess_obj.ws_message  + '"'
+              code = `Job.`+job_name+`.user_data.ws_message = '` + JSON.stringify(mess_obj.ws_message)  + `'`
               }
-            else if (mess_obj.code) {//if they gave us code, just pass it on.
+            else if (mess_obj.code) {
               code = mess_obj.code
             }
-            else { //default is just a browser job interface button click.
+            else {
               code = 'Job.maybe_define_and_server_job_button_click("' + jobfile + '")'
               }
         }
@@ -162,6 +166,7 @@ function serve_show_window_call_callback(browser_socket, mess_obj){
     let job_name = callback_arg.job_name
     let job_process = get_job_name_to_process(job_name)
     console.log("\n\nserve_show_window_call_callback got job_name: " + job_name + " and its process: " + job_process)
+    console.log('\n\nAbout to stringify 4\n');
     let code = mess_obj.callback_fn_name + "(" +
                JSON.stringify(callback_arg) + ")"
     //code = mess_obj.callback_fn_name + '({"is_submit": false})' //out('short str')" //just for testing
@@ -225,6 +230,7 @@ var http_server = http.createServer(function (req, res) {
             dir.push({name: items[i].name, size: "", type: "dir"})
             } //directories are not currently supported. 
           }
+        console.log('\n\nAbout to stringify 5\n');
         res.write(JSON.stringify(dir))
         res.end()
       })
@@ -468,23 +474,21 @@ wss.on('connection', function(the_ws, req) {
   the_ws.on('message', function(message) {
     console.log('\n\nwss server on message received: %s', message);
     //the_ws.send("server sent this to browser in response to: " + message)
-    let mess_obj
-    try {mess_obj = JSON.parse(message)} 
-    catch (error) { mess_obj = {kind: "message_error", error: error, message: message } }
-    console.log(" of kind: " + mess_obj.kind)
-    if(mess_obj.kind === "show_window_call_callback") { //help the job and browser with this special kind.
-      serve_show_window_call_callback(browser_socket, mess_obj)
+    console.log('\n\nAbout to parse 1\n');
+    let mess_obj = JSON.parse(message)
+    console.log("\nwss server on message receieved kind: " + mess_obj.kind)
+    if(mess_obj.kind === "keep_alive_click") {
+        serve_job_button_click(browser_socket, mess_obj)
     }
-    else if(mess_obj.kind === "keep_alive_click") { //just a keep alive ping.
-//      serve_job_button_click(browser_socket, mess_obj) //remove? No need to bug the job.
+    else if(mess_obj.kind === "job_button_click") {
+    	serve_job_button_click(browser_socket, mess_obj)
     }
-    else if (mess_obj.job_name_with_extension) { //kind might be job_button_click or anything but we have job file. 
-      console.log(" for job " + mess_obj.job_name_with_extension)
-      serve_job_button_click(browser_socket, mess_obj)
+    else if(mess_obj.kind === "show_window_call_callback"){
+        serve_show_window_call_callback(browser_socket, mess_obj)
     }
     else {
-      console.log(" for unknown job")
-      the_ws.send("unknown job / kind")
+      console.log("\n\nwss server received message kind: " + mess_obj.kind)
+      serve_job_button_click(browser_socket, mess_obj)
     }
   })
   the_ws.send('websocket connected.\n')
