@@ -2721,7 +2721,7 @@ void *RealtimeMonitor(void *arg) {
 		disTime = 0;
 		}
 #endif
-	usleep(900000);// usleep(5000); //
+	usleep(5000); //usleep(900000);// 
 	}
 	printf("\nMonitor Thread Exiting\n");
     return NULL;
