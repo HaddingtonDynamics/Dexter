@@ -51,8 +51,8 @@ function remove_job_name_to_process(job_name) { delete job_name_to_process[job_n
         
 //arg looks like "myjob.js", "myjob.dde", "myjob"
 function extract_job_name(job_name_with_extension){
-	let dot_pos = job_name_with_extension.indexOf(".")
-    let job_name
+    let job_name=""+job_name_with_extension
+	let dot_pos = job_name.indexOf(".")
     if(dot_pos === -1) { job_name = job_name_with_extension }
     else { job_name = job_name_with_extension.substring(0, dot_pos) }
     return job_name
@@ -475,7 +475,8 @@ wss.on('connection', function(the_ws, req) {
     console.log('\n\nwss server on message received: %s', message);
     //the_ws.send("server sent this to browser in response to: " + message)
     console.log('\n\nAbout to parse 1\n');
-    let mess_obj = JSON.parse(message)
+    let mess_obj = {kind: "error"}
+    try { mess_obj = JSON.parse(message)} catch(e) {console.log("bad message: "+e); return;}
     console.log("\nwss server on message receieved kind: " + mess_obj.kind)
     if(mess_obj.kind === "keep_alive_click") {
         serve_job_button_click(browser_socket, mess_obj)
