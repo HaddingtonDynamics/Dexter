@@ -1,0 +1,690 @@
+//Written by: James Wigglesworth
+//Started: 3_20_2020
+//Updated: 4_16_2020
+
+//Set IP address here:
+new Dexter({name: "dexter0", ip_address: "192.168.1.146"})
+
+/*
+Recommendation:
+-eval the file and run the jobs.
+-scroll to bottom to see how jobs work and how to use the functions for your own jobs
+-only read the Description or look at the rest of the code if you really want to understand how it all works
+-there are certain robot specific properties that need to be changed for true accuracy but mostly 
+ everything should still work with inaccurate properties
+
+Demo Videos:
+move_until_force: https://photos.app.goo.gl/agHSnPr4PdkjQ7nU8
+find_surface: https://photos.app.goo.gl/JBbe9jQnmSe3Ygti8
+move_until_force_complex: https://photos.app.goo.gl/suvQbsDYTrRp43YQA
+
+Description:
+Each joint on Dexter has two angles associated with it: stepper motor angles and measured encoder angles.
+Everything in between the motor and the encoder (belt, shafts, gear boxes etc.) will stretch slightly 
+under a load.
+The difference between these two angles will be a measure the how much it stretches.
+Hooke's Law states that the displacement of a solid will be porportional to the force applied to it:
+	F = k*x or force (N) = stiffness (N/m) * displacement (m)
+
+In this case everything is rotational so the equation is:
+	T = k*theta or Torque (N*m) = stiffness (N*m/degrees) * angular displacement (degrees)
+
+Some preliminary tests can be run to measure and calculate the stiffness of each joint.
+This can be done with an experiment using weights of known mass.
+The weights can be placed on the robot at set distances from each joint's axis to apply a known torque.
+The equation for torque is:
+	T = F*r or Torque (N*m) = Force (N) * moment arm (m)
+In this case the force is applied by gravity:
+	F = m*g or Force (N) = mass (kg) * gravitational constant (m/s^2) [~9.81 m/s^2]
+So
+	T = m*g*r
+A set of displacement and torque data can be obtained by changing either the mass or the moment arm.
+The slope of the linear fit of this data will be the stiffness (displacement on the x-axis and Torque on the y-axis).
+Dexter's joints can be moved to different positions to best collect this data.
+At each new position the displacement should be measured with no load applied and removed from 
+the other displacement measurements to un-bias the data from the weight of the arm itself.
+Displacements can be measured by running the display_displacements Job.
+The resulting stiffnesses should be placed into the 'K' variable in the code below.
+
+
+
+The other important factor when calculating torques on Dexter is hysteresis.
+Hysteresis is when the current state is affected by past states.
+On Dexter it shows up mainly due to backlash in the gear boxes and the belt teeth.
+The previous torques applied to Dexter affect the current displacements.
+There is a whole range of stepper angles (and therefore displacements) that can occur with zero applied torque.
+On a Torque vs displacement plot the hysteresis range will be a flat region near the origin
+where displacment is changing but torque is remaining at 0.
+Torque vs displacement plot:
+    |/
+----|----
+   /|
+   
+Torque vs displacement plot with hysteresis:  
+    |  /           |   /
+----|----  Or  ----|----  
+ /  |            / |
+ 
+This range is not necessarily symetrical about the y-axis and will actually shift between power cycling the robot.
+(this ongoing issue)
+This hysteresis range can be characterized by the two displacement values in degrees for the endpoints of the flat line.
+These two values can be measured with an experiment.
+Start by moving a joint to a position where Dexter's weight is fairly balanced (home position for most joints).
+Then push the robot to apply a fairly large torque on that joint.
+While mainting the direction of applied torque slowly remove the amount of applied torque until your hand is removed.
+Wait for the motors to stop moving then record the displacement.
+Now repeat the same thing in the opposite direction.
+These two displacement measurements are the hysteresis values.
+Repeat this experiment and average the results for better accuracy.
+The resulting hysteresis values should be placed into the 'H_high' and 'H_low' variables in the code below.
+
+The five torques measured by the robot can be used to calculate the force vector applied at the tip of the end effector.
+These torques need to be relative, not absolute, such that when there is no applied force the torques 
+should also be zero.
+This is not the case as the weight of the robot itself will also produce torques on the joints.
+The torque due to the robot's weight can be calculated for each position with the mass of each link and 
+the position of each link's center of mass.
+However these properties of the robot are not currently known (as of 4/15/2020).
+Instead an estimation can be done by measuring the torques before a load is applied then subtracting this bias from
+the torque measurements under load.
+This works under the assumption that the position of the robot won't change enough to significantly shift its weight.
+This assumption becomes especially questionable if the robot is to move while measuring a force vector.
+The function move_until_force() works under this assumption and will have some inaccuracies because of it.
+
+Example of move_until_force() with all possible parameters:
+
+		function(){return move_until_force(position, {
+        	motion_direction: [0, 0, -1],
+            force_threshold: 2*_N,
+            max_distance: 10*_cm,
+            step_size: 4*_mm,
+            sample_size: 1,
+            zero_out_bias: true,
+            force_vector: undefined,
+            print_statements: false
+        })},
+    
+*/
+
+
+
+
+
+//Dexter specific properties:
+
+//Stiffness (N*m/deg):
+var K = [
+	12.895, //unmeasured but assumed to match J2
+    12.895,
+    1.2568,
+    0.1503,
+    0.1503 //unmeasured but assumed to match J4
+]
+
+//Hysteresis (degrees of backlash):
+var H_low = [
+	-0, //unmeasured but assumed to match J2
+    -0.184166666666666,
+    0.232777777777777,
+    2.2875,
+    -0 //unmeasured but assumed to match J4
+]
+
+var H_high = [
+	0, //unmeasured but assumed to match J2
+    0.393611111111111,
+    0.34611111111111,
+    2.25402777777777,
+    0 //unmeasured but assumed to match J4
+]
+
+//Link Lengths for Dexter HDI
+//Comment these out if using Dexter HD
+Dexter.LINK1 = 0.2352
+Dexter.LINK2 = 0.339092
+Dexter.LINK3 = 0.3075
+Dexter.LINK4 = 0.0595
+Dexter.LINK5 = 0.08244
+
+
+if(!(version_equal("2.5.17")  || version_equal("2.5.13"))){
+	warning("This code is designed for DDE versions 2.5.13 and 2.5.17.</br>You are running " + dde_version + ".</br>Kin.three_torques_to_force() has sign error in version 2.5.13 and 2.5.17 that may be corrected in later versions.<br>If you want to flip the sign error, search for and remove the following code:<br>measured_force_vector[1] *= -1<br>and<br>measured_force_vector[2] *= -1")
+}
+
+//Functions used by Jobs:
+
+function update_displacements(sample_size = 1){
+	return [
+    	function(){
+        	this.user_data.disp_sum = [0, 0, 0, 0, 0]
+        },
+    	Robot.loop(sample_size, function(){
+    		let CMD = []
+    		CMD.push(Dexter.read_from_robot("#StepAngles", "StepAngles"))
+    		CMD.push(function(){
+    			let StepAngles = Vector.multiply(JSON.parse(this.user_data.StepAngles), _arcsec)
+    			this.user_data.step_angles = StepAngles
+			})
+			CMD.push(Dexter.empty_instruction_queue())
+			CMD.push(function(){
+				let rs = this.robot.robot_status
+				let meas = [
+					rs[Dexter.J1_MEASURED_ANGLE],
+					rs[Dexter.J2_MEASURED_ANGLE],
+					rs[Dexter.J3_MEASURED_ANGLE],
+					rs[Dexter.J4_MEASURED_ANGLE],
+					rs[Dexter.J5_MEASURED_ANGLE]
+				]
+				this.user_data.measured_angles = meas
+			})
+			CMD.push(Dexter.empty_instruction_queue())
+			CMD.push(function(){
+				let meas = this.user_data.measured_angles
+				let step = this.user_data.step_angles
+                let disp = Vector.subtract(meas, step)
+        		this.user_data.disp_sum = Vector.add(disp, this.user_data.disp_sum)
+			})
+			CMD.push(Dexter.empty_instruction_queue())
+			return CMD
+    	}),
+        function(){
+        	this.user_data.displacements = Vector.divide(this.user_data.disp_sum, sample_size)
+        }
+    ]
+}
+
+function compute_torque(measured_angles, step_angles, stiffnesses, hysterhesis_low, hysterhesis_high){
+	let torques = [0, 0, 0, 0, 0]
+    let displacement
+    for(let i = 0; i < 5; i++){
+    	displacement = measured_angles[i] - step_angles[i]
+    	torques[i] = 0
+        if(displacement < hysterhesis_low[i]){
+    		torques[i] = (measured_angles[i] - step_angles[i] - hysterhesis_low[i]) * stiffnesses[i]
+        }else if(displacement > hysterhesis_high[i]){
+        	torques[i] = (measured_angles[i] - step_angles[i] - hysterhesis_high[i]) * stiffnesses[i]
+        }
+    }
+    return torques
+}
+
+function update_torques(sample_size = 1){
+	return [
+    	function(){
+        	this.user_data.torques_sum = [0, 0, 0, 0, 0]
+        },
+    	Robot.loop(sample_size, function(){
+    		let CMD = []
+    		CMD.push(Dexter.read_from_robot("#StepAngles", "StepAngles"))
+    		CMD.push(function(){
+    			let StepAngles = Vector.multiply(JSON.parse(this.user_data.StepAngles), _arcsec)
+    			this.user_data.step_angles = StepAngles
+			})
+			CMD.push(Dexter.empty_instruction_queue())
+			CMD.push(function(){
+				let rs = this.robot.robot_status
+				let meas = [
+					rs[Dexter.J1_MEASURED_ANGLE],
+					rs[Dexter.J2_MEASURED_ANGLE],
+					rs[Dexter.J3_MEASURED_ANGLE],
+					rs[Dexter.J4_MEASURED_ANGLE],
+					rs[Dexter.J5_MEASURED_ANGLE]
+				]
+				this.user_data.measured_angles = meas
+			})
+			CMD.push(Dexter.empty_instruction_queue())
+			CMD.push(function(){
+				let meas = this.user_data.measured_angles
+				let step = this.user_data.step_angles 
+        		this.user_data.torques_sum = Vector.add(compute_torque(meas, step, K, H_low, H_high), this.user_data.torques_sum)
+			})
+			CMD.push(Dexter.empty_instruction_queue())
+			return CMD
+    	}),
+        function(){
+        	this.user_data.torques = Vector.divide(this.user_data.torques_sum, sample_size)
+        }
+    ]
+}
+
+function move_until_force(position, options = {
+	motion_direction: [0, 0, -1],
+    force_threshold: 2*_N,
+    max_distance: 10*_cm,
+    step_size: 4*_mm,
+    sample_size: 1,
+    zero_out_bias: true,
+    force_vector: undefined,
+    print_statements: false
+}){
+	//force_vector defaults to motion_direction
+    
+    //Setting all the Defaults:
+    let motion_direction, force_threshold, max_distance, step_size, sample_size, zero_out_bias, force_vector, print_statements
+    let option_defaults = {motion_direction: [0, 0, -1], force_threshold: 2*_N, max_distance: 10*_cm, step_size: 4*_mm, sample_size: 1, zero_out_bias: true, force_vector: undefined, print_statements: false}
+    
+    if(options.motion_direction){motion_direction = Vector.normalize(options.motion_direction)}else{motion_direction = option_defaults.motion_direction}
+    if(options.force_threshold){force_threshold = options.force_threshold}else{force_threshold = option_defaults.force_threshold}
+    if(options.max_distance){max_distance = options.max_distance}else{max_distance = option_defaults.max_distance}
+    if(options.step_size){step_size = options.step_size}else{step_size = option_defaults.step_size}
+    if(options.sample_size){sample_size = options.sample_size}else{sample_size = option_defaults.sample_size}
+    if(options.zero_out_bias){zero_out_bias = options.zero_out_bias}else{zero_out_bias = option_defaults.zero_out_bias}
+    if(options.force_vector){force_vector = Vector.normalize(options.force_vector)}else{force_vector = option_defaults.force_vector}
+    if(options.print_statements){print_statements = options.print_statements}else{print_statements = option_defaults.print_statements}
+
+    let CMD = []
+    
+    CMD.push(Dexter.move_to(position))
+    CMD.push(Dexter.empty_instruction_queue())
+    CMD.push(function(){return update_torques(sample_size)})
+    
+    if(zero_out_bias){
+    	CMD.push(function(){this.user_data.torques_bias = this.user_data.torques})
+    }else{
+    	CMD.push(function(){
+    		if(!this.user_data.torques_bias){
+        		this.user_data.torques_bias = [0, 0, 0, 0, 0]
+        	}
+        })
+    }
+    
+    if(print_statements){CMD.push(function(){out("Torque bias: " + this.user_data.torques_bias)})}
+    CMD.push(function(){this.user_data.collision_found = false})
+    CMD.push(function(){
+    	return Robot.loop(function(){
+        	if(this.user_data.collision_found == true || this.user_data.out_of_bounds){
+        		return false
+            }else{
+            	return true
+            }
+        }, function(iter_index){
+        	let CMD = []
+        	let xyz_0, dir_0, config_0
+        	if(Vector.matrix_dimensions(position)[0] == 1){ //if [x, y, z] vs [[x, y, z], [dir], [config]]
+            	xyz_0 = position
+            }else{
+            	xyz_0 = position[0]
+                dir_0 = position[1]
+                config_0 = position[2]
+            }
+            
+            let xyz_1 = Vector.add(xyz_0, Vector.multiply(step_size*iter_index, motion_direction))
+            CMD.push(Dexter.move_to(xyz_1, dir_0, config_0))
+            CMD.push(function(){return update_torques(sample_size)})
+    		CMD.push(function(){
+            	let torques = Vector.subtract(this.user_data.torques, this.user_data.torques_bias)
+                let meas = this.user_data.measured_angles
+                let measured_force_vector = Kin.three_torques_to_force(meas, torques.slice(0, 3))
+                measured_force_vector[1] *= -1 //(there is a sign error as of the 2.5.17 version of this code)
+                measured_force_vector[2] *= -1
+                
+                
+                if(!force_vector){
+                	force_vector = motion_direction
+                }
+                
+                let non_motion_force = Vector.project_vector_onto_plane(measured_force_vector, force_vector)
+                let pure_motion_force = Vector.subtract(measured_force_vector, non_motion_force)
+                let sign = Math.sign(Vector.dot(pure_motion_force, force_vector))
+                let force_along_motion = -sign*Vector.magnitude(pure_motion_force)
+
+				if(print_statements){
+                	out("force_along_motion: " + force_along_motion)
+                }
+				
+                this.user_data.measured_force_vector = measured_force_vector
+                this.user_data.non_motion_force = non_motion_force
+                this.user_data.force_along_motion = force_along_motion
+                
+                if(force_along_motion > force_threshold){
+                    let pos = Kin.J_angles_to_xyz(meas)
+                    if(print_statements){out("Force of " + Vector.round(force_along_motion, 1) + "(N) achieved at position " + JSON.stringify(Vector.round(pos[0], 4)))}
+                    this.user_data.collision_position = pos
+                    this.user_data.collision_found = true
+                	//return Robot.break //this doesn't work??
+                }else if(step_size*iter_index > max_distance){
+                	this.user_data.out_of_bounds = true
+                    
+                    this.user_data.measured_force_vector = [0, 0, 0]
+                	this.user_data.non_motion_force = [0, 0, 0]
+                	this.user_data.force_along_motion = 0
+                    this.user_data.collision_position = undefined
+                    
+                    if(print_statements){out("Force not achieved at distance of " + step_size*iter_index + "(m)")}
+                }
+            })
+            CMD.push(Dexter.empty_instruction_queue())
+            return CMD
+        })
+    })
+    return CMD
+}
+
+
+
+//Jobs:
+
+new Job({
+	name: "display_displacements",
+    inter_do_item_dur: 0,
+    show_instructions: false,
+    do_list: [
+    	Robot.loop(true, function(){
+        	return [
+            	update_displacements,
+            	function(){
+                    let disp_array = this.user_data.displacements
+                	out(JSON.stringify(Vector.round(disp_array, 3)) + " (degrees)", "blue", true)
+                }
+            ]
+        })
+    ]
+})
+
+new Job({
+	name: "display_torques",
+    inter_do_item_dur: 0,
+    show_instructions: false,
+    do_list: [
+    	Robot.loop(true, function(){
+        	return [
+            	update_torques,
+                function(){
+        			out("above break")
+        		}, 
+            	function(){
+                    let torque_array = this.user_data.torques
+                	out(JSON.stringify(Vector.round(torque_array, 3)) + " (N*m)", "blue", true)
+                }
+            ]
+        }),
+        function(){
+        	out("done")
+        }
+    ]
+})
+
+new Job({
+	name: "display_force_vector",
+    inter_do_item_dur: 0,
+    show_instructions: false,
+    do_list: [
+    	Dexter.move_all_joints([0, 0, 90, 0, 0]),
+        function(){out("Zeroing unloaded Dexter, do not touch...")},
+        Dexter.empty_instruction_queue(),
+        Dexter.sleep(1),
+        function(){return update_torques(10)},
+        function(){this.user_data.torques_bias = this.user_data.torques},
+        function(){out("Zeroing complete. Now apply force to end effector tip.")},
+    	Robot.loop(true, function(){
+        	return [
+            	update_torques,
+            	function(){
+                	let torques = Vector.subtract(this.user_data.torques, this.user_data.torques_bias)
+                    let meas = this.user_data.measured_angles
+                	let force_vector = Kin.three_torques_to_force(meas, torques.slice(0, 3))
+                	force_vector[1] *= -1 //(there is a sign error as of the 2.5.17 version of this code)
+                	force_vector[2] *= -1
+                    out(JSON.stringify(Vector.round(force_vector), 5) + " (N)", "blue", true)
+                }
+            ]
+        })
+    ]
+})
+
+var my_position = [0, 0.55, 0.2]
+new Job({
+	name: "move_until_force",
+    inter_do_item_dur: 0,
+    show_instructions: false,
+    do_list: [
+    	
+        //First move to 'my_position' with rapid speed parameters
+        Dexter.set_parameter("Acceleration", 0.0001),
+        Dexter.set_parameter("MaxSpeed", 30),
+        Dexter.set_parameter("StartSpeed", 1),
+    	Dexter.move_to(my_position),
+        Dexter.empty_instruction_queue(),
+        
+        //Set speed parameters for move_until_force
+        Dexter.set_parameter("Acceleration", 0.00001),
+        Dexter.set_parameter("MaxSpeed", 30),
+        Dexter.set_parameter("StartSpeed", 1),
+        
+        //move_until_force
+    	function(){return move_until_force(my_position)},
+        
+        //print output from move_until_force call
+        function(){
+        	out("measured_force_vector: " + JSON.stringify(this.user_data.measured_force_vector))
+            out("non_motion_force: " + JSON.stringify(this.user_data.non_motion_force))
+            out("force_along_motion: " + JSON.stringify(this.user_data.force_along_motion))
+            //out("collision_position: " + JSON.stringify(this.user_data.collision_position[0]))
+        },
+        
+        //return to rapid speed paramters and return to 'my_position'
+        Dexter.set_parameter("Acceleration", 0.0001),
+        Dexter.set_parameter("MaxSpeed", 30),
+        Dexter.set_parameter("StartSpeed", 1),
+        Dexter.move_to(my_position)
+    ]
+})
+
+var position_above_surface = [0, 0.55, 0.1]
+new Job({
+	name: "find_surface",
+    inter_do_item_dur: 0,
+    show_instructions: false,
+    do_list: [
+    	
+        Dexter.set_parameter("Acceleration", 0.0005),
+        Dexter.set_parameter("MaxSpeed", 30),
+        Dexter.set_parameter("StartSpeed", 1),
+    	Dexter.move_to(position_above_surface),
+        Dexter.empty_instruction_queue(),
+        
+        //Course but fast motion:
+        Dexter.set_parameter("Acceleration", 0.0001),
+        Dexter.set_parameter("MaxSpeed", 30),
+        Dexter.set_parameter("StartSpeed", 1),
+    	function(){return move_until_force(position_above_surface,{                
+            motion_direction: [0, 0, -1],
+            force_threshold: 2*_N,
+            max_distance: 20*_cm,
+            step_size: 5*_mm,
+            sample_size: 2,
+            zero_out_bias: true,
+            force_vector: undefined,
+            print_statements: false
+        })},
+        
+        function(){
+        	if(this.user_data.collision_position){
+            	let found_xyz = this.user_data.collision_position[0]
+            	let offset = 1*_cm
+            	this.user_data.offset_position = Vector.add(found_xyz, [0, 0, offset])
+            }else{
+            	out("No surface found")
+                return Robot.stop_job({job: this.name})
+            }
+        },
+        
+        Dexter.set_parameter("Acceleration", 0.0005),
+        Dexter.set_parameter("MaxSpeed", 30),
+        Dexter.set_parameter("StartSpeed", 1),
+        
+        function(){return Dexter.move_to(this.user_data.offset_position)},
+        Dexter.empty_instruction_queue(),
+        Dexter.sleep(1),
+        
+        //Slow but fine motion:
+        Dexter.set_parameter("Acceleration", 0.0001),
+        Dexter.set_parameter("MaxSpeed", 30),
+        Dexter.set_parameter("StartSpeed", 1),
+        function(){return move_until_force(this.user_data.offset_position,{                
+            motion_direction: [0, 0, -1],
+            force_threshold: 0.1*_N,
+            max_distance: 2*_cm,
+            step_size: 0.1*_mm,
+            sample_size: 5,
+            zero_out_bias: true,
+            force_vector: undefined,
+            print_statements: false
+        })},
+        
+        function(){
+            out("Surface found at a Z of: " + Vector.round(this.user_data.collision_position[0][2]/_mm, 4) + " (mm)" )
+        },
+        
+        Dexter.empty_instruction_queue()
+    ]
+})
+
+/*
+0.0169
+*/
+
+
+//This Job traces out an object on the table to show options of move_until_force()
+var EE_width = 37.5 * _mm //width of the tool on the end effector.
+//It is the first thing that hits the object so half the width is removed from the measurement
+var contact_point_x_right, contact_point_x_left, contact_point_z_low, contact_point_z_high
+var my_position_complex = [0, 0.55, 0.2]
+new Job({
+	name: "move_until_force_complex",
+    inter_do_item_dur: 0,
+    show_instructions: false,
+    do_list: [
+    	Dexter.move_to(my_position_complex),
+        Dexter.empty_instruction_queue(),
+        
+        //Move down course
+    	function(){return move_until_force(my_position_complex)},
+        
+        //Move down fine large force
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 30,
+            step_size: .5*_mm,
+            sample_size: 2,
+            zero_out_bias: false,
+            print_statements: true
+        })},
+    	Dexter.sleep(2),
+
+        //Move up until zero force
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 2,
+            motion_direction: [0, 0, 1],
+            step_size: .5*_mm,
+            sample_size: 2,
+            zero_out_bias: false,
+            print_statements: true
+        })},
+        Dexter.sleep(2),
+        
+        //move left
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 2,
+            motion_direction: [-1, 0, 0],
+            zero_out_bias: true,
+            print_statements: true
+        })},
+        function(){
+        	contact_point_x_right = this.user_data.collision_position[0][0] - EE_width/2
+        },
+        Dexter.sleep(2),
+        
+        
+        //move down
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 2,
+            motion_direction: [0, 0, -1],
+            zero_out_bias: false,
+            print_statements: true
+        })},
+        function(){
+        	contact_point_z_low = this.user_data.collision_position[0][2]
+        },
+        Dexter.sleep(2),
+        
+        //move up
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 1,
+            motion_direction: [-.1, 0, 1],
+            force_vector: [1, 0, 0],
+            print_statements: true
+        })},
+        Dexter.sleep(2),
+        
+        //move diagonal left/down
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 5,
+            motion_direction: [-1, 0, -1],
+            force_vector: [0, 0, -1],
+            zero_out_bias: true,
+            print_statements: true
+        })},
+        function(){
+        	contact_point_z_high = this.user_data.collision_position[0][2]
+        },
+        Dexter.sleep(2),
+        
+        //move left
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 15,
+            motion_direction: [-1, 0, -.1],
+            force_vector: [0, 0, 1],
+            zero_out_bias: false,
+            print_statements: true
+        })},
+        Dexter.sleep(2),
+        
+        //move right
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 2,
+            motion_direction: [1, 0, 0],
+            zero_out_bias: true,
+            print_statements: true
+        })},
+        function(){
+        	contact_point_x_left = this.user_data.collision_position[0][0] + EE_width/2
+        },
+        Dexter.sleep(2),
+        
+        
+        
+        //move down
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 5,
+            motion_direction: [0, 0, -1],
+            zero_out_bias: false,
+            print_statements: true
+        })},
+        
+        //move left course
+        function(){return move_until_force(this.user_data.collision_position, {
+        	force_threshold: 15,
+            motion_direction: [-1, 0, -.1],
+            force_vector: [0, 0, 1],
+            zero_out_bias: false,
+            step_size: 1*_cm
+        })},
+        function(){
+        	let pos = this.user_data.collision_position
+            let xyz = pos[0]
+        	return Dexter.move_to([xyz[0], xyz[1], my_position_complex[2]])
+        },
+        Dexter.sleep(2),
+        
+        function(){
+        	let width = contact_point_x_right - contact_point_x_left
+            let hieght = contact_point_z_high - contact_point_z_low
+            out("block dimensions: " + Vector.round(width/_mm, 1) + "x" + Vector.round(hieght/_mm, 1) + " (mm)")
+        },
+        
+        Dexter.move_to(my_position_complex)
+    ]
+})
+
+
+
