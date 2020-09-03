@@ -29,7 +29,7 @@ sed -i "s/OS version.*/OS version $(lsb_release -d -s)/g" Defaults.make_ins
 
 # build a (hopefully) unique mac address in the Xilinx range from robots serial number
 dexserial=$(grep -oP '(?<=Dexter Serial Number: DEX-)[0-9].*' Defaults.make_ins)
-mac=$(printf "%06x\n" $dexserial)
+mac=$(printf "%06x\n" $(( 10#$dexserial )) )
 macserial="00:5D:03:${mac:0:2}:${mac:2:2}:${mac:4:2}"
 echo Starting Dexter $dexserial on interface mac address $macserial
 sed -i "s/hwaddress ether 00:5D:03.*/hwaddress ether ${macserial}/g" /etc/network/interfaces
