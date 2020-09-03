@@ -5378,7 +5378,7 @@ int ParseInput(char *iString)
 							return errno;
 							}
                     
-					}else if(!strcmp("LinkLengths",p1)){
+					}else if(!strcmp("LinkLengths",p1) || !strcmp("51",p1)){
 						p2=strtok (NULL, delimiters);
 						p3=strtok (NULL, delimiters);
 						p4=strtok (NULL, delimiters);
