@@ -106,7 +106,7 @@ function serve_job_button_click(browser_socket, mess_obj){
          
         job_process.stderr.on('data', function(data) {
           console.log("\n\njob: " + job_name + " got stderr with data: " + data)
-          remove_job_name_to_process(job_name)
+          //remove_job_name_to_process(job_name) //just because there is an error, that don't mean the job closed.
           //server_response.write("Job." + job_name + " errored with: " + data)
           console.log('\n\nAbout to stringify 2\n');
           let lit_obj = {job_name: job_name,
