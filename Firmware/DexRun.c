@@ -3716,8 +3716,19 @@ int getNormalizedInput(int param)
 	if(param == BASE_STEPS ){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[0] * Interpolation[0])) + HomeOffset[0];}
 	if(param == PIVOT_STEPS){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[1] * Interpolation[1])) + HomeOffset[1];}
 	if(param == END_STEPS  ){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[2] * Interpolation[2])) + HomeOffset[2];}
-	if(param == ANGLE_STEPS){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[3] * Interpolation[3])) + HomeOffset[3];}
-	if(param == ROT_STEPS  ){val = SIGNEX(val,18); return (int)((float)val / (JointsCal[4] * Interpolation[4])) + HomeOffset[4];}
+	if(param == ANGLE_STEPS){ //ANGLE_STEPS is just MOTOR 4, not joint 4. It interacts with motors 3 and 5 to move the joint
+		val = SIGNEX(mapped[END_STEPS], 18); //pick up value of Joint 3 motor, sign extended from 18 bits
+		corrF = (float)((float)val / (JointsCal[2]/JointsCal[3])); //scale Joint3 motor by gearing difference from 3 to 4,5
+		val = SIGNEX(mapped[ANGLE_STEPS], 18); //sign extend the 18 bit Motor 4 value
+		val = (SIGNEX(mapped[ROT_STEPS], 18) + val); val /= 2; //mid-point with the position of motor 5
+		val = (int)((float)val - corrF);//subtract out the position of motor 3.
+		return (int)((float)val / (JointsCal[3] * Interpolation[3])) + HomeOffset[3];
+		}
+	if(param == ROT_STEPS  ){ //ROT_STEPS is just MOTOR 5, not joint 5. It interacts with motor 4 to move the joint
+		val = SIGNEX(mapped[ROT_STEPS],18); //sign extend the 18 bit Motor 5 value
+		val = (SIGNEX(mapped[ANGLE_STEPS], 18) - val); val /= 2;// mid-distance from position of motor 4
+		return (int)((float)val / (JointsCal[4] * Interpolation[4])) + HomeOffset[4];
+		}
 
 	if(param <= ROT_POSITION_FORCE_DELTA) {
 		corrF = JointsCal[(param-INPUT_OFFSET) % 5];
