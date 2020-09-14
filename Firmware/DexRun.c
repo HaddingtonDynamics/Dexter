@@ -3007,12 +3007,12 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 					);
 				}else if (strcmp(token, "#measured_angles") == 0) {
 					mat_string_length = sprintf(mat_string
-					, "[%d, %d, %d, %d, %d]"
-					, mapped[BASE_MEASURED_ANGLE]
-					, mapped[PIVOT_MEASURED_ANGLE]
-					, mapped[END_MEASURED_ANGLE]
-					, mapped[ANGLE_MEASURED_ANGLE]
-					, mapped[ROT_MEASURED_ANGLE]
+					, "[%i, %i, %i, %i, %i]"
+					, getNormalizedInput(BASE_MEASURED_ANGLE)
+					, getNormalizedInput(PIVOT_MEASURED_ANGLE)
+					, getNormalizedInput(END_MEASURED_ANGLE)
+					, getNormalizedInput(ANGLE_MEASURED_ANGLE)
+					, getNormalizedInput(ROT_MEASURED_ANGLE)
 					  );
 					//printf("#measured_angles: %s length: %d", mat_string, mat_string_length);
 				}else if(strcmp(token, "#Steps") == 0){
