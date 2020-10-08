@@ -40,9 +40,11 @@ S, J5BoundryLow, -666000;
 ; If these values are exceeded repeatedly, Dexter will automatically switch to open loop modes
 S, RawVelocityLimits, 1296000, 1296000, 1296000, 1296000, 1296000;
 
-a 0 0 0 0 0 512 300; Start Joint 6 / 7 servos if present
-; Set Maximum torque for joint 6 / 7 servos
-S, ServoSet2X, 1, 35, 1020; Roll goal torque
-S, ServoSet2X, 1, 35, 1020; Roll goal torque
-S, ServoSet2X, 3, 35, 1020; Span goal torque
-S, ServoSet2X, 3, 35, 1020; Span goal torque
+S, RebootServo, 4, 430, 1296000, 0; Set 430 ID 4 for 430 units
+z, 1000000; Give it time to reboot
+S, ServoSet, 4, 65, 1; Turn XC430 LED on
+S, ServoSet, 4, 64, 1; Turn XC430 torque on
+z, 1000000; Give the operator time to see it
+S, ServoSet, 4, 65, 0; Turn XC430 LED off
+
+;a 0 0 0 0 0 512 300; Start Joint 6 / 7 servos if present
