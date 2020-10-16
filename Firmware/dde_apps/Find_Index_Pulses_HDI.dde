@@ -1,7 +1,7 @@
 /*
 Written by: James Wigglesworth 
 Started: 5_21_19
-Updated: 10_14_19
+Updated: 6_28_20
 
 Overview:
 #A User Input
@@ -278,6 +278,8 @@ function init_globals(){
 function init_robot(){
 	return [
     	Dexter.set_parameter("MaxSpeed", 30),
+        Dexter.set_parameter("Acceleration", 0.001),
+        Dexter.set_parameter("StartSpeed", 0.1),
     	Dexter.move_all_joints([0, 0, 0, 0, 0]), //remove this later
         Dexter.empty_instruction_queue(),
     	Dexter.read_from_robot("#EyeNumbers", "EyeNumbers"),
@@ -954,6 +956,8 @@ new Job({
         check_eye_order,
         center_eye,
         
+        Dexter.set_parameter("MaxSpeed", 15),
+        
     	find_idx_eyes,
         Dexter.read_from_robot("#EyeNumbers", "EyeNumbers"),
         function(){
@@ -1359,6 +1363,7 @@ function reset_robot(){
 		
         Dexter.sleep(0.5),
         Dexter.set_parameter("MaxSpeed", 30),
+        Dexter.set_parameter("Acceleration", 0.0001),
         Dexter.move_all_joints([0, 0, 0, 0, 0]),
         Dexter.move_all_joints([6, 6, 6, 6, 6]),
         Dexter.move_all_joints([0, 0, 0, 0, 0]),
@@ -1374,6 +1379,9 @@ function reset_robot(){
 		})),
         //make_ins('w', FPGA.COMMAND_REG, FPGA.cmd_reg_val()),
         
+        
+        
+        /*
         Dexter.set_parameter("J1BoundryLow", -150),
         Dexter.set_parameter("J1BoundryHigh", 150),
         Dexter.set_parameter("J2BoundryLow", -90),
@@ -1384,8 +1392,9 @@ function reset_robot(){
         Dexter.set_parameter("J4BoundryHigh", 90),
         Dexter.set_parameter("J5BoundryLow", -140),
         Dexter.set_parameter("J5BoundryHigh", 140),
-        
-        Dexter.sleep(0.5),
+        */
+        Dexter.set_parameter("RunFile", "Defaults.make_ins"),
+        Dexter.sleep(.5),
         Dexter.set_keep_position(),
     ]
 }
