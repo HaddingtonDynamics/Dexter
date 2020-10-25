@@ -5,25 +5,66 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font: 13px Helvetica, Arial; }
-        form { background: #000; padding: 3px; position: fixed; bottom: 0; width: 100%; }
+        form { background: #000; padding: 3px; position: fixed; bottom: 0; width: 85%; }
         form input { border: 0; padding: 10px; width: 90%; margin-right: .5%; }
         form button { width: 9%; background: rgb(130, 224, 255); border: none; padding: 10px; }
         #messages { list-style-type: none; margin: 0; padding: 0; }
         #messages li { padding: 5px 10px; }
         #messages li:nth-child(odd) { background: #eee; }
-        #stat { margin-bottom: 40px }
+        #stat { margin-bottom: 50px }
+        #cmds { list-style-type: none; margin: 0; padding: 0; vertical-align: bottom; }
+      #cmds li { padding: 5px 10px; }
+      #cmds li:nth-child(odd) { background: #eee; }
+      #cmds { margin-bottom: 40px }
         </style>
     </head>
 <body> 
-	Dexter Status
-    <input type="button" value="start" onclick="pulse = setInterval(function(){getDexterStatus()},interval);">
-    <input type="button" value="stop" onclick="clearInterval(pulse);">
-    <ul id="messages"></ul>
-    <div id="stat">Status: Unknown</div>
-    <form id="send" action="">
-    <input id="msg" autocomplete="off" value="a 0 0 0 0 0 500 0"/>
-    <button>Send</button>
-        </form>
+    <table width="100%"><TR><TD>
+        <ul id="messages"></ul>
+        Dexter Status
+        <input type="button" value="read" onclick="getDexterStatus();">
+        <input type="button" value="start" onclick="pulse = setInterval(function(){getDexterStatus()},interval);">
+        <input type="button" value="stop" onclick="clearInterval(pulse);">
+        <div id="stat">Status: Unknown</div>
+        <form id="send" action="">
+            <input id="msg" autocomplete="off" value="r 0 `uname"/>
+            <button id="send_button">Send</button>
+            </form>
+    </TD><TD style="vertical-align: bottom;">
+        <ul id="cmds">
+            <li>S RunFile setOpenLoopMode.make_ins;</li>
+            <li>S RunFile setKeepPositionMode.make_ins;</li>
+            <li>a 0, 0, 0, 0, 0, 0, 470; Move j1-7 home</li>
+            <li>R 0, 0, 0, 0, 1000, 10000, 0; move Relative j1-7</li>
+            <li>S J1_PID_P 0.2; P drive as float 0-1</li>
+            <li>P 0, 0, 0, 0, 0, 0, 0; PID move j1-7</li>
+            <li>S AngularSpeed 108000; All joints in arcsec/sec</li>
+            <li>S AngularAcceleration 1; All joints in arcsec/sec2</li>
+            <li>M 300000 500000 200000, 0 0 -1, 1 1 1; Move to XYZ, orient, pose</li>
+            <li>T 10000 500000 200000, 0 0 -1, 1 1 1; sTraight to XYZ, orient, pose</li>
+            <li>C 0 500000 100000, 0 0 -1, 1 1 1; PID Move to XYZ, DIRECTION, CONFIG</li>
+            <li>r 0 #XYZ; Read pos as XYZ. Finish with r 1.</li>
+            <li>r 0 #RawEncoders;</li>
+            <li>r 0 #measured_angles;</li>
+            <li>r 0 #StepAngles; motor angles in arcsecs</li>
+            <li>S LinkLengths 82551; Length of EE</li>
+            <li>r 0 #Servo 1, 0, 2; Read servo model (ID addr len)</li>
+            <li>r 0 #Servo 1, 70, 1; Read XC430 error</li>
+            <li>S RebootServo 1 430 4276224 0; Set 430 for LTS compatibility</li>
+            <li>S RebootServo 1 430 1296000 0; Set 430 for 430 units</li>
+            <li>S RebootServo 1 430 14745600 0; Set 430 for arcseconds</li>
+            <li>S RebootServo 3 1; Disable monitoring servo #</li>
+            <li>S ServoSetX 1 64 1; Turn XC430 torque on </li>
+            <li>S ServoSetX 1 65 3 %01; Turn XC430 J7 LED ON </li>
+            <li>S ServoSetX 1 25 3 %07; Turn XL320 J7 LED "White"</li>
+            <li>S ServoSetX 1 116 12 %64%00%00%00; Move XC-430 Span / J7 / Servo 1 to 100</li>
+            <li>S EERoll 0; J6 servo units (0.29*deg)</li>
+            <li>S EESpan 450; J7 set for end effector insert/remove</li>
+            <li>S ServoSet2X 1 addr value; Write short value to Servo# at addr</li>
+            <li></li>
+        </ul>
+    </TD></TR>
+    </table>
 
 <script type="text/javascript">
 var count = 0
@@ -35,11 +76,20 @@ var pulse //to hold the timout.
 let ws = new WebSocket('ws://'+ip_address+":"+port)
 ws.binaryType = "arraybuffer" //avoids the blob
 ws.onopen = function(){
-    self.status = "open"
+    let b = byID("send_button")
+    b.disabled = false
+    b.title = "ready"
     getDexterStatus()
     }
 ws.onerror = function(error) {
-    self.status = "error"+error
+    let b = byID("send_button")
+    b.disabled = true
+    b.title = "error"+error
+    }
+function isBinary(byte) { //must use numbers, not strings to compare. ' ' is 32
+    if (byte >= 32 && byte < 128) {return false} //between space and ~
+    if ([13, 10, 9].includes(byte)) { return false } //or text ctrl chars
+    return true
     }
 ws.onmessage = function(socket) {
     let msg = "" //start new message
@@ -58,15 +108,24 @@ ws.onmessage = function(socket) {
     case 'r':
         //console.log("r " + String.fromCharCode.apply(null, new Uint8Array(msg.data.slice(7*4))))
         let l = data[6] //length of returned data
+        let m = String.fromCharCode.apply(null, new Uint8Array(socket.data.slice(7*4,7*4+l)))
         msg += '-> r '+l+' "'
-        msg += String.fromCharCode.apply(null, new Uint8Array(socket.data.slice(7*4,7*4+l)))
-        msg += '"'
+        msg += m +'"'
+        out(msg)
+        msg = "-> " //do it again, but in hex. 
+        l = 0
+        for (let i = 0; i<m.length; i++) {
+             if (isBinary(m.charCodeAt(i))) l++
+             msg += " " + ("00" + m.charCodeAt(i).toString(16).toUpperCase()).substr(-2,2)
+             }
+        if (l == 0) msg = "" //toss it if no binary data found.
         break;
     case 'g':
     //if ('g'.charCodeAt(0) == data[4]) {//status
         displayStatus(msg.ip_address,data)
         break;
 //1,0,1531787828,349602,103,0,0,0,0,0,0,0,0,0,3703,2967,0,0,0,2147483647,0,0,0,0,293,56,0,0,0,2147483647,0,0,0,0,809,3063,0,0,0,2147483647,0,0,0,0,1682,3675,0,0,0,2147483647,0,0,0,0,1990,218,0,0,0,2147483647
+//1, 1, 1598488112, 928998, 97, 0, 0, 0, 0, 3, 0, 0, 0, 0, 2284, 2232, 0, 0, 0, 439619, 0, 0, 0, 0, 2791, 2284, 0, 0, 0, 439619, 0, 0, 0, 0, 1362, 3003, 0, 0, 0, 439619, 0, 0, 0, 0, 1647, 2575, 0, 0, 0, 439619, 0, 0, 0, 0, 1116, 2508, 0, 0, 2056, 439619
         }
     if (msg) out(msg)
     //ws.close()
@@ -81,11 +140,20 @@ function out(msg) {
     }
 byID("send").onsubmit=function(e) {
     let msg = byID("msg").value
+    if (ws.readyState==ws.CLOSED) { ws = new WebSocket('ws://'+ip_address+":"+port) }
     ws.send("1 " + (count++) + " 1 undefined "+msg+" ;")
     console.log("sent:"+msg)
     out('<-'+msg)
     window.scrollTo(0, document.body.scrollHeight)
     return false //don't actually post the form
+    }
+byID("cmds").onclick=function(e) {
+    byID("msg").value = e.path[0].innerHTML
+    }
+byID("messages").onclick=function(e) {
+    let cmd = e.path[0].innerText
+    if (cmd.substr(0,2)=='<-') cmd=cmd.substr(2); else cmd="";
+    byID("msg").value = cmd
     }
 function getDexterStatus() {
     ws.send("1 " + (count++) + " 1 undefined g ;")
@@ -95,11 +163,12 @@ function getDexterStatus() {
 function displayStatus(ip,data) {
     var stat = byID('stat')
     stat.innerHTML = ip_address + " Job: " + data[0]+" No: " + data[1] + " Op: " + String.fromCharCode(data[4])
+    // + " Len: " + data.length /* for some reason, this shows 120, but only 60 values are returned; the second 60 are a copy */
     //+data.toString()
     data = data.slice(10,60)
     //https://github.com/cfry/dde/blob/99e37f9f466b3c374953581aefde0e27e1582fcd/robot.js#L2247
     //https://github.com/cfry/dde/blob/master/robot.js#L1907
-    let label = new Array("ANGLE","DELTA","PID_DELTA","FORCE_CALC_ANGLE","A2D_SIN","A2D_COS","PLAYBACK","SENT","SLOPE","MEASURED_ANGLE")
+    let label = new Array("ANGLE","DELTA","PID_DELTA","FORCE_CALC_ANGLE","A2D_SIN","A2D_COS","MEASURED_ANGLE","SENT","SLOPE","UNUSED")
     let tdstyle="border:1px solid black; "
     var num=0
     tbl  = document.createElement('table');
@@ -109,24 +178,34 @@ function displayStatus(ip,data) {
     td.appendChild(document.createTextNode('Cell'));
     td.style = tdstyle + " background-color:#808080; color:#ffffff;";
     td.innerText=" "
-    for(var j = 1; j < 6; j++) { //top labels
+    for(var j = 1; j < 8; j++) { //top labels
         var td = tr.insertCell();
         td.appendChild(document.createTextNode('Cell'));
         td.style = tdstyle + " background-color:#808080; color:#ffffff;";
         td.innerText="Joint:" + j
         }
     for(var i = 0; i < 10; i++) {
+        //if (8 == i) continue; //skip SLOPE
         var tr = tbl.insertRow(); //data lines
         var td = tr.insertCell(); //left header label
         td.appendChild(document.createTextNode('Cell'));
         td.style = tdstyle + " text-align: right; background-color:#808080; color:#ffffff;";
         td.innerText=label[i]
-        for(var j = 0; j < 5; j++) {
+        for(var j = 0; j < 7; j++) {
             var td = tr.insertCell();
             td.appendChild(document.createTextNode('Cell'));
             td.style = tdstyle;
-            num=data[j * 10 + i]
-            if (9 == i && -2147483648 == num) num="UNKNOWN"
+            if (j > 4) { //joint 6 or 7
+                num=''
+                if (5==j && 0==i) num=data[2*10+8]
+                if (5==j && 1==i) num=data[3*10+8]
+                if (6==j && 0==i) num=data[0*10+8]
+                if (6==j && 1==i) num=data[1*10+8]
+                }
+            else {
+                num=data[j * 10 + i]
+                }
+            //if (9 == i && 439619 == num) num="UNKNOWN"
             td.innerText=num
             }
         }
