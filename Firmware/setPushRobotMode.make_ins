@@ -1,4 +1,4 @@
-; from vulcur.com
+; from vulcur.com / rubedos.com
 w, 52, 290; DIFF_FORCE_BETA	
 w, 28, 90; SPEED_FACTORB	
 w, 55, 1; DIFF_FORCE_SPEED_FACTOR_ANGLE
