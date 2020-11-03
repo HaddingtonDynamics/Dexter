@@ -65,10 +65,4 @@ while read -u 10 job; do # the -u 10 uses pipe 10 in place of stdin
 done 10< autoexec.jobs 
 # pipe to 10 so dde doesn't read lines from autoexec.jobs via stdin
 
-#start default job engine job
-#cd /root/Documents/dde
-#Find home position from index eyes in code disks, this requires HDI. 
-sleep 5 && sudo node core define_and_start_job /srv/samba/share/dde_apps/Find_Index_Pulses_HDI.dde
-#Start Physical interface, see
-# https://github.com/HaddingtonDynamics/Dexter/wiki/PhysicalUserInterface
-sleep 1 && sudo node core define_and_start_job /srv/samba/share/dde_apps/PHUI2RCP.js
+
