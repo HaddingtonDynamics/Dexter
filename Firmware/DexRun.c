@@ -481,6 +481,17 @@ int ADLookUp[5] = {BASE_SIN,END_SIN,PIVOT_SIN,ANGLE_SIN,ROT_SIN};
 #define ERROR_INPUT_OFFSET (1<<10) //1024
 
 
+
+
+
+
+
+
+
+
+
+
+
 //////////////////////////////////////////////////////////////////////////
 /* Start Wigglesworth Code*/
 
@@ -537,7 +548,10 @@ struct Vector {
 	double x, y, z;
 };
 
-double max(double a, double b){
+
+#define max(a, b) ((a)>(b)?(a):(b))
+#define min(a, b) ((a)<(b)?(a):(b))
+/* double max(double a, double b){
 	if(a > b){
 		return a;
 	}else{
@@ -551,7 +565,7 @@ double min(double a, double b){
 	}else{
 		return b;
 	}
-}
+} */
 
 
 struct Vector new_vector(double x, double y, double z) {
@@ -2073,6 +2087,13 @@ int FroceMoveMode=0;
 
 //int LastGoal[5]={0,0,0,0,0}; //moved to above kinematics code 
 
+enum ServoTypes {
+	unknown=1,
+	XL320=320,
+	XC430=430,
+	STEPPER=2
+} ;
+
 struct ServoRealTimeData{
 	unsigned char ServoAddress;
 	int Goal;
@@ -2081,16 +2102,29 @@ struct ServoRealTimeData{
 	int PresentLoad;
 	int LoadLimit; //roughly % of max load times 10. E.g. 100 is 10%
 	int error;
+	enum ServoTypes ServoType;
 };
 
-#define NUM_SERVOS 2
+#define NUM_SERVOS 20 //TODO just keep an array of like 20 and make the index the servo address. 
 struct ServoRealTimeData ServoData[NUM_SERVOS];
 
-//converts steps to angles. 
-float JointsCal[NUM_JOINTS];
+//unsigned char ServoAddr[] = {3, 1}; //translate servo index to address
+//unsigned char ServoIdx[] = {255, 1, 255, 0}; //translate servo address to index //no, just index ServoData by servo address
+unsigned char ServoAddr(unsigned char joint) { //translate a joint number into a servo address.
+	joint -= NUM_JOINTS; //Servo joints start above the standard joints.
+	if (joint >= NUM_SERVOS) return 0;
+	switch (joint) 	{ //legacy compatibility requires some special casing here. 
+	case 1: return 3; break; //joint 6 is address 3
+	case 2: return 1; break; //joint 7 is address 1
+	default: return max(joint,0); break; //otherwise, straight through excepting negatives
+	}
+}
+
+//converts between arcseconds and steps other joint actuator units. e.g. servo
+float JointsCal[]={[0 ... (NUM_JOINTS + NUM_SERVOS)] = 1};
 //Interpolate defaults to 1 1 1 1 1 for HDI. Change via Interpolation SetParameter to 1 1 1 16 16 for HD
 float Interpolation[NUM_JOINTS]={1, 1, 1, 1, 1}; 
-int HomeOffset[NUM_JOINTS]={0}; //offset for moves (at least P PID moves) and measured angles
+int HomeOffset[]={[0 ... (NUM_JOINTS + NUM_SERVOS)] = 0}; //offset for moves (at least P PID moves) and measured angles
 
 //int SoftBoundries[5];
 
@@ -2177,47 +2211,100 @@ void UnloadUART(unsigned char* RxBuffer,int length)
    	}
 }
 
-void SendGoalSetPacket(int newPos, unsigned char servo)
-{
- 	//int i;
-  	unsigned char RxBuf[27];
-  	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x03, 30, 0, newPos & 0x00ff, (newPos >> 8) & 0x00ff, 0, 0};
-  	unsigned short crcVal;
-	//printf("Calculate CRC\n");
-  	crcVal = update_crc(0, TxPacket, 12);
-  	TxPacket[12]=crcVal & 0x00ff;
-  	TxPacket[13]=(crcVal >> 8) & 0x00ff;
- 
-	//printf("Packet ready\n");
-	SendPacket(TxPacket, 14, CalcUartTimeout(14 + 14),RxBuf, 16);  // send time plus receive time in bytes transacted
-  	//UnloadUART(RxBuf,16); // TODO refine actual size
-}
-void SendWrite2Packet(int WData, unsigned char servo, int WAddres)
-{
- 	int i;
+unsigned char dynamixel_header[] = {0xff, 0xff, 0xfd, 0x00};
+void SendWriteXPacket(unsigned char * data, unsigned char servo, int WAddres, int their_len) {
+	int len = their_len; //make a copy for us so we can modify ours only. 
+	int i, state = 0;
+	int esc_count = len/3; //might have to escape every 3rd byte.
+	//printf("Send %d bytes to addr %d of servo %d\n", len, WAddres, servo);
+	unsigned char RxBuf[27]; //for a write packet, the return status is always 15 bytes. 16+11 because UnloadUART (ask Kent)
+	unsigned char TxPacket[10 + len + 2 + esc_count]; //packet, data, CRC, and more to deal with 0xFD escaping. 
+	memcpy(TxPacket, dynamixel_header, sizeof(dynamixel_header)); //0-3 are the header
+	TxPacket[4] = servo; //then which ID
+	//TxPacket[5] = len & 0x00ff; //wait... could change with escaping 0xfd
+	//TxPacket[6] = (len >> 8) & 0x00ff;
+	TxPacket[7] = 0x03; //Command 3=write.
+	TxPacket[8] = WAddres & 0x00ff; //LSB of addr to write to
+	TxPacket[9] = (WAddres >> 8) & 0x00ff; //MSB of addr to write
+	unsigned char * TxPacketPtr = TxPacket + 10; //start data at 10
+	for (i = len; i>0; i--) { //copy in the string for the len, set i and count it down so we can mod len
+		switch (state) { //but seek pattern "0xFF 0xFF 0xFD" replace with "0xFF 0xFF 0xFD 0xFD" 
+			case 0: case 1: if (*data == 0xff) state++; break;
+			case 2: 
+				if (*data == 0xfd) { //header found inside data, must escape it.
+					*TxPacketPtr++ = 0xFD; //by adding an extra 0xFD. 
+					len++; //packet is now a byte longer
+					if (--esc_count <= 0) {//out of memory.
+						//OverError = 1; //meh next one will make it.
+						return; //bail on this one.
+						}
+					state = 0; //done with the sequence, must see FF FF FD again.
+					} 
+				if (*data != 0xff) state = 0; //could have any number of 0xff's before 0xfd.
+				break;
+			default: state = 0; break;
+			} //printf("%02X ", *data); //printf("Copy byte %d state %d\n", i, state);
+		*TxPacketPtr++ = *data++;
+		}
+	len += 5; //Length to servo starts after ID byte in packet, so includes 2 length bytes, instruction, 2 address bytes, and data (not CRC)
+	TxPacket[5] = len & 0x00ff; //could have changed with escaping 0xfd
+	TxPacket[6] = (len >> 8) & 0x00ff;
+	len += 5; //data length, plus 5 for packet header and ID (not yet included CRC)
+  	unsigned short crcVal = update_crc(0, TxPacket, len); //printf("\nCRC is %X %X on %d long packet\n", (crcVal & 0x00ff), ((crcVal >> 8) & 0x00ff), len);
+	*TxPacketPtr++ = (crcVal & 0x00ff);
+  	*TxPacketPtr++ = ((crcVal >> 8) & 0x00ff);
+	len += 2; //plus 2 for CRC 
+	//printf("sending %d with %d length\n", (TxPacketPtr - TxPacket), len);
+	SendPacket(TxPacket, len //data length, plus 10 for packet, plus 2 for crc
+			, CalcUartTimeout(len + 16) // send time plus receive time in bytes transacted
+			, RxBuf, 16 //for a write packet, the return status is always 15 bytes. 
+			);  
+	//printf("done\n");
+	}
+
+void SendWrite4Packet(int WData, unsigned char servo, int WAddres) {
+  	// unsigned char data[] =  {
+	//   (WData >>  0) & 0x00ff, 
+	//   (WData >>  8) & 0x00ff, 
+	//   (WData >> 16) & 0x00ff, 
+	//   (WData >> 24) & 0x00ff
+	//   };
+	unsigned char * data = (unsigned char *)(&WData);
+	SendWriteXPacket(data, servo,  WAddres, sizeof(data));
+	}
+
+void SendWrite2Packet(int WData, unsigned char servo, int WAddres) {
+	unsigned char data[] = { WData & 0x00ff, (WData >> 8) & 0x00ff};
+	SendWriteXPacket(data, servo,  WAddres, sizeof(data));
+
+/*   	int i;
   	unsigned char RxBuf[27];
   	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x03, WAddres & 0x00ff, (WAddres >> 8) & 0x00ff, WData & 0x00ff, (WData >> 8) & 0x00ff, 0, 0};
   	unsigned short crcVal;
   	crcVal = update_crc(0, TxPacket, 12);
   	TxPacket[12]=crcVal & 0x00ff;
   	TxPacket[13]=(crcVal >> 8) & 0x00ff;
-
+	printf("Servo %d data %d addr %d\n", servo, WData, WAddres);
 	SendPacket(TxPacket, 14, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
-  	//UnloadUART(RxBuf,16); // TODO refine actual size
-}
-void SendWrite1Packet(unsigned char WData, unsigned char servo, int WAddres)
-{
- 	int i;
+  	//UnloadUART(RxBuf,16); // TODO refine actual size  */
+	}
+
+void SendWrite1Packet(unsigned char WData, unsigned char servo, int WAddres) {
+	unsigned char data[] = { WData };
+	SendWriteXPacket(data, servo,  WAddres, sizeof(data));
+
+/*  	int i;
   	unsigned char RxBuf[27];
   	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x06, 0x00, 0x03, WAddres & 0x00ff, (WAddres >> 8) & 0x00ff, WData, 0, 0};
   	unsigned short crcVal;
   	crcVal = update_crc(0, TxPacket, 11);
   	TxPacket[11]=crcVal & 0x00ff;
   	TxPacket[12]=(crcVal >> 8) & 0x00ff;
-
+	printf("Servo %d data %d addr %d\n", servo, WData, WAddres);
 	SendPacket(TxPacket, 13, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
-}
+ */	}
+
 void RebootServo(unsigned char servo)
 {
  	int i;
@@ -2231,6 +2318,28 @@ void RebootServo(unsigned char servo)
 	SendPacket(TxPacket, 10, CalcUartTimeout(14 + 14),RxBuf,16);  // send time plus receive time in bytes transacted
   	//UnloadUART(RxBuf,16); // TODO refine actual size
 }
+
+void SendGoalSetPacket(int newPos, unsigned char servo) {
+/*
+  	//int i;
+  	unsigned char RxBuf[27];
+  	unsigned char TxPacket[] =  {0xff, 0xff, 0xfd, 0x00, servo, 0x07, 0x00, 0x03, 30, 0, newPos & 0x00ff, (newPos >> 8) & 0x00ff, 0, 0};
+  	unsigned short crcVal;
+	//printf("Calculate CRC\n");
+  	crcVal = update_crc(0, TxPacket, 12);
+  	TxPacket[12]=crcVal & 0x00ff;
+  	TxPacket[13]=(crcVal >> 8) & 0x00ff;
+ 
+	//printf("Packet ready\n");
+	SendPacket(TxPacket, 14, CalcUartTimeout(14 + 14),RxBuf, 16);  // send time plus receive time in bytes transacted
+  	//UnloadUART(RxBuf,16); // TODO refine actual size
+ */ //the above does exactly the same thing as: SendWrite2Packet(newPos, servo, 30);
+	//unsigned char s = ServoIdx[servo]; //just index ServoData by servo address.
+	int t = ServoData[servo].ServoType;
+	ServoData[servo].Goal = newPos;
+	if (t == XL320) { SendWrite2Packet(newPos, servo,  30); }
+	if (t == XC430) { SendWrite4Packet(newPos, servo, 116); }
+	}
 
 int Fcritical = 0;
 int UARTBaudRate = 20; // .0000086 seconds 9 microseconds  1/115200
@@ -2296,8 +2405,9 @@ int SendReadPacket(unsigned char* RxBuffer, unsigned char servo,int start, int l
 		printf("Servo%d: rx bad header: %x %x %x %x\n", servo, RxBuffer[0], RxBuffer[1], RxBuffer[2], RxBuffer[3] );
 		return 255; //error codes from the servo can't be more than 127, so start from 255
 		}
+	//TODO: Find and correct for FF FF FD FD in the returned packet. Replace with FF FF FD and decrease len by one.
 	if (RxBuffer[4] != servo) { printf ("Servo%d: rx wrong ID:%d\n", servo, RxBuffer[4]); return 254;};
-	unsigned short len = RxBuffer[5] + ((unsigned short)RxBuffer[6]<<8); 	//printf(" len: %d", len);
+	unsigned short len = RxBuffer[5] + ((unsigned short)RxBuffer[6]<<8); 	//printf(" len: %d", len); //check len after unescaping
 	if (len > length+7 ) { printf("Servo%d: rx too long %d\n", servo, len); return 253;}; 
 	if (RxBuffer[7] != 0x55) { printf("Servo%d: non-status packet!\n", servo); return 252;};//servo shouldn't send anything but status
 	unsigned short crc = RxBuffer[len+5] + ((unsigned short)RxBuffer[len+6]<<8);
@@ -2483,151 +2593,151 @@ int sign(int i)
 	return 0;
 }
 
-void *RealtimeMonitor(void *arg)
-{
+void *RealtimeMonitor(void *arg) {
 	int* ExitState = arg;
-	int i,j,ForceDelta,disTime=0;
+	int i,j=0,ForceDelta,disTime=0;
 	FILE *err_file;
 	time_t t = time(NULL);
 	struct tm tm = *localtime(&t);
 	unsigned char ServoRx[64];
 	unsigned char err;
-	while(*ExitState) {
-
-		if (IO_DYNAMIXEL == shadow_map[END_EFFECTOR_IO]) { //only if the Dynamixels are setup
-			if ( !SendReadPacket(ServoRx, 3,30,21) ) { //returned value is coms error, zero is ok.
-		ServoData[0].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-		ServoData[0].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
-				i = ServoRx[20] + (ServoRx[21]<<8);
-				//http://emanual.robotis.com/docs/en/dxl/x/xl320/#present-load 
+	unsigned char servo_addr=0;
+	while(*ExitState) { //loop forever, unless told not to loop at all
+	if (IO_DYNAMIXEL == shadow_map[END_EFFECTOR_IO]) { //only if the Dynamixels are setup
+		while (ServoData[++servo_addr].ServoType == unknown) { //search for servos that are NOT unknown
+			if (!(servo_addr < NUM_SERVOS-1)) { //if we've checked all the servos
+				if (0==j) usleep(30000); //take a break (if there were NO unknown servos)
+				j = 0; //reset servo count (will increment for each servo we find with a type)
+				servo_addr = 0; //start over.
+				}
+			} //should now have a servo of known type to check.
+		j++; //count up the servos. 
+		struct ServoRealTimeData * sd = &ServoData[servo_addr];
+		int servo_type = sd->ServoType; //printf("servo:%d type:%d\n",servo_addr, servo_type); //
+		err = 8; //Set bit 3. If no response from this servo, it will log as a "BAD RESPONSE"
+		switch (servo_type) {
+		case XL320:
+			if ( !SendReadPacket(ServoRx, servo_addr, 37, 12) ) { //returned value is coms error, zero is ok.
+				sd->PresentPossition = ServoRx[9] + (ServoRx[10]<<8); //data offset by 9 because: header included first
+				sd->PresentSpeed = ServoRx[11] + (ServoRx[12]<<8);
+				i = ServoRx[13] + (ServoRx[14]<<8); //http://emanual.robotis.com/docs/en/dxl/x/xl320/#present-load 
 				// 0-1023 is CCW load, 1024-2047 is increasing CW load. the unit is about 0.1%; +-1023 is 100% load
 				if (i > 1023) {i -= 1024; i *= -1;}
-				ServoData[0].PresentLoad = i;
-#ifdef MONITOR_XL320
-				if (abs(ServoData[0].PresentLoad) > ServoData[0].LoadLimit) {
-					printf("Servo3: LOAD %d, \tat %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
-					SendGoalSetPacket(ServoData[0].PresentPossition, 3); //overtorque, be happy where we are.
-					}
-				else if (abs(ServoData[0].Goal - ServoData[0].PresentPossition)>10) {
-					printf("Servo3: load %d, \tAT %d, \tto %d\n " ,ServoData[0].PresentLoad ,ServoData[0].PresentPossition ,ServoData[0].Goal );
-					SendGoalSetPacket(ServoData[0].Goal, 3); //load is down, try again
-					} //this may make the load overtorque again, but that's ok, we vibrate.
-#endif
-				err = ServoRx[29];
-				if (ServoData[0].error != err) { //new error
-					err_file = fopen("errors.log", "a");
-					if (err_file) {
-						tm = *localtime(&t);
-						fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-						fprintf(err_file, ", Joint 6 error %d", err);
-						if (err & 1) fprintf(err_file, " OVERLOAD");
-						if (err & 2) fprintf(err_file, " OVERHEAT");
-						if (err & 4) fprintf(err_file, " POWER");
-						fprintf(err_file, "\n");
-						fclose(err_file);
-						}
-					printf("ROLL servo error %d\n",err);
-#ifdef MONITOR_XL320 
-					OverError |= ROLL_ERROR_CODE;
-#endif
-					ServoData[0].error = err;
-					}
-				}
+				sd->PresentLoad = i;
+				err = ServoRx[19]; //Detailed error data. see https://emanual.robotis.com/docs/en/dxl/x/xl320/#shutdown18
+				//if (err>0) {printf("servo addr %d error %d\n", servo_addr, err);}
+				} //else {printf("S%d!\n",servo_addr);}
+			break;
+		case XC430:
+			if ( !SendReadPacket(ServoRx, servo_addr, 126, 10) ) { //returned value is coms error, zero is ok.
+				sd->PresentPossition = ServoRx[15] + (ServoRx[16]<<8) + (ServoRx[17]<<16) + (ServoRx[18]<<24);
+				sd->PresentSpeed = ServoRx[11] + (ServoRx[12]<<8) + (ServoRx[13]<<16) + (ServoRx[14]<<24);
+				i = ServoRx[9] + (ServoRx[10]<<8); //https://emanual.robotis.com/docs/en/dxl/x/xc430-w240/#present-load126
+				sd->PresentLoad = SIGNEX(i, 15); //sign extend 16 bit value.
+				// -1000 to 0 is CCW load, 0-1000 is increasing CW load. the unit is 0.1%; +-1000 is 100% load
+				err = ServoRx[8]; //Not detailed, Alert only. Go get addr 70 if high bit set
+				//if (err>0) {printf("servo addr %d error %d\n", servo_addr, err);}
+				} //else {printf("S%d!\n",servo_addr);}
+			break;		
+		default:
+			err=8; //printf("servo %d unknown type!\n", servo_addr);
+			break;
+		}
+		//printf("s%d, p%d, l%d, v%d, e%d\n", servo_addr, sd->PresentPossition, sd->PresentLoad, sd->PresentSpeed, err);
 
-			if ( !SendReadPacket(ServoRx, 1,30,21) ) { //returned value is coms error, zero is ok.
-		ServoData[1].PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
-		ServoData[1].PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
-				i = ServoRx[20] + (ServoRx[21]<<8);
-				//http://emanual.robotis.com/docs/en/dxl/x/xl320/#present-load 
-				// 0-1023 is CCW load, 1024-2047 is inreasing CW load. the unit is about 0.1%; +-1023 is 100% load
-				if (i > 1023) {i -= 1024; i *= -1;}
-				ServoData[1].PresentLoad = i;
-
+		// int addr_start = 30, addr_length = 21, addr_pos = 37, addr_vel = 39, addr_load = 41; //look at indirect registers?
+		// if (servo_type == XC430) {addr_start = 126; addr_length = 21; addr_pos = 132; addr_load = 126; addr_vel = 128;} 
+		// if (servo_type == XL320) {addr_start = 30; addr_length = 21; addr_pos = 132; addr_load = 126; addr_vel = 128;}
+		// if ( !SendReadPacket(ServoRx, servo_addr, addr_start, addr_length) ) { //returned value is coms error, zero is ok.
+		// 	if (ServoRx[9]>0) {printf("servo addr %d error %d\n", servo_addr, ServoRx[9]);}
+		// 	sd->PresentPossition = ServoRx[16] + (ServoRx[17]<<8);
+		// 	sd->PresentSpeed = ServoRx[18] + (ServoRx[19]<<8);
+		// 	i = ServoRx[20] + (ServoRx[21]<<8); //http://emanual.robotis.com/docs/en/dxl/x/xl320/#present-load 
+		// 	// 0-1023 is CCW load, 1024-2047 is increasing CW load. the unit is about 0.1%; +-1023 is 100% load
+		// 	if (i > 1023) {i -= 1024; i *= -1;}
+		// 	sd->PresentLoad = i;
 #ifdef MONITOR_XL320
-				if (abs(ServoData[1].PresentLoad) > ServoData[1].LoadLimit) {
-					printf("Servo1: LOAD %d, \tat %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
-					SendGoalSetPacket(ServoData[1].PresentPossition, 1); //overtorque, be happy where we are.
-					}
-				else if (abs(ServoData[1].Goal - ServoData[1].PresentPossition)>10) {
-					printf("Servo1: load %d, \tAT %d, \tto %d\n " ,ServoData[1].PresentLoad ,ServoData[1].PresentPossition ,ServoData[1].Goal );
-					SendGoalSetPacket(ServoData[1].Goal, 1); //load is down, try again
-					} //this may make the load overtorque again, but that's ok, we vibrate.
-#endif
-                
-				err = ServoRx[29];
-				if (ServoData[1].error != err) { //new error
-					err_file = fopen("errors.log", "a");
-					if (err_file) {
-						tm = *localtime(&t);
-						fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-						fprintf(err_file, ", Joint 7 servo error %d",err);
-						if (err & 1) fprintf(err_file, " OVERLOAD");
-						if (err & 2) fprintf(err_file, " OVERHEAT");
-						if (err & 4) fprintf(err_file, " POWER");
-						fprintf(err_file, "\n");
-						fclose(err_file);
-						}
-					printf("SPAN servo error %d\n",err);
-	#ifdef MONITOR_XL320
-					OverError |= SPAN_ERROR_CODE;
-	#endif
-					ServoData[1].error = err;
-					}
-				// printf("Servo1: ");
-				// for(i=0;i<sizeof(ServoRx)/sizeof(ServoRx[0]);i++) {
-				// 	printf(" %02X",ServoRx[i]);
-				// 	}
-				// printf("\n");
-				}
+		if (abs(sd->PresentLoad) > sd->LoadLimit) {
+			printf("Servo %d: LOAD %d, \tat %d, \tto %d\n ", servo_addr, sd->PresentLoad, sd->PresentPossition, sd->Goal );
+			SendGoalSetPacket(sd->PresentPossition, 3); //overtorque, be happy where we are.
 			}
-		// if(FroceMoveMode==1) {
-		// 	// do force based movement
-		// 	for(i=0;i<5;i++) {
-		// 		ForceDelta=ForcePossition[i]-getNormalizedInput(BASE_POSITION_FORCE_DELTA+i);
-		// 		if(abs(ForceDelta)>500) {
-		// 			ForceDelta=(abs(ForceDelta)-500)*sign(ForceDelta);
-		// 		}
-		// 		//ForceDelta=ForceDelta;//+MyBotForce[i];
-		// 		if(disTime==90) {
-		// 			//for(j=0;j<5;j++)
-		// 			//printf(" Force %d ",ForceDelta);
-		// 		}
+		else if (abs(sd->Goal - sd->PresentPossition)>10) {
+			printf("Servo %d: load %d, \tAT %d, \tto %d\n ", servo_addr, sd->PresentLoad, sd->PresentPossition, sd->Goal );
+			SendGoalSetPacket(sd->Goal, 3); //load is down, try again
+			} //this may make the load overtorque again, but that's ok, we vibrate.
+#endif
+		if (sd->error != err) { //new error
+			sd->error = err; //not new any more.
+			err_file = fopen("errors.log", "a");
+			if (err_file) {
+				tm = *localtime(&t);
+				fprintf(err_file, "%04d/%02d/%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+				fprintf(err_file, ", Servo %d error %d", servo_addr, err);
+				if (err & 1) fprintf(err_file, " OVERLOAD");
+				if (err & 2) fprintf(err_file, " OVERHEAT");
+				if (err & 4) fprintf(err_file, " POWER");
+				if (err & 8) fprintf(err_file, " BAD RESPONSE");
+				fprintf(err_file, "\n");
+				fclose(err_file);
+				}
+			printf("servo %d: error %d\n", servo_addr, err);
+			i = 0; //move to a more general error code.
+			if (servo_addr == 3) i = ROLL_ERROR_CODE;
+			if (servo_addr == 1) i = SPAN_ERROR_CODE;
+			OverError |= i;
+			} //end status error
+//				} //end got valid return status
+//			} //end for each servo
+		} //end IO_DYNAMIXEL 
+	// if(FroceMoveMode==1) {
+	// 	// do force based movement
+	// 	for(i=0;i<5;i++) {
+	// 		ForceDelta=ForcePossition[i]-getNormalizedInput(BASE_POSITION_FORCE_DELTA+i);
+	// 		if(abs(ForceDelta)>500) {
+	// 			ForceDelta=(abs(ForceDelta)-500)*sign(ForceDelta);
+	// 		}
+	// 		//ForceDelta=ForceDelta;//+MyBotForce[i];
+	// 		if(disTime==90) {
+	// 			//for(j=0;j<5;j++)
+	// 			//printf(" Force %d ",ForceDelta);
+	// 		}
 
-		// 		if(abs(ForceDelta)<ForceLimit[i]) {
-		// 			mapped[FORCE_BIAS_BASE+i]=shadow_map[FORCE_BIAS_BASE+i]=ForceDelta;
-		// 		}
-		// 		else {
-		// 			mapped[FORCE_BIAS_BASE+i]=shadow_map[FORCE_BIAS_BASE+i]=sign(ForceDelta)*ForceLimit[i];
-		// 		}
+	// 		if(abs(ForceDelta)<ForceLimit[i]) {
+	// 			mapped[FORCE_BIAS_BASE+i]=shadow_map[FORCE_BIAS_BASE+i]=ForceDelta;
+	// 		}
+	// 		else {
+	// 			mapped[FORCE_BIAS_BASE+i]=shadow_map[FORCE_BIAS_BASE+i]=sign(ForceDelta)*ForceLimit[i];
+	// 		}
 
-		// 		//ForcePossition[i]=ForcePossition[i]+(int)((float)ForceDelta*ForceAdjustPossition[i]);
-		// 		if(ForceDestination[i]>ForcePossition[i]) {
-		// 			ForcePossition[i]=ForcePossition[i]+10;
-		// 		}
-		// 		else 				{
-		// 			ForcePossition[i]=ForcePossition[i]-10;
-		// 		}
-		// 	}
-		// }
+	// 		//ForcePossition[i]=ForcePossition[i]+(int)((float)ForceDelta*ForceAdjustPossition[i]);
+	// 		if(ForceDestination[i]>ForcePossition[i]) {
+	// 			ForcePossition[i]=ForcePossition[i]+10;
+	// 		}
+	// 		else 				{
+	// 			ForcePossition[i]=ForcePossition[i]-10;
+	// 		}
+	// 	}
+	// }
 #ifdef DEBUG_MONITOR
-		disTime++;
-		if(disTime>20) {
-			//printPosition();
-			monitorTorque();
-			disTime = 0;
+	disTime++;
+	if(disTime>60) {
+		//printPosition();
+		monitorTorque();
+		disTime = 0;
 		}
 #endif
-		usleep(30000);
+	usleep(5000); //usleep(900000);// 
 	}
 	printf("\nMonitor Thread Exiting\n");
     return NULL;
 }
 
-void SetGripperRoll(int Possition)
-{
+void SetGripperRoll(int Possition) {
+	Possition += HomeOffset[6-1]; //Adjust the offset /first/ so the units get converted
+	Possition *= JointsCal[6-1]; //Adjust the slope
 	SendGoalSetPacket(Possition, 3);
    	//printf("Moving Servo 3 to %u\n",Possition);
-	ServoData[0].Goal = Possition;
+	ServoData[3].Goal = Possition;
 
 	/*int ServoSpan=(SERVO_HI_BOUND-SERVO_LOW_BOUND)/360;
 	mapped[END_EFFECTOR_IO]=shadow_map[END_EFFECTOR_IO]=80;
@@ -2636,8 +2746,9 @@ void SetGripperRoll(int Possition)
 //	mapped[SERVO_SETPOINT_B]=shadow_map[SERVO_SETPOINT_B]=Possition;
 */	
 }
-void SetGripperSpan(int Possition)
-{
+void SetGripperSpan(int Possition) {
+	Possition += HomeOffset[7-1]; //Adjust the offset /first/ so the units get converted
+	Possition *= JointsCal[7-1]; //Adjust the slope
 	SendGoalSetPacket(Possition, 1);
 	//printf("Moving Servo 1 to %u\n",Possition);
 	ServoData[1].Goal = Possition;
@@ -2937,8 +3048,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 	token = strtok (NULL, delimiters); //Oplet?
 	oplet = token[0]; //printf("\n Oplet:%c.",oplet);
 	sendBuffReTyped[4]=token[0];
-	sendBuffReTyped[5]=DexError | OverError;
-	OverError &= ERROR_INPUT_OFFSET; // clear everything other than an FPGA/Firmware missmatch. 
+	sendBuffReTyped[5]=DexError | (OverError & ERROR_INPUT_OFFSET); //only report FPGA/Firmware missmatch
 	if('r'==oplet) { //printfs included for debugging in this block only since speed isn't critical at this point.
 		//printf("\n r:read_from_robot\n");
 		token = strtok (NULL, delimiters); //length
@@ -3042,6 +3152,22 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 					, getNormalizedInput(ROT_STEPS)
 					  );
 					//printf("#StepAngles: %s length: %d", mat_string, mat_string_length);
+				}else if (strcmp(token, "#Servo") == 0) { //Read from servo number at addr for length. 
+				  int servo_start = 0;
+				  int servo_length = 0;
+				  unsigned char servo = 0;
+				  token = strtok(NULL, delimiters); if (token) servo = token[0]-'0'; //which servo? Single digit 1..255
+				  token = strtok(NULL, delimiters); if (token) servo_start = atoi(token); //starting address, can be zero
+				  token = strtok(NULL, delimiters); if (token) servo_length = atoi(token); //data length, must be > 0
+				  printf("Reading servo %d at %d for %d\n", servo, servo_start, servo_length);
+				  if (servo && servo_length 
+				  	&& !SendReadPacket((unsigned char *)(sendBuff + sizeof(sendBuffReTyped[0])*7), servo, servo_start, servo_length)
+					) { //got a valid reply. Save in sendBuff then convert to ASCII hex in mat_string (can't return binary 'cause strlcpy)
+					servo_length += 11; //11 more because of protocal overhead (header, crc, etc...)
+					for(i = 0; i < servo_length; i++) sprintf(mat_string+3*i, "%.2X ", sendBuff[i+sizeof(sendBuffReTyped[0])*7]);
+					mat_string_length = servo_length * 3; //2 hex digits and a space for each byte
+					//printf("Return %d\n", mat_string_length);
+				  	}
 				}else if (strcmp(token, "xxx") == 0) {
 				  // do something else
 				}else{
@@ -3111,8 +3237,9 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 		for(i=0; i<59; i++) {
 			sendBuffReTyped[i+6]=getNormalizedInput(StatusReportIndirection[i]);
 		}
-		if ('0'!=status_mode) {
-			sendBuffReTyped[6] = (ServoData[0].PresentLoad << 16) + ServoData[0].PresentPossition;
+		if ('0'!=status_mode) { //extended status, e.g. g1 or higher
+			sendBuffReTyped[5]=DexError | OverError; //any monitor over error is ok here
+			sendBuffReTyped[6] = (ServoData[3].PresentLoad << 16) + ServoData[3].PresentPossition;
 			sendBuffReTyped[7] = (ServoData[1].PresentLoad << 16) + ServoData[1].PresentPossition;
 			sendBuffReTyped[8] = (int)status_mode;
 			sendBuffReTyped[17] = getNormalizedInput(BASE_STEPS);
@@ -3121,6 +3248,7 @@ bool ProcessServerSendDataDDE(char *sendBuff,char *recBuff)
 			sendBuffReTyped[47] = getNormalizedInput(ANGLE_STEPS);
 			sendBuffReTyped[57] = getNormalizedInput(ROT_STEPS);
 		}
+		OverError &= ERROR_INPUT_OFFSET; // clear everything other than an FPGA/Firmware missmatch. 
 		return TRUE;
 	} //if('r'==oplet)
 	return FALSE;
@@ -3484,7 +3612,14 @@ void setDefaults(int State)
 	
 	for (i=NUM_SERVOS-1; i>=0; --i) {
 		ServoData[i].LoadLimit = XL320_LOAD_LIMIT;
-}
+		ServoData[i].ServoType = unknown; //TODO: start with unknown, then IF servo system starts, ask servo what model it is.
+		}
+	ServoData[3].ServoType = XC430; //XL320 XC430; //Joint 6
+	//JointsCal[6-1] = 1;
+	//HomeOffset[6-1] = 0;
+	ServoData[1].ServoType = XC430; //XL320 XC430; //Joint 7
+	//JointsCal[7-1] = 1;
+	//HomeOffset[7-1] = 0;
 
 	RemoteRobotAddress = fopen("RemoteRobotAddress.txt", "rs");
 	if(RemoteRobotAddress!=NULL)
@@ -3702,11 +3837,11 @@ int getNormalizedInput(int param)
 	int val;
 	float corrF=1;
 	if ('0'==status_mode) {
-	if(param == SLOPE_BASE_POSITION){return ServoData[1].PresentPossition;}
+	if(param == SLOPE_BASE_POSITION){return (int)((float)ServoData[1].PresentPossition * JointsCal[7-1] + HomeOffset[7-1]);}
 	if(param == SLOPE_PIVOT_POSITION){return ServoData[1].PresentLoad;}
-	if(param == SLOPE_END_POSITION){return ServoData[0].PresentPossition;}
-	if(param == SLOPE_ANGLE_POSITION){return ServoData[0].PresentLoad;}
-	if(param == SLOPE_ROT_POSITION){return (ServoData[0].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
+	if(param == SLOPE_END_POSITION){return (int)((float)ServoData[3].PresentPossition * JointsCal[6-1] + HomeOffset[6-1]);}
+	if(param == SLOPE_ANGLE_POSITION){return ServoData[3].PresentLoad;}
+	if(param == SLOPE_ROT_POSITION){return (ServoData[3].error & 0x00ff) + ((ServoData[1].error & 0x0ff)<<8);}
 		}
 	
 	val = mapped[param];
@@ -4556,11 +4691,29 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			return 0;
 		break;
 		case 28:     // ServoSet
-			SendWrite1Packet((unsigned char)a4, a2, a3);
+			SendWrite1Packet((unsigned char)a4, a2, a3);// data, servo, addr. a5, a6
 			return 0;
 		break;
 		case 29:     // ServoReset
 			//printf("Servo Reboot %d",a2);
+			if (a3) {
+				//need to translate 3->5, 1->6, 2->7, 4->8 and so on. ServoAddr(joint) does the opposite. 
+				i = NUM_JOINTS + a2 - 1; //4->8, 5->9
+				switch (a2) {
+					case 1: i = 6; break; //J7, zero indexed
+					case 2: i = 7; break; //J8
+					case 3: i = 5; break; //J6
+					default: break;
+					}
+				ServoData[a2].ServoType = (enum ServoTypes)a3;
+				if (a3>0) { //if the servo type was supplied
+					if (0 == a4) {a4=(3600*360);};
+					JointsCal[i] = (float)a4 / (3600*360);
+					HomeOffset[i] = a5;
+					printf("With slope %f offset %d, ", JointsCal[i], HomeOffset[i]);
+					}
+				printf("Servo %d joint %d set to type %d \n", a2, i+1, a3);
+				}
 			RebootServo(a2); 
 			return 0;
 		break;
@@ -4743,8 +4896,9 @@ int SetParam(char *a1,float fa2,int a3,int a4,int a5, int a6)
 			break;
 		case 54:
 			//MaxTorque
-			if (7 == a2) ServoData[1].LoadLimit = a3; //Max for Joint 7, Servo 1, Data[1]
-			if (6 == a2) ServoData[0].LoadLimit = a3; //Max for Joint 6, Servo 3, Data[0]
+			//if (7 == a2) ServoData[1].LoadLimit = a3; //Max for Joint 7, Servo 1, Data[1]
+			//if (6 == a2) ServoData[3].LoadLimit = a3; //Max for Joint 6, Servo 3, Data[0]
+			ServoData[ServoAddr(a2)].LoadLimit = a3;
 			return 0;
 			break;
 		case 55:
@@ -5219,7 +5373,17 @@ int getInput(void) {
 			printf(",\"COS\":%-4i",getNormalizedInput(StatusReportIndirection[a+5]));
 			printf("},");
 			}
-		printf("}\n");
+		printf("\n\"J6\": {\"AT\": %i,\"LOAD\": %i,\"VELOCITY\": %i},"
+			,getNormalizedInput(SLOPE_BASE_POSITION)
+			,getNormalizedInput(SLOPE_PIVOT_POSITION)
+			,ServoData[1].PresentSpeed
+			);
+		printf("\n\"J7\": {\"AT\": %i,\"LOAD\": %i,\"VELOCITY\": %i},"
+			,getNormalizedInput(SLOPE_END_POSITION)
+			,getNormalizedInput(SLOPE_ANGLE_POSITION)
+			,ServoData[3].PresentSpeed
+			);
+		printf("\n\"ERROR\": %i}\n", DexError);
 		// printPosition();
 		// showPosAt();
 		return DexError;
@@ -5409,6 +5573,24 @@ int ParseInput(char *iString)
 						if (p6!=NULL) L[0]=atof(p6); // optional. 
 						printf("LinkLengths: %lf, %lf, %lf, %lf, %lf \n", L[0], L[1], L[2], L[3], L[4]);
 
+					}else if(!strcmp("ServoSetX",p1)){ //TODO: Change to just ServoSet and remove that routine from SetParm(
+						d2 = d3 = d4 = 0;
+						p2=strtok(NULL, delimiters); if (p2!=NULL) d2=atoi(p2); // servo number. 
+						p3=strtok(NULL, delimiters); if (p3!=NULL) d3=atoi(p3); // Address 
+						p4=strtok(NULL, delimiters); if (p4!=NULL) d4=atoi(p4); // Length or 1 byte data
+						p5=strtok(NULL, ";"); // pointer to Data (optional)
+						if (p5==NULL) { //no data
+							if (p4==NULL) return 1; //invalid command. 
+							*p4 = (d4 & 0xff); //make a 1 byte binary buffer using length as data (original format)
+							SendWriteXPacket((unsigned char *)p4, d2, d3, 1); //send a single byte of data
+							} //this preserves the original function of ServoSet
+						else { //otherwise, d4 is length, p5 points to escaped datastring.
+							d4 = unescape(p5, d4); //nulls, 0x3B (;) can't pass initial parse, esc'd w/ 0x25 (%) 
+							//for (i = 0; i<d4; i++) printf("%02X ", p5[i]);
+							//printf("\nsend %d bytes to servo %d at addr %d\n", d4, d2, d3);
+							SendWriteXPacket((unsigned char *)p5, d2, d3, d4); //note that length was changed by unescape
+							}
+
 					}else {
 						//printf("generic %s\n",p1);
 						p2=strtok (NULL, delimiters);
@@ -5440,7 +5622,7 @@ int ParseInput(char *iString)
 				break; 
 				case SLEEP_CMD  :
 					p1=strtok (NULL, delimiters);
-					usleep(atoi(p1));
+					if (p1) usleep(atoi(p1));
 				break; 
 				case MOVE_CMD  :
 					p1=strtok (NULL, delimiters);
@@ -5836,7 +6018,7 @@ int main(int argc, char *argv[]) {
   int CalTblSize = 32*1024*1024; 
 
   if (argc != 4) {
-    fprintf(stderr, "Usage: %s Needs init mode, Master/Slave and RunMode\n", argv[0]);
+    fprintf(stderr, "Usage: %s Needs init mode, drive/follow mode and RunMode\n", argv[0]);
     exit(1);
   }
 
