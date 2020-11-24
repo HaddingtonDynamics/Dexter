@@ -5757,8 +5757,10 @@ int ParseInput(char *iString)
 					i=atoi(p1);
 					j=atoi(p2);
 					//printf("\n %d %d %d \n",OldMemMapInderection[i],i,j);
-					if(OldMemMapInderection[i]==COMMAND_REG)
+					if(OldMemMapInderection[i]==COMMAND_REG){
+						j = j ^ 0xB6DB4000; //This is for the new stepper drivers on HongYang's Motor Control Board, sets hi bits on every write command
 						CmdVal=j;
+					}
 					//printf("\n  mapped[%d] = %d;\n",OldMemMapInderection[i],j);
 					//to build up a set of FPGA commands, just use the above printf and copy the result into your code.
 					mapped[OldMemMapInderection[i]]=j;
