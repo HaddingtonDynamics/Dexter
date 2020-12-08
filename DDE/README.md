@@ -3,7 +3,7 @@
 Dexter Development Environment is the IDE for Dexter. 
 
 The current long term release version of DDE, which will not change as rapidly as the development version, is avaiable at:<br>
-https://github.com/cfry/dde/releases/tag/v2.5.17  
+[https://github.com/cfry/dde/releases/tag/v2.5.17](https://github.com/cfry/dde/releases/tag/v2.5.17)
 
 Newer development releases of DDE can be found on the [releases tab](https://github.com/cfry/dde/tags) at:<br>
 https://github.com/cfry/dde
