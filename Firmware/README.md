@@ -22,6 +22,7 @@ You can edit, compile, and debug DexRun.c by [establishing a network connection]
 ````
 cd /srv/samba/share
 pkill DexRun
+./pg
 ./DexRun 1 3 1
 ````
 This will show you the printfs with debugging data from the DexRun side. 
