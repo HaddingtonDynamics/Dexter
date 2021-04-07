@@ -2,22 +2,41 @@ These Firmware files go in the /srv/samba/share folder on the robot. For more in
 
 Note that updated versions of DexRun.c may not be able to support new features in the Gateware unless the drive image is updated. For example, the 6 and 7th access (twist and grip of end effector on new tool interface) requires an interface to the servos which is implemented in the FPGAs and so needs an updated image. 
 
-## DexRun.c Manual update?
-
-If your SD Card Image is old, you may need to take a series of steps to get the system updated to the point where you can update the firmware. For most users, you shouldn't need to do that. If the following fails to work, you can revert to [doing it the old, manual, way](https://github.com/HaddingtonDynamics/Dexter/blob/5874064c494af0c98758fe08ea924fbc6244261e/Firmware/README.md#dexrunc-manual-update) or better yet, just request an updated SD Card image. 
-
 ## DexRun.c Update via DDE
 **Write New DexRun.c into /srv/samba/share/ and Restart Robot.**
 
-To update DexRun.c:
-1. Use write_to_robot from DDE to put DexRun.c into the default folder (/srv/samba/share) on the robot. 
+On current Dexter robots, to update DexRun.c:
+1. Use write_to_robot from DDE to put DexRun.c into the default folder (/srv/samba/share) on the robot. Using DDE automatically sets the clock on the robot.
 2. Reboot. Just power cycle the robot. The new program should be automatically seen, compiled, and run on startup by the new RunDexRun script.
+
+## DexRun.c Manual update?
+
+If your SD Card Image is old, you may need to take a series of steps to get the system updated to the point where you can update the firmware. For most users, you shouldn't need to do that. If the DDE method fails to work, you can revert to [doing it the old, manual, way](https://github.com/HaddingtonDynamics/Dexter/blob/5874064c494af0c98758fe08ea924fbc6244261e/Firmware/README.md#dexrunc-manual-update) or better yet, just request an updated SD Card image. 
 
 ## Notes
 
-### Debugging notes
+### DexRun.c compile via SSH
+Assuming your SD card is up to date, you can re-compile DexRun quickly by [establishing a network connection](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking) and [SSHing into Dexter](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking#shell-access-via-ssh), then, at the command prompt
 
-You can edit, compile, and debug DexRun.c by [establishing a network connection](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking) and [SSHing into Dexter](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking#shell-access-via-ssh), then, at the command prompt:
+#### Update the file date:
+It is absolutely critical that the system date on the robot be correct before you re-compile DexRun. To check the date, simply type:<br>
+`date`
+<br>and press enter. If the date is incorrect, set it by typing something like the following:<br>
+`date -s "5mar18 21:30"`			(change to current date)
+
+#### Run compile script 'pg'
+And now you can compile DexRun.c<br>
+````
+cd /srv/samba/share
+pkill DexRun
+./pg
+./DexRun 1 3 1
+````
+Warning messages may be normal during the `./pg` step, but errors are not.
+
+## Debugging notes
+
+You can debug DexRun.c by [establishing a network connection](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking) and [SSHing into Dexter](https://github.com/HaddingtonDynamics/Dexter/wiki/Dexter-Networking#shell-access-via-ssh), then, at the command prompt:
 
 ````
 cd /srv/samba/share
