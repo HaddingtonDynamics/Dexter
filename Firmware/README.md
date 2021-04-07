@@ -22,7 +22,8 @@ Assuming your SD card is up to date, you can re-compile DexRun quickly by [estab
 It is absolutely critical that the system date on the robot be correct before you re-compile DexRun. To check the date, simply type:<br>
 `date`
 <br>and press enter. If the date is incorrect, set it by typing something like the following:<br>
-`date -s "5mar18 21:30"`			(change to current date)
+`date -s "5mar18 21:30"`			(change to current date)<BR>
+or by connecting to the robot via DDE, which should set the date automatically.
 
 #### Run compile script 'pg'
 And now you can compile DexRun.c<br>
