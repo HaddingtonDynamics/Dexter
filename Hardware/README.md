@@ -2,6 +2,8 @@ Future home of Dexter hardware design files. Currently, you can find these files
 - Motor board:<br>
 Now in the Motor PCB folder above. This is the version for Dexter 1 and Dexter HD robots. The prior version is at:<BR>
 https://github.com/kgallspark/Dexter/tree/master/MotorControl <br>
+but it has a serious error on D3 and D4 of the power supply section. 
+<BR>
 - Opto interruptors:<br>
 https://github.com/kgallspark/Dexter/tree/master/OPTO (see updated schematic and BOM in the Opto folder here)<br>
 LEDs: https://www.digikey.com/product-detail/en/lite-on-inc/LTE-4206/160-1028-ND/121704 <br>
