@@ -1,0 +1,1508 @@
+//EasyTeach v1.5.1
+//James Wigglesworth
+//Started: 8_14_17
+//Updated: 10_26_19
+
+//User Input:
+var speed_delay_tweak = 0 //inter_do_item_dur
+//var pid_p_array = [0.2, 0.2, 0.4, 0.2, 0.2]
+var pid_p_array = Vector.multiply(1, [0.2, 0.2, 0.4, 0.2, 0.2])
+Dexter.LINK5 = 130 * _mm //default is 0.08255 m
+var bounds = [[-180, 180], [-90, 90], [10,158], [-90, 90], [-190, 190], [-140, 140], [0, 280]]
+var min_Z = -7.7 * _cm 
+var min_xy_dist
+
+new Dexter({name: "my_dex", ip_address: "192.168.1.142", simulate: null})
+var robot = Dexter.my_dex
+//var robot = Dexter.dexter0
+
+
+var ROLL = 0
+//var ROLL = -15 + 0
+
+
+var J6 = 0//-90 + 0
+var J7 = 0
+var roll = -ROLL
+
+var joystick_threshold = .15 // Increase if arm is moving without pressing joysticks. Has range of 0-1. Originally the value was 0.1. 
+//If you have a new controller, eval this file and run ezCreate.
+//If it errors follow the error message instructions and change the values below:
+var game_controller_name = "Xbox";// 360 Controller (XInput STANDARD GAMEPAD)"
+var xbox = {A:0, B:1, X:2, Y:3, LB:4, RB:5, LT:6, RT:7, VIEW:8, MENU:9, LJ:10, RJ:11, UP:12, DOWN:13, LEFT:14, RIGHT:15, LJLR: 0, LJUD: 1, RJLR: 2, RJUD: 3}
+//
+
+//You can re-map the functionality of each button here:
+var map = {
+	plane_point: xbox.Y, set_plane: xbox.B, 
+	next_coor: xbox.A, prev_coor: xbox.X,
+	cycle_left: xbox.LEFT, cycle_right: xbox.RIGHT, 
+	pivot_mode: xbox.RT, follow_mode: xbox.LT, save_point: xbox.LB,
+	X: xbox.LJLR, Y: xbox.LJUD, Z: xbox.RJUD,
+	reset: xbox.VIEW, finish: xbox.MENU,
+	x_theta: xbox.LJLR, y_theta: xbox.LJUD,
+	action_state: xbox.RB,
+	speed_up: xbox.UP, speed_down: xbox.DOWN
+}
+
+
+//Adjustable properties for each job:
+var inputs_for_ezCreate = {start_position: [[0,0.3,.4], [0, 0, -1], [1, 1, 1]], lift_height: 4 *_cm, extrude_time: 1 *_s}
+var inputs_for_ezRun = {start_position: [[0,0.45,.2], [0, 0, -1], [1, 1, 1]], loop: false, loop_iterations: Infinity, inter_loop_dur: 0 *_s, lift_height: 4 *_cm, dry_run: false}
+
+
+//Main functions to control action at each point:
+//User defines the content in these functions
+
+//Edit create_position() to control what information gets stored when different buttons are held
+function ez_create_position(info){
+	let CMD = [] 					//These are commands added to the do list everytime a position is created
+
+	let base_coor_name = info.job.user_data.coordinate_systems[0]
+	let base_coor = ez_get_object(Coor, base_coor_name)
+    let local_coor_name = info.job.user_data.coordinate_systems[info.job.user_data.coordinate_system_idx]
+    let local_coor = ez_get_object(Coor, local_coor_name)
+    
+    let position_object = { 		//This object is added to the array that will get saved out and read by ez_run_position() below
+		xyz: info.position[0],
+		normal: info.position[1],
+		config: info.position[2],
+		J_angles: info.J_angles,
+        local_coor: local_coor_name,
+        local_xyz: Coor.move_points_to_coor(info.position[0], base_coor, local_coor),
+        local_normal: info.position[1],
+        properties: {}
+    }
+    
+	if(info.game_controller.buttons[map.action_state].pressed){
+		position_object.properties.extrude_state = true
+		position_object.properties.extrude_time = info.extrude_time
+	}else{
+		position_object.properties.extrude_state = false
+	}
+    return [position_object, CMD]
+    /*
+    the info variable contains:
+    info.position //[xyz, direction, config] of current robot position
+    info.J_angles //J_angles of current robot position
+    info.game_controller// Contains the button states of the game controller
+    info.job //The actual job instance such that info.job.user_data will change the job's user_data
+    */
+}
+
+//Edit ez_run_position() to control the actions run at each position
+function ez_run_position(info, dry_run = false){
+	let CMD				//These are commands added to the do list everytime a position is run
+    let position_object = info.position_object
+    
+    // Coordinate system transforms:
+    let base_coor = ez_get_object(Coor, info.job.user_data.coordinate_systems[0])
+    let local_coor = ez_get_object(Coor, position_object.local_coor)
+    let base_xyz = Coor.move_points_to_coor(position_object.local_xyz, local_coor, base_coor)
+    let base_dir = Coor.move_vectors_to_coor(position_object.local_normal, local_coor, base_coor)    
+        
+    if(dry_run === true){
+    	//dry_run is set to true when cycling through the positions in the Create job.
+        //dry_run can also be set to true for the Run job by changing the variable inputs_for_Run
+    	if(position_object.properties.extrude_state === true){
+        	//To prevent dragging on the workepiece Dexter starts and finishes from an offset position
+        	let offset_point = Vector.add(base_xyz, Vector.multiply(-info.job.user_data.inputs.lift_height, base_dir))
+        	CMD = [
+        		//make_ins("S", "MaxSpeed", 30),
+        		//make_ins("S", "StartSpeed", .5),
+        		//make_ins("S", "Acceleration", 0.0001),
+        		//Dexter.move_to(offset_point, base_dir, position_object.config),
+    			Dexter.pid_move_to(base_xyz, base_dir, position_object.config),
+            	//make_ins("F"),
+                //function(){info.job.inter_do_item_dur = position_object.properties.extrude_time},
+            	function(){info.job.inter_do_item_dur = .5 * _ms},
+                Dexter.pid_move_to(offset_point, base_dir, position_object.config)
+        	]
+            
+            //This variable must be set to the last commanded position
+        	info.job.user_data.old_position = [offset_point, base_dir, position_object.config]
+        }else{
+        	//This is a way-point used to direct the path around obstacles
+        	CMD = [
+        		//make_ins("S", "MaxSpeed", 30),
+        		//make_ins("S", "StartSpeed", .5),
+        		//make_ins("S", "Acceleration", 0.0001),
+    			Dexter.pid_move_to(base_xyz, base_dir, position_object.config)
+        	]
+            
+            //This variable must be set to the last commanded position
+        	info.job.user_data.old_position = [base_xyz, base_dir, position_object.config]
+        }
+    }else{
+    	if(position_object.properties.extrude_state){
+        	//Action for extrusions
+        	let offset_point = Vector.add(base_xyz, Vector.multiply(-info.job.user_data.inputs.lift_height, base_dir))
+        	CMD = [
+        		//make_ins("S", "MaxSpeed", 30),
+        		//make_ins("S", "StartSpeed", .5),
+        		//make_ins("S", "Acceleration", 0.0001),
+        		Dexter.pid_move_to(offset_point, base_dir, position_object.config),
+    			Dexter.pid_move_to(base_xyz, base_dir, position_object.config),
+                //make_ins("F"),
+                //function(){info.job.inter_do_item_dur = .1*_ms},
+                //function(){info.job.inter_do_item_dur = position_object.properties.extrude_time / 2},
+            	//make_ins("S", "GripperMotor", 1),
+            	//function(){info.job.inter_do_item_dur = .5 * _ms},
+                //make_ins("S", "GripperMotor", 0),
+            	Dexter.pid_move_to(offset_point, base_dir, position_object.config),
+        	]
+        }else{
+        	//Action for way points
+        	CMD = [
+        		//make_ins("S", "MaxSpeed", 30),
+        		//make_ins("S", "StartSpeed", .5),
+        		//make_ins("S", "Acceleration", 0.0001),
+    			Dexter.pid_move_to(base_xyz, base_dir, position_object.config)
+        	]
+        }
+    }
+    return CMD
+}
+
+function ez_stop_run(info){
+	let CMD				//These are commands added to the do list everytime a position is run
+    let position_object = info.position_object
+    CMD = [
+    	//function(){info.job.inter_do_item_dur = .5 * _ms},
+    	make_ins("S", "GripperMotor", 0),
+        Robot.stop_job,
+    ]
+}
+
+// Defines the Jobs 
+//ezTeach_init("choose_file", Robot.dexter0)
+
+
+//function ezTeach_init(points_filepath = "choose_file", robot = Robot.dexter0){
+
+//ezTeach_base
+//James Wigglesworth
+//Based off of code from Kent Gilson
+//Started: 8_14_17
+//Updated: 1_26_18
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// General Use Functions:
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function ez_my_settings(speed = 30){
+    return [
+    		make_ins("S", "GripperMotor", 0),
+    		make_ins("w", 78, 1),
+    		make_ins("w", 78, 0),
+            make_ins("S", "J1BoundryLow",-188),
+            make_ins("S", "J1BoundryHigh",188),
+            make_ins("S", "J2BoundryLow",-97),
+            make_ins("S", "J2BoundryHigh",97),
+            make_ins("S", "J3BoundryLow",-158),
+            make_ins("S", "J3BoundryHigh",158),
+            make_ins("S", "J4BoundryLow",-108),
+            make_ins("S", "J4BoundryHigh",108),
+            make_ins("S", "J5BoundryLow",-190),
+            make_ins("S", "J5BoundryHigh",190),
+            make_ins("S", "MaxSpeed", speed),
+            make_ins("S", "StartSpeed", .05),
+            make_ins("S", "Acceleration", .0001),
+    	   ]
+}
+
+function ez_get_object(parent_obj, key_string){
+	let result = parent_obj
+    let keys = key_string.split(".")
+    for(let i = 0; i < keys.length; i++){
+    	result = result[keys[i]]
+    }
+    return result
+}
+
+function ez_get_path_string(object, name_stop = "Root"){
+    let current_name = object.name
+    let name_list = [current_name]
+    let current_obj = object
+    
+    while(current_name != name_stop){
+    	current_obj = current_obj.prototype
+        current_name = current_obj.name
+        name_list.unshift(current_name)
+    }
+    let result = ""
+    for(let i = 1; i < name_list.length-1; i++){
+    	result += name_list[i] + "."
+    }
+    result += name_list[name_list.length-1]
+    return result
+}
+
+
+
+
+
+//function ezTeach_init(points_filepath = "choose_file", robot = Robot.dexter0){
+
+var points_filepath = "choose_file"
+//var robot = Robot.dexter0
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//Code for Create
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+function ez_show_create_doc(){
+    show_window({title: "ezTeach GamePad Button Mapping",
+        content: '<img width="1000"  src="' + __dirname +
+        '/user_tools/ezTeach_create.jpg' +'"/>',
+        x: 0, y: 50,
+        width: 1020, height: 300
+    })
+}
+
+function ez_show_run_doc(){
+    show_window({title: "ezTeach GamePad Button Mapping",
+        content: '<img width="1000"  src="' + __dirname +
+        '/user_tools/ezTeach_run.jpg' +'"/>',
+        x: 0, y: 50,
+        width: 1020, height: 300
+    })
+}
+
+function Init_Create(){
+	// Initialize Game Controller
+    clear_output()
+	let game_pads = navigator.getGamepads()
+    let game_pad_idx
+	for(let i = 0; i < game_pads.length; i++){
+    	if(game_pads[i] != null && game_pads[i].id.startsWith(game_controller_name)){
+    		game_pad_idx = i
+        	break
+    	}else if(i == game_pads.length - 1){
+    		let game_str = ""
+    		for(let j = 0; j < game_pads.length; j++){
+        		if(game_pads[j] != null){
+            		game_str += "<br>" + game_pads[j].id
+            	}
+        	}
+            dde_error("Press any button on controller and try again.")
+        }
+	}
+	this.user_data.game_pad_idx = game_pad_idx
+    
+    
+    // Move to the start position
+    let start_position = this.user_data.inputs.start_position
+    let CMD = [ ez_show_create_doc,
+    			ez_my_settings,
+                Dexter.move_all_joints([0, 0, 0, 0, 0]),
+                Dexter.pid_move_to(start_position[0], start_position[1], start_position[2], undefined, ROLL),
+                Dexter.set_parameter("J1_PID_P", pid_p_array[0]),
+                Dexter.set_parameter("J2_PID_P", pid_p_array[1]),
+                Dexter.set_parameter("J3_PID_P", pid_p_array[2]),
+                Dexter.set_parameter("J4_PID_P", pid_p_array[3]),
+                Dexter.set_parameter("J5_PID_P", pid_p_array[4])
+                /*
+                function(){
+                	let choice_made = Human.enter_choice({task: "Select Coordinate System", choices: ["Yes", "No"], show_choices_as_buttons: true})
+                    switch(choice_made){
+                    	case "Yes":
+                        
+                        break
+                        case "No":
+                        
+                        break
+                        default:
+                        out("Something wierd happened")
+                    }
+                }*/
+    		  
+              ]
+    this.user_data.old_buttons = navigator.getGamepads()[this.user_data.game_pad_idx].buttons
+    this.user_data.old_position = start_position
+    this.user_data.save_point = false
+    this.user_data.reset = false
+    this.user_data.next_coor = false
+    this.user_data.prev_coor = false
+    this.user_data.speed_up = false
+    this.user_data.speed_down = false
+    Coor.create_child(undefined, "Dexter_Base")
+    return CMD
+}
+
+function Main_Create(){
+    //Values to change when tuning for speed/smoothness/lag:
+    let max_ang_vel = 10 *(_deg/_s) 	// This controls both the xyz velocity and pivot velocity even though it's in deg/s. All speeds are currently done in joint space.
+    let max_step = 3.5 *(_mm)			// When a Joystick is pressed to its max this is the distance between startpoint and endpoint of the straight line.
+    let resolution = 3 *(_mm) 			// Straight line interpolated segements cannot exceed this distance.
+    let max_pivot = 10 *(_deg)			// When a Joystick is pressed to its max this is the angle between starting angle and ending angle of the pivot motion.
+    let pivot_resolution = .2 *(_deg)	// Pivot interpolated movement change in J_angles cannot exceed this value
+    
+    
+    let CMD = []
+    let inputs = this.user_data.inputs
+    let clearance = inputs.lift_height
+    let gp = navigator.getGamepads()[this.user_data.game_pad_idx]
+    let rs = this.robot.robot_status
+	let J_angles = [rs[Dexter.J1_MEASURED_ANGLE], rs[Dexter.J2_MEASURED_ANGLE], rs[Dexter.J3_MEASURED_ANGLE], rs[Dexter.J4_MEASURED_ANGLE], rs[Dexter.J5_MEASURED_ANGLE], rs[Dexter.J6_MEASURED_ANGLE], rs[Dexter.J7_MEASURED_ANGLE]]
+    let position = this.user_data.old_position
+        
+    let base_coor = ez_get_object(Coor, this.user_data.coordinate_systems[0])
+    let local_coor = ez_get_object(Coor, this.user_data.coordinate_systems[this.user_data.coordinate_system_idx])
+    let local_position = [[], [], position[2].slice()]
+    let local_direction = local_coor.get_xy_plane_direction()
+    local_position[0] = Coor.move_points_to_coor(position[0].slice(), base_coor, local_coor)
+    local_position[1] = Coor.move_vectors_to_coor(position[1].slice(), base_coor, local_coor)
+	let speed_factor = this.user_data.speed_factor_list[this.user_data.speed_factor_idx]
+    //Pressed Buttons:
+    if(gp.buttons[map.speed_down].pressed){
+    	this.user_data.speed_down = true
+    }
+    
+    if(gp.buttons[map.speed_up].pressed){
+    	this.user_data.speed_up = true
+    }
+    
+    if(gp.buttons[map.next_coor].pressed){
+    	this.user_data.next_coor = true
+    }
+    
+    if(gp.buttons[map.prev_coor].pressed){
+    	this.user_data.prev_coor = true
+    }
+    
+   	if(gp.buttons[map.plane_point].pressed){
+    	let pp_array = []
+        for(let i = 0; i < 3; i++){
+        	if(this.user_data.plane_points[i].position[0] != undefined){
+            	pp_array.push(Vector.round(this.user_data.plane_points[i].position[0], 3))
+            }else{
+            	pp_array.push(undefined)
+            }
+        }
+        out("Plane point " + (this.user_data.plane_points_idx + 1) + " is at: [" + Vector.round(position[0], 3) + "] (meters) <br> Plane points: 1: [" + 
+        pp_array[0] + "], 2: [" + pp_array[1] + "], 3: [" + pp_array[2] + "] </br>", "blue", true)
+    
+    	this.user_data.plane_point = true
+    }
+    
+    if(gp.buttons[map.set_plane].pressed){
+    	this.user_data.set_plane = true
+    }
+    
+    if(gp.buttons[map.finish].pressed){
+    	this.user_data.finish = true
+    }
+    
+    let xyzVel = [0, 0, 0] // (m/s)
+    let xyzStep = [0, 0, 0] // (m)
+    let JoystickPos = gp.axes
+    if(Math.abs(JoystickPos[0]) < joystick_threshold){JoystickPos[0] = 0}
+    if(Math.abs(JoystickPos[1]) < joystick_threshold){JoystickPos[1] = 0}
+    if(Math.abs(JoystickPos[2]) < joystick_threshold){JoystickPos[2] = 0}
+    if(Math.abs(JoystickPos[3]) < joystick_threshold){JoystickPos[3] = 0}
+    
+    // Main Joystick code:
+    if(gp.buttons[map.pivot_mode].pressed){
+    	// Pivot Motions:
+        
+        debugger
+        let old_J_angles = [...Kin.xyz_to_J_angles(position[0], position[1], position[2]), J6, J7]
+        let Joystick_thetas = [-JoystickPos[map.x_theta], JoystickPos[map.y_theta]]
+        let R_Joystick_thetas = [-JoystickPos[xbox.RJLR], JoystickPos[xbox.RJUD]]
+        Joystick_thetas[0] *= .1
+        Joystick_thetas[1] *= .1
+        R_Joystick_thetas[0] *= .1
+        R_Joystick_thetas[1] *= .1
+        Joystick_thetas = Vector.multiply(max_pivot, Joystick_thetas)
+        R_Joystick_thetas = Vector.multiply(max_pivot, R_Joystick_thetas)
+        
+        let angles_1
+        if(position[1].length === 3){
+        	angles_1 = Kin.dir_xyz_to_angles(position[1])
+        }else{
+        	angles_1 = position[1]
+        }
+        let delta_angles = Vector.multiply(max_pivot, Joystick_thetas)
+        let angles_2_temp = Vector.add(angles_1, delta_angles)
+        let angles_2
+        let angle_max = 60
+        
+        if(angles_2_temp[0] < -angle_max || angles_2_temp[0] > angle_max || angles_2_temp[1] < -angle_max || angles_2_temp[1] > angle_max){
+        	angles_2 = angles_1
+        }else{
+        	angles_2 = angles_2_temp
+        }
+        
+        let joy_mag = Vector.magnitude(delta_angles)
+        let new_J_angles = Kin.xyz_to_J_angles(position[0], Kin.angles_to_dir_xyz(angles_2), position[2])
+        
+        
+        
+        let delta_J6_angle = R_Joystick_thetas[0]
+        let J6_angle_1 = J6
+        let J6_angle_2_temp = J6 + delta_J6_angle
+        let J6_angle_2
+        if(J6_angle_2_temp < bounds[5][0] || J6_angle_2_temp > bounds[5][1]){
+        	J6_angle_2 = J6_angle_1
+        }else{
+        	J6_angle_2 = J6_angle_2_temp
+        }
+        
+        new_J_angles = [...new_J_angles, J6_angle_2, J7]
+        
+        if(!Vector.is_equal(old_J_angles, new_J_angles, 1)){
+        	let pivot_J_angles = Kin.interp_movement(old_J_angles, new_J_angles, pivot_resolution)
+            let in_bounds_flag
+            let pivot_J_angles_elt
+        	for(let i = 0; i < pivot_J_angles.length; i++){
+            	in_bounds_flag = true
+                pivot_J_angles_elt = pivot_J_angles[i]
+            	for(let j = 0; j < pivot_J_angles_elt.length; j++){
+                	if(pivot_J_angles_elt[j] < bounds[j][0] || pivot_J_angles_elt[j] > bounds[j][1]){
+                    	in_bounds_flag = false
+                    }
+                }
+                
+                if(in_bounds_flag){
+        			CMD.push(Dexter.pid_move_all_joints(pivot_J_angles_elt))
+                }
+        	}
+        	this.user_data.old_position = [position[0], Kin.angles_to_dir_xyz(angles_2), position[2]]
+        }
+    }else{
+    	// XYZ Motion:
+    	let xy_theta = Math.atan2(JoystickPos[map.Y], JoystickPos[map.X])
+        let JoystickXYZ = [JoystickPos[map.X], -JoystickPos[map.Y], -JoystickPos[map.Z]]
+        let joy_mag = Vector.magnitude(JoystickXYZ)
+        if(joy_mag != 0){
+            xyzStep = Vector.multiply(speed_factor, max_step, JoystickXYZ)
+            let mag = Vector.magnitude(xyzStep)
+            let res
+            
+            let xyz_1 = position[0]
+            let local_xyz_1 = local_position[0]
+            let local_xyz_2 = Vector.add(local_xyz_1, xyzStep)
+            let xyz_2 = Coor.move_points_to_coor(local_xyz_2, local_coor, base_coor)
+            if(!Kin.is_in_reach(xyz_2, position[1], position[2]) || !Kin.is_in_reach(xyz_1, position[1], position[2])){
+            	//out("Robot limit reached", "blue")
+            }else{
+            	let U4 = Vector.add(xyz_2, Vector.multiply(-Dexter.LINK5, position[1]))
+                let U1 = [0, 0, Dexter.LINK1]
+                let D41 = Vector.distance(U4, U1)
+                let Dxy = Vector.magnitude([U4[0], U4[1], 0])
+
+                let max_dist = Dexter.LINK2 + Dexter.LINK3 - 0*_cm
+                let min_xy_dist = 150 * _mm
+                if(D41 > max_dist || Dxy < min_xy_dist || xyz_2[2] < min_Z){
+                	res = [[xyz_1]]
+                }else{
+                	res = Kin.move_to_straight(xyz_1, xyz_2, position[1], position[2], undefined, resolution)
+                }
+                
+                
+               
+            	let in_bounds_flag, xyz_J_angles
+                for(let i = 0; i < res[0].length; i++){
+                	J6 = sixth(res[0][i], roll)
+                	xyz_J_angles = [...Kin.xyz_to_J_angles(res[0][i], position[1], position[2]), J6, J7]
+                	in_bounds_flag = true
+            		for(let j = 0; j < xyz_J_angles.length; j++){
+                		if(xyz_J_angles[j] < bounds[j][0] || xyz_J_angles[j] > bounds[j][1]){
+                    		in_bounds_flag = false
+                    	}
+                    }
+                    if(in_bounds_flag){
+        				CMD.push(Dexter.pid_move_all_joints(xyz_J_angles))
+                	}
+                
+                
+                
+                	//if(Kin.is_in_reach(res[0][i], position[1], position[2])){
+                		//CMD.push(make_ins("S", "MaxSpeed", speed_factor * joy_mag * max_ang_vel))
+            			//CMD.push(make_ins("S", "StartSpeed", speed_factor * joy_mag * max_ang_vel))
+                        //}
+                        //CMD.push(Dexter.pid_move_to(res[0][i], position[1], position[2]))
+                        
+            	}
+                this.user_data.old_position = [res[0][res[0].length - 1], position[1], position[2]]
+            }
+        }
+    }
+    
+    if(gp.buttons[map.save_point].pressed){
+    	if(gp.buttons[map.action_state].pressed){
+    		out("Point is at [" + Vector.round(position[0], 4) + "](m) with normal [" + Vector.round(position[1], 3) + "]. Action state set to true.", "blue", true)
+        }else{
+        	out("Point is at [" + Vector.round(position[0], 4) + "](m) with normal [" + Vector.round(position[1], 3) + "]. Action state set to false.", "blue", true)
+        }
+        this.user_data.save_point = true
+    }
+    if(gp.buttons[map.cycle_left].pressed){
+        this.user_data.cycle_left = true
+    }
+    if(gp.buttons[map.cycle_right].pressed){
+        this.user_data.cycle_right = true
+    }
+    
+    if(gp.buttons[map.reset].pressed){ 
+    	if(!this.user_data.reset){
+        	this.user_data.reset_start_time = Date.now()
+            this.user_data.reset = true
+        }else{
+        	CMD = [
+        		make_ins("S", "MaxSpeed", 30),
+        		make_ins("S", "StartSpeed", .5),
+        		make_ins("S", "Acceleration", 0.0001)
+            	]
+        	let origin, direction
+        	if(this.user_data.coordinate_system_idx == 0){
+        		origin = this.user_data.inputs.start_position[0]
+            	direction = this.user_data.inputs.start_position[1]
+        	}else{
+        		origin = local_coor.get_position()
+            	direction = local_coor.get_xy_plane_direction()
+        	}
+            
+    		let reset_dur = (Date.now() - this.user_data.reset_start_time) * _ms
+        
+    		if(reset_dur < 1 * _s){
+        		out("Caution: This button may drastically move Dexter. Hold for 1 sec to reset direction and 3 sec to reset position, relative to current coordiante system.", "blue", true)
+        	}else if(reset_dur < 3 * _s){
+                out("", "blue", true)
+        		CMD.push(Dexter.pid_move_to(position[0], direction, position[2], undefined, ROLL))
+            	this.user_data.old_position = [position[0], direction, position[2]]
+        	}else{
+            	//debugger
+        		CMD.push(Dexter.pid_move_to(origin, direction, position[2], undefined, ROLL))
+            	this.user_data.old_position = [origin, direction, position[2]]
+        	}
+            this.user_data.old_buttons = gp.buttons
+    		//CMD.push(make_ins("F"))
+    		CMD.push(make_ins("g"))
+    		CMD.push(Robot.go_to("Main_Create"))
+    		return CMD
+            
+        }// end prev state
+    }// end button press
+    
+    if(gp.buttons[map.follow_mode].pressed){
+    	/*
+    	if(this.user_data.follow_mode === false){
+        	CMD.push(Dexter.set_follow_me)
+        }
+        */
+    	this.user_data.follow_mode = true
+    }
+    
+    
+    
+    
+    
+    
+    //Released Buttons:
+    
+    
+    if(!gp.buttons[map.speed_down].pressed && this.user_data.speed_down){
+    	if(this.user_data.speed_factor_idx < this.user_data.speed_factor_list.length - 1){
+        	this.user_data.speed_factor_idx++
+        }
+        //out("Speed factor set to: " + this.user_data.speed_factor_strings[this.user_data.speed_factor_idx])
+        out("Speed factor set to: " + this.user_data.speed_factor_list[this.user_data.speed_factor_idx])
+    	this.user_data.speed_down = false
+    }
+    
+    if(!gp.buttons[map.speed_up].pressed && this.user_data.speed_up){
+    	if(this.user_data.speed_factor_idx > 0){
+        	this.user_data.speed_factor_idx--
+        }
+        //out("Speed factor set to: " + this.user_data.speed_factor_strings[this.user_data.speed_factor_idx])
+        out("Speed factor set to: " + this.user_data.speed_factor_list[this.user_data.speed_factor_idx])
+    	this.user_data.speed_up = false
+    }
+    
+    if(!gp.buttons[map.next_coor].pressed && this.user_data.next_coor){
+    	if(this.user_data.coordinate_system_idx < this.user_data.coordinate_systems.length - 1){
+        	this.user_data.coordinate_system_idx++
+        }
+        out("Now in coordinate system " + this.user_data.coordinate_system_idx + ": " + this.user_data.coordinate_systems[this.user_data.coordinate_system_idx] + ". Exisiting coordinate systems:")
+        out(this.user_data.coordinate_systems)
+        
+    	this.user_data.next_coor = false
+    }
+    
+    if(!gp.buttons[map.prev_coor].pressed && this.user_data.prev_coor){
+    	if(this.user_data.coordinate_system_idx > 0){
+        	this.user_data.coordinate_system_idx--
+        }
+        out("Now in coordinate system " + this.user_data.coordinate_system_idx + ": " + this.user_data.coordinate_systems[this.user_data.coordinate_system_idx] + ". Exisiting coordinate systems:")
+        out(this.user_data.coordinate_systems)
+        
+    	this.user_data.prev_coor = false
+    }
+    
+    if(!gp.buttons[map.set_plane].pressed && this.user_data.set_plane){
+    	let J_angles_1 = this.user_data.plane_points[0].J_angles
+        let J_angles_2 = this.user_data.plane_points[1].J_angles
+        let J_angles_3 = this.user_data.plane_points[2].J_angles
+		if(J_angles_1.length == 0 || J_angles_2.length == 0 || J_angles_3.length == 0){
+        	out("Three points are required to create a plane", "blue", true)
+        }else{
+        	let new_pose = Kin.three_positions_to_pose(J_angles_1, J_angles_2, J_angles_3)
+            let new_coor = local_coor.create_child(new_pose, "Coordinate_System_" + this.user_data.coordinate_systems.length)
+            this.user_data.coordinate_systems.push(ez_get_path_string(new_coor, "Coor"))
+            this.user_data.coordinate_system_idx++
+            
+           	let dir = Vector.transpose(Vector.pull(new_coor.pose, [0, 2], [2,2]))
+        	out("New plane set at: [" + Vector.round(new_coor.get_position(), 3) + "] with plane normal: [" + Vector.round(dir, 3) + "]. Coordinate systems:")
+            out(this.user_data.coordinate_systems)
+            
+            this.user_data.plane_points[0].J_angles = []
+            this.user_data.plane_points[1].J_angles = []
+            this.user_data.plane_points[2].J_angles = []
+            
+            this.user_data.set_plane = false
+        }
+    }
+    
+    if(!gp.buttons[map.plane_point].pressed && this.user_data.plane_point){
+		this.user_data.plane_points[this.user_data.plane_points_idx].position = position
+        this.user_data.plane_points[this.user_data.plane_points_idx].J_angles = J_angles
+        let pp_array = []
+        for(let i = 0; i < 3; i++){
+        	if(this.user_data.plane_points[i].position[0] != undefined){
+            	pp_array.push(Vector.round(this.user_data.plane_points[i].position[0], 3))
+            }else{
+            	pp_array.push(undefined)
+            }
+        }
+        
+        out("Plane point " + (this.user_data.plane_points_idx + 1) + " saved at: [" + Vector.round(position[0], 3) + "] (meters) <br> Plane points: 1: [" + 
+        pp_array[0] + "], 2: [" + pp_array[1] + "], 3: [" + pp_array[2] + "] </br>")
+        
+        this.user_data.plane_points_idx = (this.user_data.plane_points_idx + 1) % 3
+		this.user_data.plane_point = false
+    }
+    
+    if(!gp.buttons[map.follow_mode].pressed && this.user_data.follow_mode){
+    	//CMD.push(Dexter.set_open_loop)
+        this.user_data.follow_mode = false
+    }
+    
+    if(!gp.buttons[map.finish].pressed && this.user_data.finish){
+    	CMD.push(Robot.go_to("Finish_Create"))
+        this.user_data.finish = false
+    }
+    
+    if(!gp.buttons[map.reset].pressed && this.user_data.reset){
+        this.user_data.reset = false
+    }
+    
+    if(!gp.buttons[map.save_point].pressed && this.user_data.save_point){
+    	let res = ez_create_position({job: this, game_controller: gp, position: position, J_angles: J_angles})
+        let position_object = res[0]
+        for(let i = 0; i < res[0].length; i++){
+        	CMD.push(res[1][i])
+        }
+        this.user_data.saved_positions.splice(this.user_data.cur_point_idx + 1, 0, position_object)
+        out("Point saved at [" + Vector.round(position[0], 4) + "] with normal [" + Vector.round(position[1], 3) + "]. Action state set to " + position_object.properties.extrude_state + ".")
+        this.user_data.save_point = false
+        this.user_data.cur_point_idx++
+        this.user_data.save_point_state = true
+    }
+
+	if(!gp.buttons[map.cycle_right].pressed && this.user_data.cycle_right){
+    	if(this.user_data.save_point_state === true){
+        	this.user_data.cur_point_idx--
+        	this.user_data.save_point_state = false
+    	}
+    	if(this.user_data.saved_positions.length > 0){
+        	if(this.user_data.cur_point_idx === this.user_data.saved_positions.length - 1){
+        		out("You are currently on the last of " + this.user_data.saved_positions.length + " point(s). Press left button to move to the previous point.", "blue", true)
+        	}else{
+        		this.user_data.cur_point_idx++
+            	out("You are currently on point " + (this.user_data.cur_point_idx+1) + " of " + this.user_data.saved_positions.length + " point(s).", "blue", true)
+        		let position_object = this.user_data.saved_positions[this.user_data.cur_point_idx]
+        		let new_CMDs = ez_run_position({position_object: position_object, job: this, game_pad: gp, position: position, J_angles: J_angles, extrude_time: this.user_data.input.extrude_time}, true)
+        		for(let i = 0; i < new_CMDs.length; i++){
+        			CMD.push(new_CMDs[i])
+        		}
+        	}
+        	this.user_data.cycle_right = false
+        }else{
+        	out("Attempted to move to next point but no points are saved. To save a point press Left-bumper.", "blue", true)
+        }
+    }
+    if(!gp.buttons[map.cycle_left].pressed && this.user_data.cycle_left){
+    	if(this.user_data.save_point_state === true){
+        	this.user_data.cur_point_idx--
+        	this.user_data.save_point_state = false
+    	}
+    	if(this.user_data.saved_positions.length > 0){
+            if(this.user_data.cur_point_idx === 0){
+        		out("You are currently on the first of " + this.user_data.saved_positions.length + " point(s). Press right button to move to the next point.", "blue", true)
+        	}else{
+        		this.user_data.cur_point_idx--
+            	out("You are currently on point " + (this.user_data.cur_point_idx+1) + " of " + this.user_data.saved_positions.length + " point(s).", "blue", true)
+        		let position_object = this.user_data.saved_positions[this.user_data.cur_point_idx]
+        		let new_CMDs = ez_run_position({position_object: position_object, job: this, game_pad: gp, position: position, J_angles: J_angles}, true)
+        		for(let i = 0; i < new_CMDs.length; i++){
+        			CMD.push(new_CMDs[i])
+        		}
+        		this.user_data.cycle_left = false
+        	}
+        }else{
+        	out("Attempted to move to previous point but no points are saved. To save a point press Left-bumper.", "blue", true)
+        }
+    }
+    
+    this.user_data.old_buttons = gp.buttons
+    //CMD.push(make_ins("F"))
+    CMD.push(make_ins("g"))
+    CMD.push(Robot.go_to("Main_Create"))
+    return CMD
+}
+
+function Finish_Create(){
+	let ready_position = this.user_data.inputs.start_position
+	let CMD = [
+    	       make_ins("S", "MaxSpeed", 30),
+               make_ins("S", "StartSpeed", .5),
+               make_ins("S", "Acceleration", 0.0001),
+               Dexter.pid_move_all_joints(0, 0, 0, 0, 0),
+               function(){
+               		let CMD = []
+               		if(this.user_data.saved_positions.length != 0 || this.user_data.coordinate_systems.length > 1){
+                    	if(points_filepath == "choose_file"){
+							points_filepath = choose_save_file({buttonLabel: "Save As"})
+                        	if(points_filepath == undefined){
+                            	out("Job has been stopped. No positions file saved.", "blue")
+                                return CMD
+                            }
+                        }
+                    	if(!points_filepath.endsWith(".json")){
+                    		points_filepath += ".json"
+                    	}
+						
+                        let coor_name = this.user_data.coordinate_systems[0]
+                        let coor_source_string = ez_get_object(Coor, coor_name).sourceCode()
+                        let file_string = JSON.stringify({old_user_data: this.user_data, coor_source_string: coor_source_string})
+                       
+                        file_string = replace_substrings(file_string, "\"saved_positions\":\\[\\{", "\"saved_positions\":\[\n\n\n{\n    ")
+                        file_string = replace_substrings(file_string, "\"start_position\"", "\n    \"start_position\"")
+                        file_string = replace_substrings(file_string, "}],\"plane_points\"", "\n}\n],\n\n\n\n\"plane_points\"")         
+                        file_string = replace_substrings(file_string, "{},", "{}, ")         
+                        file_string = replace_substrings(file_string, ",\"", ",\n    \"")
+                        file_string = replace_substrings(file_string, "},{", "\n},\n{\n    ")
+                        
+                    	write_file(points_filepath, file_string)
+                        out("Positions saved to " + points_filepath, "blue")
+                    }else{
+                    	out("No positions or coordinate systems were recorded so no file was created", "blue")
+                    }
+                    return CMD
+			   }
+    	  ]
+	return CMD
+}
+
+
+function sixth(xyz, theta = 0){
+	return atan2d(xyz[1], xyz[0]) - 90 - theta
+}
+
+//get_object(Coor, "Dexter_Base.Coordinate_System_1")
+new Job({name: "GameController", 
+         inter_do_item_dur: speed_delay_tweak,
+         robot: robot, keep_history: true, show_instructions: false,
+		 user_data:{
+         	inputs: inputs_for_ezCreate,
+         	cur_point_idx: 0,
+         	saved_positions: [],
+         	plane_points: [{position: [], J_angles: []}, {position: [], J_angles: []}, {position: [], J_angles: []}],
+            plane_points_idx: 0,
+         	coordinate_systems: ["Dexter_Base"],
+            coordinate_system_idx: 0,
+            speed_factor_idx: 3,
+            speed_factor_list: [10, 5, 4, 3, 2, 1, 1/2, 1/3, 1/4, 1/6, 1/8, 1/10, 1/20, 1/50, 1/100, 1/200, 1/500, 1/1000],
+            //speed_factor_strings: ["10", "5","4", "3", "2", "1", "1/2", "1/3", "1/4", "1/6", "1/8", "1/10", "1/20", "1/50", "1/100", "1/200", "1/500", "1/1000"],
+         	scale_factor: .1
+         },
+         do_list: [	
+         		Init_Create,
+                Main_Create,
+                Finish_Create
+         ]})   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//Code for ezRun
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function Init_Run(){
+	let CMD = []
+    clear_output()
+	
+    // Load in saved points file
+    if(points_filepath == "choose_file"){
+		points_filepath = choose_file({buttonLabel: "Open"})
+    	if(points_filepath === undefined){
+    		return Robot.stop_job
+    	}
+    }
+    let content = file_content(points_filepath)
+    let parsed_content = JSON.parse(content)
+    eval(parsed_content.coor_source_string)
+    let old_data = parsed_content.old_user_data
+    for(let key in old_data){
+    	this.user_data[key] = old_data[key]
+    }
+    
+    
+    if(this.user_data.coordinate_systems.length > 1){
+    	CMD.push(Human.enter_choice({task: "Would you like to re-define local coordinate systems?<br/>", 
+        		      				 choices: [["Yes", true], ["No", false]],
+                                     add_stop_button: false,
+                                     height: 130,
+                                     width: 450,
+                                     show_choices_as_buttons: true}))
+    	CMD.push(function(){
+        	if(this.user_data.choice){
+            	out("Gamepad will now control robot. Re-define coordinate systems then press the menu button to start running.")
+            	return [Init_Edit_Coors_Run, Edit_Coors_Run]
+            }
+    	})
+    }
+
+    let ready_position = this.user_data.inputs.start_position
+    //CMD.push(Dexter.move_to(ready_position[0], ready_position[1], ready_position[2]))
+    CMD.push(make_ins("g"))
+    return CMD
+}
+
+function Init_Edit_Coors_Run(){
+	// Initialize Game Controller
+    clear_output()
+	let game_pads = navigator.getGamepads()
+    let game_pad_idx
+	for(let i = 0; i < game_pads.length; i++){
+    	if(game_pads[i] != null && game_pads[i].id === game_controller_name){
+    		game_pad_idx = i
+        	break
+    	}else if(i == game_pads.length - 1){
+    		let game_str = ""
+    		for(let j = 0; j < game_pads.length; j++){
+        		if(game_pads[j] != null){
+            		game_str += "<br>" + game_pads[j].id
+            	}
+        	}
+    		dde_error("Couldn't find specified controller. Press any button on controller and try again.<br>If that doesn't work copy controller name from below and paste into line 10 between quotation marks:" + game_str)
+    	}
+	}
+	this.user_data.game_pad_idx = game_pad_idx
+    // Move to the start position
+    let start_position = this.user_data.inputs.start_position
+    let CMD = [ ez_show_run_doc,
+    			ez_my_settings,
+                Dexter.pid_move_to(start_position[0], start_position[1], start_position[2], undefined, ROLL)
+              ]
+    this.user_data.old_buttons = navigator.getGamepads()[this.user_data.game_pad_idx].buttons
+    this.user_data.old_position = start_position
+    this.user_data.save_point = false
+    this.user_data.reset = false
+    this.user_data.next_coor = false
+    this.user_data.prev_coor = false
+    this.user_data.speed_up = false
+    this.user_data.speed_down = false
+    this.user_data.plane_points[0].J_angles = []
+    this.user_data.plane_points[1].J_angles = []
+    this.user_data.plane_points[2].J_angles = [] 
+    this.user_data.coordinate_system_idx = 0
+    return CMD
+}
+
+function Edit_Coors_Run(){
+	//Values to change when tuning for speed/smoothness/lag:
+    let max_ang_vel = 10 *(_deg/_s) 	// This controls both the xyz velocity and pivot velocity even though it's in deg/s. All speeds are currently done in joint space.
+    let max_step = 3.5 *(_mm)			// When a Joystick is pressed to its max this is the distance between startpoint and endpoint of the straight line.
+    let resolution = 3 *(_mm) 			// Straight line interpolated segements cannot exceed this distance.
+    let max_pivot = 10 *(_deg)			// When a Joystick is pressed to its max this is the angle between starting angle and ending angle of the pivot motion.
+    let pivot_resolution = .2 *(_deg)	// Pivot interpolated movement change in J_angles cannot exceed this value
+    
+    let CMD = []
+    let inputs = this.user_data.inputs
+    let clearance = inputs.lift_height
+    let gp = navigator.getGamepads()[this.user_data.game_pad_idx]
+    let rs = this.robot.robot_status
+	let J_angles = [rs[Dexter.J1_ANGLE], rs[Dexter.J2_ANGLE], rs[Dexter.J3_ANGLE], rs[Dexter.J4_ANGLE], rs[Dexter.J5_ANGLE]]
+    let position = this.user_data.old_position
+        
+    let base_coor = ez_get_object(Coor, this.user_data.coordinate_systems[0])
+    let local_coor = ez_get_object(Coor, this.user_data.coordinate_systems[this.user_data.coordinate_system_idx])
+    let local_position = [[], [], position[2].slice()]
+    let local_direction = local_coor.get_xy_plane_direction()
+    local_position[0] = Coor.move_points_to_coor(position[0].slice(), base_coor, local_coor)
+    local_position[1] = Coor.move_vectors_to_coor(position[1].slice(), base_coor, local_coor)
+	let speed_factor = this.user_data.speed_factor_list[this.user_data.speed_factor_idx]
+    
+    
+    
+    //Pressed Buttons:
+    if(gp.buttons[map.speed_down].pressed){
+    	this.user_data.speed_down = true
+    }
+    
+    if(gp.buttons[map.speed_up].pressed){
+    	this.user_data.speed_up = true
+    }
+    
+    if(gp.buttons[map.next_coor].pressed){
+    	this.user_data.next_coor = true
+    }
+    
+    if(gp.buttons[map.prev_coor].pressed){
+    	this.user_data.prev_coor = true
+    }
+    
+   	if(gp.buttons[map.plane_point].pressed){
+    	let pp_array = []
+        for(let i = 0; i < 3; i++){
+        	if(this.user_data.plane_points[i].position[0] != undefined){
+            	pp_array.push(Vector.round(this.user_data.plane_points[i].position[0], 3))
+            }else{
+            	pp_array.push(undefined)
+            }
+        }
+        out("Plane point " + (this.user_data.plane_points_idx + 1) + " is at: [" + Vector.round(position[0], 3) + "] (meters) <br> Plane points: 1: [" + 
+        pp_array[0] + "], 2: [" + pp_array[1] + "], 3: [" + pp_array[2] + "] </br>", "blue", true)
+    
+    	this.user_data.plane_point = true
+    }
+    
+    if(gp.buttons[map.set_plane].pressed){
+    	this.user_data.set_plane = true
+    }
+    
+    if(gp.buttons[map.set_plane].pressed){
+    	this.user_data.set_plane = true
+    }
+    
+    if(gp.buttons[map.finish].pressed){
+    	this.user_data.finish = true
+    }
+    
+    let xyzVel = [0, 0, 0] // (m/s)
+    let xyzStep = [0, 0, 0] // (m)
+    let JoystickPos = gp.axes
+    if(Math.abs(JoystickPos[0]) < joystick_threshold){JoystickPos[0] = 0}
+    if(Math.abs(JoystickPos[1]) < joystick_threshold){JoystickPos[1] = 0}
+    if(Math.abs(JoystickPos[2]) < joystick_threshold){JoystickPos[2] = 0}
+    if(Math.abs(JoystickPos[3]) < joystick_threshold){JoystickPos[3] = 0}
+    
+    // Main Joystick code:
+    if(gp.buttons[map.pivot_mode].pressed){
+    	// Pivot Motions:
+        let old_J_angles = Kin.xyz_to_J_angles(position[0], position[1], position[2])
+        let Joystick_thetas = [-JoystickPos[map.x_theta], JoystickPos[map.y_theta]]
+        Joystick_thetas[0] *= .1
+        Joystick_thetas[1] *= .1
+        Joystick_thetas = Vector.multiply(max_pivot, Joystick_thetas)
+        
+        let angles_1
+        if(position[1].length === 3){
+        	angles_1 = Kin.dir_xyz_to_angles(position[1])
+        }else{
+        	angles_1 = position[1]
+        }
+        let delta_angles = Vector.multiply(max_pivot, Joystick_thetas)
+        let angles_2 = Vector.add(angles_1, delta_angles)
+        let joy_mag = Vector.magnitude(delta_angles)
+        let new_J_angles = Kin.xyz_to_J_angles(position[0], Kin.angles_to_dir_xyz(angles_2), position[2])
+        
+        if(!Vector.is_equal(old_J_angles, new_J_angles, 1)){
+        	let pivot_J_angles = Kin.interp_movement(old_J_angles, new_J_angles, pivot_resolution)
+        	CMD.push(make_ins("S", "MaxSpeed", joy_mag * max_ang_vel/10))
+        	CMD.push(make_ins("S", "StartSpeed", joy_mag * max_ang_vel/10))
+        	for(let i = 0; i < pivot_J_angles.length; i++){
+        		CMD.push(Dexter.pid_move_all_joints(pivot_J_angles[i]))
+        	}
+        	this.user_data.old_position = [position[0], Kin.angles_to_dir_xyz(angles_2), position[2]]
+        }
+    }else{
+    	// XYZ Motion:
+    	let xy_theta = Math.atan2(JoystickPos[map.Y], JoystickPos[map.X])
+        let JoystickXYZ = [JoystickPos[map.X], -JoystickPos[map.Y], -JoystickPos[map.Z]]
+        let joy_mag = Vector.magnitude(JoystickXYZ)
+        if(joy_mag != 0){
+            xyzStep = Vector.multiply(speed_factor, max_step, JoystickXYZ)
+            let mag = Vector.magnitude(xyzStep)
+            let res
+            
+            let xyz_1 = position[0]
+            let local_xyz_1 = local_position[0]
+            let local_xyz_2 = Vector.add(local_xyz_1, xyzStep)
+            let xyz_2 = Coor.move_points_to_coor(local_xyz_2, local_coor, base_coor)
+            
+            res = Kin.move_to_straight(xyz_1, xyz_2, position[1], position[2], undefined, resolution)
+            for(let i = 0; i < res[0].length; i++){
+                if(Kin.is_in_reach(res[0][i], position[1], position[2])){
+                	//CMD.push(make_ins("S", "MaxSpeed", speed_factor * joy_mag * max_ang_vel))
+            		//CMD.push(make_ins("S", "StartSpeed", speed_factor * joy_mag * max_ang_vel))
+                	CMD.push(Dexter.pid_move_to(res[0][i], position[1], position[2], undefined, ROLL))
+                }else{
+                	out("Robot limit reached", "red", true)
+                }
+            }
+            this.user_data.old_position = [res[0][res[0].length - 1], position[1], position[2]]
+        }
+    }
+    
+    if(gp.buttons[map.save_point].pressed){
+    	out("Points cannot be created in the ezRun job.")
+    	/*
+    	if(gp.buttons[map.action_state].pressed){
+    		out("Point is at [" + Vector.round(position[0], 4) + "](m) with normal [" + Vector.round(position[1], 3) + "]. Action state set to true.", "blue", true)
+        }else{
+        	out("Point is at [" + Vector.round(position[0], 4) + "](m) with normal [" + Vector.round(position[1], 3) + "]. Action state set to false.", "blue", true)
+        }*/
+        this.user_data.save_point = true
+    }
+    if(gp.buttons[map.cycle_left].pressed){
+        this.user_data.cycle_left = true
+    }
+    if(gp.buttons[map.cycle_right].pressed){
+        this.user_data.cycle_right = true
+    }
+    
+    if(gp.buttons[map.reset].pressed){ 
+    	if(!this.user_data.reset){
+        	this.user_data.reset_start_time = Date.now()
+            this.user_data.reset = true
+        }else{
+        	CMD = [
+        		make_ins("S", "MaxSpeed", 30),
+        		make_ins("S", "StartSpeed", .5),
+        		make_ins("S", "Acceleration", 0.0001)
+            	]
+        	let origin, direction
+        	if(this.user_data.coordinate_system_idx == 0){
+        		origin = this.user_data.inputs.start_position[0]
+            	direction = this.user_data.inputs.start_position[1]
+        	}else{
+        		origin = local_coor.get_position()
+            	direction = local_coor.get_xy_plane_direction()
+        	}
+            
+    		let reset_dur = (Date.now() - this.user_data.reset_start_time) * _ms
+        
+    		if(reset_dur < 1 * _s){
+        		out("Caution: This button may drastically move Dexter. Hold for 1 sec to reset direction and 3 sec to reset position, relative to current coordiante system.", "blue", true)
+        	}else if(reset_dur < 3 * _s){
+                out("", "blue", true)
+        		CMD.push(Dexter.pid_move_to(position[0], direction, position[2], undefined, ROLL))
+            	this.user_data.old_position = [position[0], direction, position[2]]
+        	}else{
+            	//debugger
+        		CMD.push(Dexter.pid_move_to(origin, direction, position[2], undefined, ROLL))
+            	this.user_data.old_position = [origin, direction, position[2]]
+        	}
+            this.user_data.old_buttons = gp.buttons
+    		//CMD.push(make_ins("F"))
+    		CMD.push(make_ins("g"))
+    		CMD.push(Robot.go_to("Edit_Coors_Run"))
+    		return CMD
+            
+        }// end prev state
+    }// end button press
+    
+    if(gp.buttons[map.follow_mode].pressed){
+    	/*
+    	if(this.user_data.follow_mode === false){
+        	CMD.push(Dexter.set_follow_me)
+        }
+        */
+    	this.user_data.follow_mode = true
+    }
+    
+    
+    
+    
+    
+    
+    //Released Buttons:
+    
+    
+    if(!gp.buttons[map.speed_down].pressed && this.user_data.speed_down){
+    	if(this.user_data.speed_factor_idx < this.user_data.speed_factor_list.length - 1){
+        	this.user_data.speed_factor_idx++
+        }
+        //out("Speed factor set to: " + this.user_data.speed_factor_strings[this.user_data.speed_factor_idx])
+        out("Speed factor set to: " + this.user_data.speed_factor_list[this.user_data.speed_factor_idx])
+    	this.user_data.speed_down = false
+    }
+    
+    if(!gp.buttons[map.speed_up].pressed && this.user_data.speed_up){
+    	if(this.user_data.speed_factor_idx > 0){
+        	this.user_data.speed_factor_idx--
+        }
+        //out("Speed factor set to: " + this.user_data.speed_factor_strings[this.user_data.speed_factor_idx])
+        out("Speed factor set to: " + this.user_data.speed_factor_list[this.user_data.speed_factor_idx])
+    	this.user_data.speed_up = false
+    }
+    
+    if(!gp.buttons[map.next_coor].pressed && this.user_data.next_coor){
+    	if(this.user_data.coordinate_system_idx < this.user_data.coordinate_systems.length - 1){
+        	this.user_data.coordinate_system_idx++
+        }
+        out("Now in coordinate system " + this.user_data.coordinate_system_idx + ": " + this.user_data.coordinate_systems[this.user_data.coordinate_system_idx] + ". Exisiting coordinate systems:")
+        out(this.user_data.coordinate_systems)
+        
+    	this.user_data.next_coor = false
+    }
+    
+    if(!gp.buttons[map.prev_coor].pressed && this.user_data.prev_coor){
+    	if(this.user_data.coordinate_system_idx > 0){
+        	this.user_data.coordinate_system_idx--
+        }
+        out("Now in coordinate system " + this.user_data.coordinate_system_idx + ": " + this.user_data.coordinate_systems[this.user_data.coordinate_system_idx] + ". Exisiting coordinate systems:")
+        out(this.user_data.coordinate_systems)
+        
+    	this.user_data.prev_coor = false
+    }
+    
+    if(!gp.buttons[map.set_plane].pressed && this.user_data.set_plane){
+    	let J_angles_1 = this.user_data.plane_points[0].J_angles
+        let J_angles_2 = this.user_data.plane_points[1].J_angles
+        let J_angles_3 = this.user_data.plane_points[2].J_angles
+        
+		if(J_angles_1.length == 0 || J_angles_2.length == 0 || J_angles_3.length == 0){
+        	out("Three points are required to create a plane", "blue", true)
+        }else{
+        	let new_pose = Kin.three_positions_to_pose(J_angles_1, J_angles_2, J_angles_3)
+            
+            if(local_coor != base_coor){
+            	local_coor.set_pose(new_pose)
+                let dir = Vector.transpose(Vector.pull(local_coor.pose, [0, 2], [2,2]))
+                out(local_coor.name + " has been edited. New plane set at: [" + Vector.round(local_coor.get_position(), 3) + "] with plane normal: [" + Vector.round(dir, 3) + "].")
+            	this.user_data.plane_points[0].J_angles = []
+            	this.user_data.plane_points[1].J_angles = []
+            	this.user_data.plane_points[2].J_angles = []  
+            }else{
+            	out("Dexter_Base coordinate system cannot be changed. Press 'A' to go to the next coordinate system", "blue")
+            }
+                      
+            this.user_data.set_plane = false
+        }
+    }
+    
+    if(!gp.buttons[map.plane_point].pressed && this.user_data.plane_point){
+		this.user_data.plane_points[this.user_data.plane_points_idx].position = position
+        this.user_data.plane_points[this.user_data.plane_points_idx].J_angles = J_angles
+        let pp_array = []
+        for(let i = 0; i < 3; i++){
+        	if(this.user_data.plane_points[i].position[0] != undefined){
+            	pp_array.push(Vector.round(this.user_data.plane_points[i].position[0], 3))
+            }else{
+            	pp_array.push(undefined)
+            }
+        }
+        
+        out("Plane point " + (this.user_data.plane_points_idx + 1) + " saved at: [" + Vector.round(position[0], 3) + "] (meters) <br> Plane points: 1: [" + 
+        pp_array[0] + "], 2: [" + pp_array[1] + "], 3: [" + pp_array[2] + "] </br>")
+        
+        this.user_data.plane_points_idx = (this.user_data.plane_points_idx + 1) % 3
+		this.user_data.plane_point = false
+    }
+    
+    if(!gp.buttons[map.follow_mode].pressed && this.user_data.follow_mode){
+    	//CMD.push(Dexter.set_open_loop)
+        this.user_data.follow_mode = false
+    }
+    
+    
+    if(!gp.buttons[map.finish].pressed && this.user_data.finish){
+    	out("Now starting Run...")
+        CMD.push(Robot.go_to("Main_Run"))
+        this.user_data.finish = false
+    }
+    
+    if(!gp.buttons[map.reset].pressed && this.user_data.reset){
+        this.user_data.reset = false
+    }
+    
+    if(!gp.buttons[map.save_point].pressed && this.user_data.save_point){
+    	let res = ez_create_position({job: this, game_controller: gp, position: position, J_angles: J_angles})
+        let position_object = res[0]
+        for(let i = 0; i < res[0].length; i++){
+        	CMD.push(res[1][i])
+        }
+        this.user_data.saved_positions.splice(this.user_data.cur_point_idx + 1, 0, position_object)
+        out("Point saved at [" + Vector.round(position[0], 4) + "] with normal [" + Vector.round(position[1], 3) + "]. Action state set to " + position_object.properties.extrude_state + ".")
+        this.user_data.save_point = false
+        this.user_data.cur_point_idx++
+        this.user_data.save_point_state = true
+    }
+
+	if(!gp.buttons[map.cycle_right].pressed && this.user_data.cycle_right){
+    	if(this.user_data.save_point_state === true){
+        	this.user_data.cur_point_idx--
+        	this.user_data.save_point_state = false
+    	}
+    	if(this.user_data.saved_positions.length > 0){
+        	if(this.user_data.cur_point_idx === this.user_data.saved_positions.length - 1){
+        		out("You are currently on the last of " + this.user_data.saved_positions.length + " point(s). Press left button to move to the previous point.", "blue", true)
+        	}else{
+        		this.user_data.cur_point_idx++
+            	out("You are currently on point " + (this.user_data.cur_point_idx+1) + " of " + this.user_data.saved_positions.length + " point(s).", "blue", true)
+        		let position_object = this.user_data.saved_positions[this.user_data.cur_point_idx]
+        		let new_CMDs = ez_run_position({position_object: position_object, job: this, game_pad: gp, position: position, J_angles: J_angles, extrude_time: this.user_data.input.extrude_time}, true)
+        		for(let i = 0; i < new_CMDs.length; i++){
+        			CMD.push(new_CMDs[i])
+        		}
+        	}
+        	this.user_data.cycle_right = false
+        }else{
+        	out("Attempted to move to next point but no points are saved. To save a point press Left-bumper.", "blue", true)
+        }
+    }
+    if(!gp.buttons[map.cycle_left].pressed && this.user_data.cycle_left){
+    	if(this.user_data.save_point_state === true){
+        	this.user_data.cur_point_idx--
+        	this.user_data.save_point_state = false
+    	}
+    	if(this.user_data.saved_positions.length > 0){
+            if(this.user_data.cur_point_idx === 0){
+        		out("You are currently on the first of " + this.user_data.saved_positions.length + " point(s). Press right button to move to the next point.", "blue", true)
+        	}else{
+        		this.user_data.cur_point_idx--
+            	out("You are currently on point " + (this.user_data.cur_point_idx+1) + " of " + this.user_data.saved_positions.length + " point(s).", "blue", true)
+        		let position_object = this.user_data.saved_positions[this.user_data.cur_point_idx]
+        		let new_CMDs = ez_run_position({position_object: position_object, job: this, game_pad: gp, position: position, J_angles: J_angles}, true)
+        		for(let i = 0; i < new_CMDs.length; i++){
+        			CMD.push(new_CMDs[i])
+        		}
+        		this.user_data.cycle_left = false
+        	}
+        }else{
+        	out("Attempted to move to previous point but no points are saved. To save a point press Left-bumper.", "blue", true)
+        }
+    }
+    
+    this.user_data.old_buttons = gp.buttons
+    //CMD.push(make_ins("F"))
+    CMD.push(make_ins("g"))
+    CMD.push(Robot.go_to("Edit_Coors_Run"))
+    return CMD
+}
+
+
+////////////////////////////FINDME closing bracket
+clear_output()
+//}}
+/////////////////////////////
+
+/*
+function Main_Run(){
+	let CMD = []
+    let gp = navigator.getGamepads()[this.user_data.game_pad_idx]
+    let rs = this.robot.robot_status
+	let J_angles = [rs[Dexter.J1_ANGLE], rs[Dexter.J2_ANGLE], rs[Dexter.J3_ANGLE], rs[Dexter.J4_ANGLE], rs[Dexter.J5_ANGLE]]
+    let position = this.user_data.old_position
+    
+    if(gp.buttons[map.finish].pressed){
+    	this.user_data.finish = true
+    }
+    if(!gp.buttons[map.finish].pressed && this.user_data.finish){
+    	CMD.push(Robot.go_to("Finish_Run"))
+    }
+    
+    let position_object
+    for(let i = 0; i < this.user_data.saved_positions.length; i++){
+    	position_object = this.user_data.saved_positions[i]
+        let new_CMDs = ez_run_position({
+        	position_object: position_object,
+            job: this,
+            game_pad: gp,
+            position: position,
+            J_angles: J_angles,
+            lift_height: this.user_data.inputs.lift_height
+        },
+        	this.user_data.inputs.dry_run
+        )
+        for(let i = 0; i < new_CMDs.length; i++){
+        	CMD.push(new_CMDs[i])
+        }
+    }
+    return CMD
+}
+
+
+
+function Finish_Run(){
+	let CMD = []
+    let inputs = this.user_data.inputs
+    out("ezRun completed " + (this.user_data.loop_idx + 1) + " time(s)", "blue", true)
+    if(this.user_data.finish == true){
+    	CMD.push(ez_stop_run())
+        return CMD
+    }
+    if(inputs.loop && this.user_data.loop_idx < inputs.loop_iterations){
+    	CMD.push(Dexter.sleep(inputs.inter_loop_dur))
+        CMD.push(make_ins("F"))
+        CMD.push(Robot.go_to("Main_Run"))
+        this.user_data.loop_idx++
+    }else{
+        let ready_position = this.user_data.inputs.start_position
+        CMD.push(Dexter.pid_move_to(ready_position[0], ready_position[1], ready_position[2]))
+    }
+    return CMD
+}
+
+new Job({name: "ezRun", 
+         inter_do_item_dur: .5*_ms,
+         robot: robot, keep_history: false, show_instructions: false,
+		 user_data:{
+         	inputs_for_ezRun: inputs_for_ezRun,
+         	loop_idx: 0,
+            finish: false
+         },
+         do_list: [	
+         		Init_Run,
+                // Sometimes Init_Edit_Coors_Run and Edit_Coors_Run will be programitically put here
+                Main_Run,
+                Finish_Run
+         ]})
+
+clear_output()
+*/
+
+//} //End of ezTeach_init()
+
+new Job({
+	name: "Home",
+    robot: robot,
+    do_list: [
+    	Dexter.set_parameter("MaxSpeed", 30),
+    	Dexter.pid_move_all_joints([0, 0, 0, 0, 0]),
+        //Dexter.move_all_joints([0, 0, 0, 0, 0, 0, 100])
+        Dexter.move_all_joints([0, 0, 0, 0, 0, 0, 0])
+    ]
+})
+
+new Job({
+	name: "RebootServos",
+    //robot: Robot.dexter213,
+    do_list: [
+    	make_ins("S", "RebootServo", 1),
+        make_ins("S", "RebootServo", 3)
+    ]
+})
+
+
+
+new Job({
+	name: "Playback",
+    show_instructions: false,
+    inter_do_item_dur: 0,
+    user_data: {
+    	sleep_time: 1,
+        MaxSpeed: 30
+    },
+    do_list: [
+    	Dexter.pid_move_all_joints([0, 0, 0, 0, 0]),
+    	load_path,
+        my_settings,
+        playback
+    ]
+})
+
+// Job.Playback.user_data.path_obj
+function load_path(){
+	let fp = choose_file()
+    let content = file_content(fp)
+    out(content)
+    this.user_data.path_obj = JSON.parse(content).old_user_data.saved_positions
+}
+
+function my_settings(){
+	let CMD = []
+    CMD.push(Dexter.set_parameter("MaxSpeed", this.user_data.MaxSpeed))
+    CMD.push(Dexter.set_parameter("J1_PID_P", pid_p_array[0]))
+    CMD.push(Dexter.set_parameter("J2_PID_P", pid_p_array[1]))
+    CMD.push(Dexter.set_parameter("J3_PID_P", pid_p_array[2]))
+    CMD.push(Dexter.set_parameter("J4_PID_P", pid_p_array[3]))
+    CMD.push(Dexter.set_parameter("J5_PID_P", pid_p_array[4]))
+    
+    return CMD
+}
+
+function playback(){
+	let CMD = []
+	let pos_array = this.user_data.path_obj
+    let obj
+    
+    for(let i = 0; i < pos_array.length; i++){
+    	obj = pos_array[i]
+        CMD.push(Dexter.move_all_joints(obj.J_angles.slice(0, 5)))
+        CMD.push(interp_J6(obj.J_angles))
+        CMD.push(Dexter.sleep(this.user_data.sleep_time))
+    }
+    return CMD
+}
+
+function interp_J6(goal_J_angles){
+	return Robot.loop(true, function(){
+    	let rs = this.robot.robot_status
+        let measured_angles = [
+        	rs[Dexter.J1_MEASURED_ANGLE],
+            rs[Dexter.J2_MEASURED_ANGLE],
+            rs[Dexter.J3_MEASURED_ANGLE],
+            rs[Dexter.J4_MEASURED_ANGLE],
+            rs[Dexter.J5_MEASURED_ANGLE]
+        ]
+        let error = Vector.max(Vector.abs(Vector.subtract(goal_J_angles.slice(0, 5), measured_angles)))
+        //debugger
+        //out(error, "blue", true)
+        out(rs[Dexter.J6_MEASURED_ANGLE], "blue", true)
+        //debugger
+        if(error < 1){
+        	return Robot.break
+        }else{
+        	let xyz = Kin.J_angles_to_xyz(measured_angles)[0]
+        	//return Dexter.pid_move_all_joints([0, 0, 0, 0, 0, sixth(xyz), 0])
+            return Dexter.set_parameter("EERoll", 512+sixth(xyz)/Socket.DEGREES_PER_DYNAMIXEL_UNIT)
+        }
+    })
+}
+
+
+new Job({
+	name: "Test",
+    show_instructions: false,
+    inter_do_item_dur: 0,
+    do_list: [
+    	//Dexter.set_parameter("EERoll", 0/Socket.DEGREES_PER_DYNAMIXEL_UNIT)
+        Dexter.move_all_joints([0, 0, 0, 0, 0]),
+        Dexter.empty_instruction_queue(),
+        Dexter.sleep(1),
+        Dexter.move_all_joints([0, 20, 90, -20, 0]),
+        interp_J6([10, 20, 90, -20, 0])
+    ]
+})
