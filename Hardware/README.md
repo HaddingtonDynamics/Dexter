@@ -15,6 +15,7 @@ https://www.thingiverse.com/thing:2108244 Dexter version 1<br>
 https://www.thingiverse.com/thing:3206154 Dexter HD<br>
 https://www.thingiverse.com/thing:3781990 .. HD update<br>
 https://www.thingiverse.com/thing:2842496 covers<br>
+https://www.thingiverse.com/thing:3166448 <a href="https://github.com/HaddingtonDynamics/Dexter/wiki/End-Effectors">End effector</a>
 - OnShape CAD:<br>
 https://cad.onshape.com/documents/2af8ed0e61a34ebf69284c68/w/72caf65e51bde98e456925d2/e/6843c182cbf9181dbb307455
 
